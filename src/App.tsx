@@ -120,6 +120,24 @@ export default function App() {
 
   useEffect(() => {
     if (!userUid) return;
+
+    const fetchOwnState = () => {
+       supabase.from('players').select('data').eq('id', userUid).single().then(({ data }) => {
+          if (data?.data) {
+             setState((prev: any) => {
+                 const newHp = data.data.hp;
+                 const newPe = data.data.pe;
+                 if (prev.hp.current !== newHp.current || prev.pe.current !== newPe.current) {
+                     return { ...prev, hp: newHp, pe: newPe };
+                 }
+                 return prev;
+             });
+          }
+       });
+    };
+
+    const fallbackInterval = setInterval(fetchOwnState, 2000);
+
     const channel = supabase.channel(`player_changes_${userUid}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'players', filter: `id=eq.${userUid}` }, (payload) => {
          if (payload.new && payload.new.data) {
@@ -144,23 +162,42 @@ export default function App() {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { 
+       clearInterval(fallbackInterval);
+       supabase.removeChannel(channel); 
+    };
   }, [userUid, currentPage]);
 
   useEffect(() => {
-    supabase.from('players').select('data').eq('id', 'MASTER_STATE').single().then(({ data }) => {
-      if (data?.data?.ost) setGlobalOstState(data.data.ost);
-    });
+    const fetchMasterState = () => {
+       supabase.from('players').select('data').eq('id', 'MASTER_STATE').single().then(({ data }) => {
+          if (data?.data?.ost) {
+             setGlobalOstState((prev: any) => {
+                if (JSON.stringify(prev) !== JSON.stringify(data.data.ost)) return data.data.ost;
+                return prev;
+             });
+          }
+       });
+    };
+
+    fetchMasterState();
+    const fallbackInterval = setInterval(fetchMasterState, 2000);
 
     const channel = supabase.channel('global_state_updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
          const newRecord = payload.new as any;
          if (newRecord?.id === 'MASTER_STATE' && newRecord?.data?.ost) {
-             setGlobalOstState(newRecord.data.ost);
+             setGlobalOstState((prev: any) => {
+                if (JSON.stringify(prev) !== JSON.stringify(newRecord.data.ost)) return newRecord.data.ost;
+                return prev;
+             });
          }
       }).subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { 
+       clearInterval(fallbackInterval);
+       supabase.removeChannel(channel); 
+    };
   }, []);
 
   useEffect(() => {
@@ -237,10 +274,21 @@ export default function App() {
 
   useEffect(() => {
     if (currentPage === 'mestre' && userUid) {
-      supabase.from('players').select('id, data').not('id', 'like', 'OST_FILE_%').not('id', 'eq', 'MASTER_STATE').then(({ data, error }) => {
-         if (error) console.error('Error fetching players:', error.message);
-         else if (data) setPlayers(data.map(d => ({ id: d.id, ...(d.data || {}) })));
-      });
+      const fetchPlayersList = () => {
+         supabase.from('players').select('id, data').not('id', 'like', 'OST_FILE_%').not('id', 'eq', 'MASTER_STATE').then(({ data, error }) => {
+            if (error) console.error('Error fetching players:', error.message);
+            else if (data) {
+                setPlayers(current => {
+                    const mapped = data.map(d => ({ id: d.id, ...(d.data || {}) }));
+                    if (JSON.stringify(current) !== JSON.stringify(mapped)) return mapped;
+                    return current;
+                });
+            }
+         });
+      };
+
+      fetchPlayersList();
+      const fallbackInterval = setInterval(fetchPlayersList, 3000);
 
       const channel = supabase.channel('public:players')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
@@ -262,7 +310,10 @@ export default function App() {
         })
         .subscribe();
 
-      return () => { supabase.removeChannel(channel); };
+      return () => { 
+         clearInterval(fallbackInterval);
+         supabase.removeChannel(channel); 
+      };
     }
   }, [currentPage, userUid]);
 
