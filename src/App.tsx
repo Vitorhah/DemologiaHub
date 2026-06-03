@@ -47,10 +47,18 @@ export default function App() {
   const [players, setPlayers] = useState<any[]>([]);
   const [isMestreAuth, setIsMestreAuth] = useState(false);
 
+  const [isOnline, setIsOnline] = useState(() => {
+    return localStorage.getItem('rpgIsOnline') !== 'false';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('rpgIsOnline', isOnline.toString());
+  }, [isOnline]);
+
   useEffect(() => {
     localStorage.setItem('rpgSheetState', JSON.stringify(state));
     
-    if (userUid) {
+    if (userUid && isOnline && currentPage !== 'mestre') {
       const timeoutId = setTimeout(() => {
         supabase.from('players').upsert({
           id: userUid,
@@ -62,7 +70,7 @@ export default function App() {
       }, 1000);
       return () => clearTimeout(timeoutId);
     }
-  }, [state, userUid]);
+  }, [state, userUid, isOnline, currentPage]);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -113,9 +121,11 @@ export default function App() {
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'players', filter: `id=eq.${userUid}` }, () => {
          if (currentPage !== 'mestre') {
-             localStorage.removeItem('rpgSheetState');
-             localStorage.removeItem('localUid');
-             window.location.reload();
+             setIsOnline(false);
+             setState((prev: any) => ({
+                 ...prev,
+                 history: ['<span style="color: #ffaa00;">Você foi desconectado pelo Mestre. Vá em "Conexão" para reconectar.</span>', ...prev.history]
+             }));
          }
       })
       .subscribe();
@@ -433,14 +443,14 @@ export default function App() {
   };
 
   const kickPlayer = async (id: string) => {
-    if (confirm("Tem certeza que deseja expulsar esse jogador?")) {
+    if (confirm("Desconectar esse jogador? Ele precisará reativar na aba Conexão.")) {
       await supabase.from('players').delete().eq('id', id);
     }
   };
 
-  const editPlayerStat = async (p: any, stat: 'hp' | 'pe', amount: number) => {
+  const editPlayerStatExact = async (p: any, stat: 'hp' | 'pe', value: number) => {
     const newData = { ...p };
-    newData[stat].current = Math.max(0, Math.min(newData[stat].max, newData[stat].current + amount));
+    newData[stat].current = Math.max(0, Math.min(newData[stat].max, value));
     const dataToSave = { ...newData };
     delete dataToSave.id;
     await supabase.from('players').update({ data: dataToSave }).eq('id', p.id);
@@ -464,6 +474,12 @@ export default function App() {
               className={`text-left text-lg font-bold uppercase p-2 rounded ${currentPage === 'ficha' ? 'bg-[#222] text-white' : 'text-gray-500 hover:bg-[#111]'}`}
             >
               Ficha
+            </button>
+            <button 
+              onClick={() => { setCurrentPage('conexao'); setMenuOpen(false); }}
+              className={`text-left text-lg font-bold uppercase p-2 rounded ${currentPage === 'conexao' ? 'bg-[#222] text-white' : 'text-gray-500 hover:bg-[#111]'}`}
+            >
+              Conexão
             </button>
             <button 
               onClick={() => { 
@@ -687,6 +703,45 @@ export default function App() {
       </>
       )}
 
+      {currentPage === 'conexao' && (
+        <>
+          <div className="fixed top-2 left-2 z-40">
+            <button onClick={() => setMenuOpen(true)} className="text-gray-500 hover:text-white bg-black/30 backdrop-blur p-2 rounded-full cursor-pointer hover:bg-black/60 transition-all">
+              <Menu size={24} />
+            </button>
+          </div>
+          <div className="p-4 pt-16 min-h-screen text-center flex flex-col items-center justify-center max-w-lg mx-auto">
+             <h2 className="text-3xl font-bold text-blood-red uppercase tracking-widest mb-4">Conexão da Ficha</h2>
+             <p className="text-gray-400 text-sm mb-8">
+               Ativar a conexão compartilha sua ficha em tempo real com o Mestre. Se você for desconectado, reative-a aqui.
+             </p>
+             <button 
+                onClick={() => {
+                   if (!isOnline) {
+                       setIsOnline(true);
+                       if (userUid) {
+                          supabase.from('players').upsert({
+                            id: userUid,
+                            data: state,
+                            updated_at: new Date().toISOString()
+                          }).then(({ error }) => {
+                            if (error) console.error("Error syncing to Supabase:", error.message);
+                          });
+                       }
+                   } else {
+                       setIsOnline(false);
+                       if (userUid) supabase.from('players').delete().eq('id', userUid);
+                   }
+                }}
+                className={`w-full py-4 px-8 text-lg font-bold uppercase tracking-wider rounded transition-all cursor-pointer border ${isOnline ? 'bg-green-900 border-green-500 hover:bg-green-800 text-white shadow-[0_0_15px_rgba(34,197,94,0.3)]' : 'bg-[#1a0505] border-blood-red hover:bg-[#300505] text-blood-red shadow-[0_0_15px_rgba(211,0,0,0.3)]'}`}
+             >
+                {isOnline ? "CONECTADO A SESSÃO" : "DESCONECTADO DA SESSÃO"}
+             </button>
+             <p className="text-[10px] text-gray-500 mt-4 uppercase">Para alterar o status apenas aperte o botão</p>
+          </div>
+        </>
+      )}
+
       {currentPage === 'mestre' && (
         <>
           <div className="fixed top-2 left-2 z-40">
@@ -709,30 +764,42 @@ export default function App() {
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blood-red to-transparent opacity-50"></div>
                   <div className="flex justify-between items-start mb-2">
                      <div>
-                        <div className="text-blood-red font-bold uppercase tracking-wider">{p.name || 'Desconhecido'}</div>
-                        <div className="text-gray-500 text-[10px] uppercase">Ficha Conectada</div>
+                        <div className="text-blood-red font-bold text-lg uppercase tracking-wider">{p.name || 'Desconhecido'}</div>
+                        <div className="text-green-500 font-mono text-[10px] uppercase">● Ficha Conectada</div>
                      </div>
-                     <button onClick={() => kickPlayer(p.id)} className="text-red-900 hover:text-red-500 bg-red-950/30 p-1 rounded transition-colors" title="Expulsar Jogador">
+                     <button onClick={() => kickPlayer(p.id)} className="text-gray-500 hover:text-red-500 bg-black/50 border border-gray-800 hover:border-red-900/50 p-2 rounded transition-all" title="Desconectar Jogador">
                         <Trash2 size={16} />
                      </button>
                   </div>
                   
-                  <div className="flex gap-4 mt-4 bg-[#111] border border-[#222] rounded p-2">
+                  <div className="flex gap-4 mt-4 bg-[#111] border border-[#222] rounded-lg p-3">
                     <div className="flex-1 text-center">
-                      <div className="text-[10px] text-gray-500 mb-1">HP</div>
-                      <div className="flex items-center justify-center gap-2">
-                        <button onClick={() => editPlayerStat(p, 'hp', -1)} className="text-gray-500 hover:text-white"><Minus size={14} /></button>
-                        <div className="text-green-500 font-bold text-lg min-w-[40px]">{p.hp?.current} <span className="text-gray-600 text-xs">/ {p.hp?.max}</span></div>
-                        <button onClick={() => editPlayerStat(p, 'hp', 1)} className="text-gray-500 hover:text-white"><Plus size={14} /></button>
+                      <div className="text-[10px] text-gray-500 mb-1 uppercase tracking-widest">Saúde (HP)</div>
+                      <div className="flex items-center justify-center gap-1">
+                        <input type="number" 
+                               value={p.hp?.current ?? 0}
+                               onChange={(e) => {
+                                 setPlayers(current => current.map(pl => pl.id === p.id ? { ...pl, hp: { ...pl.hp, current: parseInt(e.target.value) || 0 } } : pl));
+                               }}
+                               onBlur={e => editPlayerStatExact(p, 'hp', parseInt(e.target.value) || 0)}
+                               onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+                               className="w-12 bg-transparent text-center outline-none border-b border-dashed border-[#333] focus:border-green-500 text-green-500 font-bold text-xl" />
+                        <span className="text-gray-600 text-[10px] uppercase">/ {p.hp?.max}</span>
                       </div>
                     </div>
                     <div className="w-[1px] bg-[#222]"></div>
                     <div className="flex-1 text-center">
-                      <div className="text-[10px] text-gray-500 mb-1">PE</div>
-                      <div className="flex items-center justify-center gap-2">
-                        <button onClick={() => editPlayerStat(p, 'pe', -1)} className="text-gray-500 hover:text-white"><Minus size={14} /></button>
-                        <div className="text-blue-500 font-bold text-lg min-w-[40px]">{p.pe?.current} <span className="text-gray-600 text-xs">/ {p.pe?.max}</span></div>
-                        <button onClick={() => editPlayerStat(p, 'pe', 1)} className="text-gray-500 hover:text-white"><Plus size={14} /></button>
+                      <div className="text-[10px] text-gray-500 mb-1 uppercase tracking-widest">Esforço (PE)</div>
+                      <div className="flex items-center justify-center gap-1">
+                        <input type="number" 
+                               value={p.pe?.current ?? 0}
+                               onChange={(e) => {
+                                 setPlayers(current => current.map(pl => pl.id === p.id ? { ...pl, pe: { ...pl.pe, current: parseInt(e.target.value) || 0 } } : pl));
+                               }}
+                               onBlur={e => editPlayerStatExact(p, 'pe', parseInt(e.target.value) || 0)}
+                               onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+                               className="w-12 bg-transparent text-center outline-none border-b border-dashed border-[#333] focus:border-blue-500 text-blue-500 font-bold text-xl" />
+                        <span className="text-gray-600 text-[10px] uppercase">/ {p.pe?.max}</span>
                       </div>
                     </div>
                   </div>
