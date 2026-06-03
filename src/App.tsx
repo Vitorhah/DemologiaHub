@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus } from 'lucide-react';
+import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus, Dices } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 const defaultState = {
@@ -46,8 +46,16 @@ export default function App() {
   const [userUid, setUserUid] = useState<string | null>(null);
   const [players, setPlayers] = useState<any[]>([]);
   const [isMestreAuth, setIsMestreAuth] = useState(false);
+  const [initiatives, setInitiatives] = useState<Record<string, number>>({});
+  const [mestreTab, setMestreTab] = useState<'fichas' | 'ost'>('fichas');
+  
+  const [ostList, setOstList] = useState<any[]>([]);
+  const [globalOstState, setGlobalOstState] = useState<any>(null);
+  const [loadedOstData, setLoadedOstData] = useState<any>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   const [isOnline, setIsOnline] = useState(() => {
+
     return localStorage.getItem('rpgIsOnline') !== 'false';
   });
 
@@ -134,8 +142,74 @@ export default function App() {
   }, [userUid, currentPage]);
 
   useEffect(() => {
+    supabase.from('players').select('data').eq('id', 'MASTER_STATE').single().then(({ data }) => {
+      if (data?.data?.ost) setGlobalOstState(data.data.ost);
+    });
+
+    const channel = supabase.channel('global_state_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'id=eq.MASTER_STATE' }, (payload) => {
+         if ((payload.new as any)?.data?.ost) setGlobalOstState((payload.new as any).data.ost);
+      }).subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  useEffect(() => {
+    if (globalOstState?.ostId && globalOstState.ostId !== loadedOstData?.id) {
+       supabase.from('players').select('data').eq('id', globalOstState.ostId).single().then(({ data }) => {
+           if (data?.data?.base64) {
+               setLoadedOstData({ id: globalOstState.ostId, base64: data.data.base64, name: data.data.name });
+           }
+       });
+    }
+  }, [globalOstState?.ostId]);
+
+  useEffect(() => {
+    if (!audioRef.current || !loadedOstData) return;
+    
+    if (audioRef.current.src !== loadedOstData.base64) {
+       audioRef.current.src = loadedOstData.base64;
+    }
+
+    const targetVolume = globalOstState?.isPlaying ? (globalOstState.volume ?? 1) : 0;
+    
+    if (globalOstState?.isPlaying && audioRef.current.paused) {
+       audioRef.current.play().catch(e => console.warn('Auto-play blocked:', e));
+    }
+
+    const fadeInterval = setInterval(() => {
+       if (!audioRef.current) return;
+       const current = audioRef.current.volume;
+       const diff = targetVolume - current;
+       if (Math.abs(diff) < 0.05) {
+           audioRef.current.volume = Math.max(0, Math.min(1, targetVolume));
+           if (targetVolume === 0 && !globalOstState?.isPlaying && !audioRef.current.paused) {
+               audioRef.current.pause();
+           }
+           clearInterval(fadeInterval);
+       } else {
+           audioRef.current.volume = Math.max(0, Math.min(1, current + (diff > 0 ? 0.05 : -0.05)));
+       }
+    }, 100);
+
+    return () => clearInterval(fadeInterval);
+  }, [globalOstState, loadedOstData]);
+
+  const fetchOsts = () => {
+     supabase.from('players').select('id').like('id', 'OST_FILE_%').then(({ data }) => {
+         if (data) setOstList(data);
+     });
+  };
+
+  useEffect(() => {
+     if (currentPage === 'mestre' && mestreTab === 'ost') {
+         fetchOsts();
+     }
+  }, [currentPage, mestreTab]);
+
+  useEffect(() => {
     if (currentPage === 'mestre' && userUid) {
-      supabase.from('players').select('*').then(({ data, error }) => {
+      supabase.from('players').select('id, data').not('id', 'like', 'OST_FILE_%').not('id', 'eq', 'MASTER_STATE').then(({ data, error }) => {
          if (error) console.error('Error fetching players:', error.message);
          else if (data) setPlayers(data.map(d => ({ id: d.id, ...(d.data || {}) })));
       });
@@ -147,8 +221,11 @@ export default function App() {
             if (payload.eventType === 'DELETE') {
               return existing.filter(p => p.id !== payload.old.id);
             }
-            const formatted = { id: payload.new.id, ...(payload.new.data || {}) };
-            const index = existing.findIndex(p => p.id === payload.new.id);
+            const newRecord = payload.new as any;
+            if (newRecord.id.startsWith('OST_FILE_') || newRecord.id === 'MASTER_STATE') return existing;
+            
+            const formatted = { id: newRecord.id, ...(newRecord.data || {}) };
+            const index = existing.findIndex(p => p.id === newRecord.id);
             if (index >= 0) existing[index] = formatted;
             else existing.push(formatted);
             return existing;
@@ -462,6 +539,7 @@ export default function App() {
 
   return (
     <div id="app">
+      <audio ref={audioRef} loop preload="auto" />
       {menuOpen && (
         <div className="fixed inset-0 bg-black/80 z-50 flex">
           <div className="w-64 bg-[#0a0a0a] border-r border-[#222] h-full p-4 flex flex-col gap-4">
@@ -506,15 +584,15 @@ export default function App() {
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 w-full h-14 bg-[#0a0a0a] border-t border-[#222] flex flex-row items-center z-[100] shadow-[0_-5px_20px_rgba(0,0,0,0.8)]">
-        <button onClick={() => setCurrentPage('ficha')} className={`flex flex-col items-center justify-center flex-1 h-full ${currentPage === 'ficha' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
+      <div className="fixed bottom-0 left-0 w-full h-14 bg-[#0a0a0a] border-t border-[#222] flex flex-row items-center z-[100] shadow-[0_-5px_20px_rgba(0,0,0,0.8)] overflow-x-auto overflow-y-hidden no-scrollbar">
+        <button onClick={() => setCurrentPage('ficha')} className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full ${currentPage === 'ficha' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
            <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Ficha</span>
         </button>
-        <div className="w-[1px] h-8 bg-[#222]"></div>
-        <button onClick={() => setCurrentPage('conexao')} className={`flex flex-col items-center justify-center flex-1 h-full ${currentPage === 'conexao' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
+        <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
+        <button onClick={() => setCurrentPage('conexao')} className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full ${currentPage === 'conexao' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
            <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Conexão</span>
         </button>
-        <div className="w-[1px] h-8 bg-[#222]"></div>
+        <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
         <button onClick={() => {
                 window.scrollTo(0, 0);
                 if (!isMestreAuth) {
@@ -528,7 +606,7 @@ export default function App() {
                 } else {
                   setCurrentPage('mestre'); 
                 }
-        }} className={`flex flex-col items-center justify-center flex-1 h-full ${currentPage === 'mestre' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
+        }} className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full ${currentPage === 'mestre' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
            <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Mestre</span>
         </button>
       </div>
@@ -764,13 +842,48 @@ export default function App() {
             <div className="flex flex-col items-center justify-center text-center mb-6">
                <ShieldAlert size={48} className="text-blood-red opacity-50 mb-2" />
                <h2 className="text-2xl font-bold text-blood-red uppercase tracking-widest mb-1">Painel do Mestre</h2>
-               <p className="text-gray-500 text-xs max-w-sm">
-                  Exibindo todas as fichas ativas (atualização em tempo real). 
-               </p>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">
-              {players.map(p => (
+
+            <div className="flex gap-4 justify-center mb-8">
+              <button 
+                onClick={() => setMestreTab('fichas')} 
+                className={`px-4 py-2 border-b-2 font-bold uppercase tracking-wider text-sm transition-colors ${mestreTab === 'fichas' ? 'border-blood-red text-blood-red' : 'border-transparent text-gray-500 hover:text-white'}`}
+              >
+                Fichas
+              </button>
+              <button 
+                onClick={() => setMestreTab('ost')} 
+                className={`px-4 py-2 border-b-2 font-bold uppercase tracking-wider text-sm transition-colors ${mestreTab === 'ost' ? 'border-blood-red text-blood-red' : 'border-transparent text-gray-500 hover:text-white'}`}
+              >
+                Trilha Sonora (OST)
+              </button>
+            </div>
+
+            {mestreTab === 'fichas' ? (
+              <>
+                <div className="flex flex-col items-center justify-center text-center mb-6">
+                   <p className="text-gray-500 text-xs max-w-sm mb-4">
+                      Exibindo todas as fichas ativas (atualização em tempo real). 
+                   </p>
+                   <button 
+                     onClick={() => {
+                       const newInits: Record<string, number> = {};
+                       players.forEach(p => {
+                          const agl = p.variables?.['AGL'] || 0;
+                          const roll = Math.floor(Math.random() * 20) + 1;
+                          newInits[p.id] = roll + agl;
+                       });
+                       setInitiatives({ ...initiatives, ...newInits });
+                     }}
+                     className="flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#222] border border-[#333] hover:border-blood-red/50 text-gray-300 hover:text-white font-bold py-3 px-6 rounded uppercase tracking-wider text-xs transition-all shadow-[0_0_15px_rgba(0,0,0,0.5)]"
+                   >
+                     <Dices size={16} className="text-blood-red" />
+                     Gerar Iniciativas (1d20 + AGL)
+                   </button>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">
+              {[...players].sort((a, b) => (initiatives[b.id] ?? -1) - (initiatives[a.id] ?? -1)).map(p => (
                 <div key={p.id} className="bg-[#0a0a0a] border border-[#222] rounded p-4 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blood-red to-transparent opacity-50"></div>
                   <div className="flex justify-between items-start mb-2">
@@ -778,9 +891,17 @@ export default function App() {
                         <div className="text-blood-red font-bold text-lg uppercase tracking-wider">{p.name || 'Desconhecido'}</div>
                         <div className="text-green-500 font-mono text-[10px] uppercase">● Ficha Conectada</div>
                      </div>
-                     <button onClick={() => kickPlayer(p.id)} className="text-gray-500 hover:text-red-500 bg-black/50 border border-gray-800 hover:border-red-900/50 p-2 rounded transition-all" title="Desconectar Jogador">
-                        <Trash2 size={16} />
-                     </button>
+                     <div className="flex items-stretch gap-2 shrink-0">
+                       {initiatives[p.id] !== undefined && (
+                         <div className="bg-[#111] border border-[#333] text-blood-red px-2 py-1 flex flex-col items-center justify-center rounded min-w-[40px]" title="Iniciativa">
+                           <span className="text-[8px] uppercase text-gray-500 leading-none">Inic.</span>
+                           <span className="font-bold text-sm leading-none mt-1">{initiatives[p.id]}</span>
+                         </div>
+                       )}
+                       <button onClick={() => kickPlayer(p.id)} className="text-gray-500 hover:text-red-500 bg-black/50 border border-gray-800 hover:border-red-900/50 p-2 rounded transition-all flex items-center justify-center" title="Desconectar Jogador">
+                          <Trash2 size={16} />
+                       </button>
+                     </div>
                   </div>
                   
                   <div className="flex gap-4 mt-4 bg-[#111] border border-[#222] rounded-lg p-3">
@@ -830,6 +951,131 @@ export default function App() {
                 </div>
               )}
             </div>
+              </>
+            ) : (
+              <div className="max-w-2xl mx-auto flex flex-col gap-6">
+                 <div className="bg-[#0a0a0a] border border-[#222] rounded p-6 shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+                    <h3 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-4">Gerenciador de Músicas</h3>
+                    <p className="text-gray-400 text-xs mb-6">Importe arquivos .mp3 para sincronizar e reproduzir na ficha de todos os jogadores ativos. Limite o uso de arquivos muito grandes para evitar lentidão.</p>
+                    
+                    <div className="flex gap-4 items-center mb-6 border-b border-[#222] pb-6">
+                        <label className="flex-1 bg-black/50 border border-dashed border-[#555] hover:border-blood-red hover:bg-[#111] transition-all cursor-pointer rounded py-6 flex flex-col items-center justify-center gap-2">
+                           <span className="text-gray-400 text-sm font-bold uppercase tracking-wider text-center">Selecionar MP3</span>
+                           <span className="text-[#666] text-[10px]">Apenas .mp3 (Max 10MB)</span>
+                           <input 
+                             type="file" 
+                             accept=".mp3" 
+                             className="hidden" 
+                             onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                if (file.size > 10 * 1024 * 1024) {
+                                   alert('Arquivo muito grande, limite de 10MB.');
+                                   return;
+                                }
+                                const reader = new FileReader();
+                                reader.onload = async () => {
+                                    const base64 = reader.result;
+                                    const ostId = `OST_FILE_${Date.now()}_${encodeURIComponent(file.name)}`;
+                                    await supabase.from('players').upsert({ id: ostId, data: { base64, name: file.name }, updated_at: new Date().toISOString() });
+                                    fetchOsts();
+                                };
+                                reader.readAsDataURL(file);
+                             }} 
+                           />
+                        </label>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                       <h4 className="text-gray-500 uppercase tracking-widest text-[10px] mb-2">Selecione uma faixa e regule:</h4>
+                       <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-2 no-scrollbar">
+                           {ostList.length === 0 && (
+                              <div className="text-center text-[#555] italic text-xs py-4">Nenhuma música importada.</div>
+                           )}
+                           {ostList.map(ost => {
+                              const rawName = ost.id.split('_').slice(3).join('_');
+                              const ostName = decodeURIComponent(rawName);
+                              const isCurrent = globalOstState?.ostId === ost.id;
+
+                              return (
+                                 <div key={ost.id} className={`flex items-center justify-between p-3 border rounded transition-all ${isCurrent ? 'bg-[#1a0505] border-blood-red' : 'bg-[#111] border-[#333] hover:border-[#555]'}`}>
+                                    <div className="flex flex-col truncate pr-4">
+                                       <span className={`truncate text-sm font-bold ${isCurrent ? 'text-blood-red' : 'text-gray-300'}`}>{ostName || 'Desconhecida'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                       {isCurrent ? (
+                                         <button 
+                                           onClick={() => {
+                                              const newIsPlaying = !globalOstState?.isPlaying;
+                                              const stateData = { ...globalOstState, isPlaying: newIsPlaying };
+                                              supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData } });
+                                           }}
+                                           className={`px-4 py-2 uppercase font-bold text-[10px] rounded border transition-all ${globalOstState?.isPlaying ? 'bg-blood-red border-blood-red text-white' : 'bg-[#222] border-[#444] text-gray-300 hover:text-white'}`}
+                                         >
+                                            {globalOstState?.isPlaying ? 'Pausar (Fade Out)' : 'Tocar (Fade In)'}
+                                         </button>
+                                       ) : (
+                                         <button 
+                                           onClick={() => {
+                                              const stateData = { ostId: ost.id, name: ostName, isPlaying: true, volume: 1 };
+                                              supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData } });
+                                           }}
+                                           className="px-4 py-2 bg-[#222] border border-[#444] text-gray-300 hover:text-white hover:border-blood-red uppercase font-bold text-[10px] rounded transition-all"
+                                         >
+                                            Selecionar
+                                         </button>
+                                       )}
+                                       <button 
+                                          onClick={async () => {
+                                             if (confirm('Deletar essa música permanentemente?')) {
+                                                 await supabase.from('players').delete().eq('id', ost.id);
+                                                 if (isCurrent) await supabase.from('players').delete().eq('id', 'MASTER_STATE');
+                                                 fetchOsts();
+                                             }
+                                          }}
+                                          className="p-2 text-gray-500 hover:text-red-500 bg-[#222] rounded border border-[#444]"
+                                       >
+                                          <Trash2 size={16} />
+                                       </button>
+                                    </div>
+                                 </div>
+                              );
+                           })}
+                       </div>
+                    </div>
+
+                    {globalOstState?.ostId && (
+                       <div className="mt-8 p-4 bg-[#111] border border-blood-red/30 rounded">
+                          <div className="flex justify-between items-center mb-4">
+                             <div className="text-gray-400 text-xs uppercase tracking-widest">Faixa em Destaque</div>
+                             <div className="text-blood-red font-bold text-sm truncate max-w-[200px]">{globalOstState?.name}</div>
+                          </div>
+                          
+                          <div className="flex flex-col gap-2">
+                             <div className="flex justify-between text-gray-500 text-[10px] uppercase">
+                                <span>Volume Base (Fade To)</span>
+                                <span>{Math.round((globalOstState?.volume ?? 1) * 100)}%</span>
+                             </div>
+                             <input 
+                                type="range" 
+                                min="0" max="1" step="0.05" 
+                                value={globalOstState?.volume ?? 1} 
+                                onChange={(e) => {
+                                   const newVol = Number(e.target.value);
+                                   const stateData = { ...globalOstState, volume: newVol };
+                                   // optimistically update local state immediately to avoid lag
+                                   setGlobalOstState(stateData);
+                                   supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData } });
+                                }}
+                                className="w-full accent-blood-red"
+                             />
+                             <div className="text-[#555] text-[10px] mt-1 italic text-center">Os jogadores terão o áudio no munto sincronizado gradualmente (Fade).</div>
+                          </div>
+                       </div>
+                    )}
+                 </div>
+              </div>
+            )}
           </div>
         </>
       )}
