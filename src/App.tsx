@@ -153,8 +153,11 @@ export default function App() {
     });
 
     const channel = supabase.channel('global_state_updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'id=eq.MASTER_STATE' }, (payload) => {
-         if ((payload.new as any)?.data?.ost) setGlobalOstState((payload.new as any).data.ost);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
+         const newRecord = payload.new as any;
+         if (newRecord?.id === 'MASTER_STATE' && newRecord?.data?.ost) {
+             setGlobalOstState(newRecord.data.ost);
+         }
       }).subscribe();
 
     return () => { supabase.removeChannel(channel); };
