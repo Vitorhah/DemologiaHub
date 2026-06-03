@@ -1,0 +1,257 @@
+@import "tailwindcss";
+
+/* --- FONTES E VARIÁVEIS --- */
+@font-face {
+    font-family: 'Blur Light Regular';
+    src: local('Blur Light Regular'), local('Arial');
+}
+
+:root {
+    --bg-dark: #050505;
+    --blood-red: #d30000;
+    --blood-glow: rgba(211, 0, 0, 0.6);
+    --pe-blue: #00a8ff;
+    --pe-glow: rgba(0, 168, 255, 0.6);
+    --paper-bg: linear-gradient(180deg, #f0f0f0 0%, #dcdcdc 100%);
+    --tributo-bg: linear-gradient(180deg, #ff1a1a 0%, #b30000 100%);
+    --text-light: #ececec;
+    --text-dark: #111;
+    --font-main: 'Blur Light Regular', 'Courier New', Courier, monospace;
+}
+
+/* --- RESET E BASE --- */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-light);
+    font-family: var(--font-main);
+    overflow-x: hidden;
+    padding-bottom: 40px;
+}
+
+button, input, textarea {
+    font-family: var(--font-main);
+    outline: none;
+    border: none;
+}
+
+/* --- ANIMAÇÕES --- */
+@keyframes pulseGlow {
+    0% { filter: drop-shadow(0 0 5px var(--blood-red)); }
+    50% { filter: drop-shadow(0 0 15px var(--blood-red)); }
+    100% { filter: drop-shadow(0 0 5px var(--blood-red)); }
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px) rotate(-2deg); }
+    75% { transform: translateX(3px) rotate(2deg); }
+}
+
+/* --- HUD (STATUS PANEL) --- */
+.hud-container {
+    position: relative;
+    text-align: center;
+    padding: 20px 0;
+    background: radial-gradient(circle at top, rgba(255,0,0,0.1) 0%, transparent 60%);
+    border-bottom: 1px solid #222;
+}
+
+.eye-logo {
+    width: 180px;
+    height: auto;
+    margin: 0 auto 10px auto;
+    display: block;
+    animation: pulseGlow 4s infinite;
+}
+
+.status-numbers {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 28px;
+    font-weight: bold;
+    transform: rotate(-3deg);
+    margin-top: -30px;
+    text-shadow: 2px 2px 0px #000;
+}
+
+.pe-text { color: var(--pe-blue); text-shadow: 0 0 8px var(--pe-glow); margin-left: 40px;}
+.hp-text { color: var(--blood-red); text-shadow: 0 0 8px var(--blood-glow); margin-left: 70px; margin-top: -5px;}
+
+.status-bars {
+    padding: 10px 20px;
+}
+
+.bar-wrapper {
+    background: #111;
+    height: 12px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    border: 1px solid #333;
+    box-shadow: inset 0 0 5px #000;
+}
+
+.bar-fill {
+    height: 100%;
+    transition: width 0.3s ease-in-out;
+}
+
+.hp-fill { background: var(--blood-red); box-shadow: 0 0 10px var(--blood-red); }
+.pe-fill { background: var(--pe-blue); box-shadow: 0 0 10px var(--pe-blue); }
+
+.status-inputs {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 20px;
+    font-size: 12px;
+    color: #888;
+}
+.status-inputs input {
+    background: transparent;
+    color: white;
+    width: 40px;
+    text-align: center;
+    border-bottom: 1px solid #444;
+}
+
+/* --- SESSÕES COMUNS --- */
+.section {
+    padding: 20px;
+    border-bottom: 1px solid #1a1a1a;
+}
+.section-title {
+    color: #777;
+    font-size: 14px;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 5px;
+}
+
+/* --- VARIÁVEIS --- */
+.var-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px;
+}
+.var-box {
+    background: #111;
+    border: 1px solid #333;
+    padding: 10px;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+}
+.var-box input[type="text"] {
+    background: transparent; color: var(--blood-red); font-weight: bold; width: 100%; text-align: center; text-transform: uppercase;
+}
+.var-box input[type="number"] {
+    background: transparent; color: white; font-size: 20px; width: 100%; text-align: center; margin-top: 5px;
+}
+.btn-remove-var {
+    position: absolute; top: 2px; right: 2px; background: transparent; color: #555; font-size: 10px; cursor: pointer;
+}
+.btn-add {
+    background: #222; color: white; width: 100%; padding: 10px; border-radius: 4px; margin-top: 10px; font-weight: bold; cursor: pointer;
+}
+
+/* --- ROLAGEM DE DADOS --- */
+.dice-panel {
+    background: #0a0a0a;
+    padding: 15px;
+    border: 1px solid #222;
+    border-radius: 8px;
+}
+.dice-input-group {
+    display: flex; gap: 10px;
+}
+.dice-input {
+    flex: 1; padding: 12px; background: #111; color: #fff; border: 1px solid #333; border-radius: 4px; font-size: 16px;
+}
+.btn-roll {
+    background: var(--blood-red); color: white; padding: 12px 20px; border-radius: 4px; font-weight: bold; text-shadow: 1px 1px 2px #000; cursor: pointer;
+}
+.dice-history {
+    margin-top: 15px; max-height: 120px; overflow-y: auto; font-size: 13px; color: #aaa;
+}
+.log-entry {
+    border-bottom: 1px solid #1a1a1a; padding: 5px 0;
+}
+.log-result { color: white; font-weight: bold; font-size: 16px; color: var(--blood-red); }
+
+/* --- SKILLS & PAPEL RASGADO --- */
+.skill-list {
+    display: flex; flex-direction: column; gap: 15px;
+}
+
+.paper-bar {
+    background: var(--paper-bg);
+    color: var(--text-dark);
+    padding: 12px 15px;
+    position: relative;
+    cursor: pointer;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.5), inset 0 0 10px rgba(0,0,0,0.1);
+    clip-path: polygon(0% 2%, 5% 0%, 10% 3%, 15% 0%, 20% 2%, 25% 0%, 30% 3%, 35% 0%, 40% 2%, 45% 0%, 50% 3%, 55% 0%, 60% 2%, 65% 0%, 70% 3%, 75% 0%, 80% 2%, 85% 0%, 90% 3%, 95% 0%, 100% 2%, 100% 98%, 95% 100%, 90% 97%, 85% 100%, 80% 98%, 75% 100%, 70% 97%, 65% 100%, 60% 98%, 55% 100%, 50% 97%, 45% 100%, 40% 98%, 35% 100%, 30% 97%, 25% 100%, 20% 98%, 15% 100%, 10% 97%, 5% 100%, 0% 98%);
+    transition: transform 0.2s;
+}
+.paper-bar:active { transform: scale(0.98); }
+
+.skill-header {
+    display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 18px;
+    text-shadow: 0px 1px 1px rgba(255,255,255,0.8);
+}
+
+.skill-icon {
+    display: inline-flex; justify-content: center; align-items: center; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #555; margin-right: 10px; font-size: 14px; color: #555;
+}
+
+.skill-name-area { display: flex; align-items: center; }
+
+.skill-cost { font-size: 16px; color: #333; }
+
+.skill-details {
+    display: none; padding: 15px; background: #1a1a1a; border: 1px solid #333; border-top: none; border-radius: 0 0 8px 8px; margin-top: -10px; margin-bottom: 10px;
+}
+.skill-details.active { display: block; animation: fadeIn 0.3s ease; }
+
+.input-dark { background: #0a0a0a; color: white; border: 1px solid #333; padding: 8px; width: 100%; margin-bottom: 10px; border-radius: 4px; box-sizing: border-box;}
+
+.action-btns { display: flex; gap: 10px; margin-top: 10px;}
+.btn-action { flex: 1; background: #333; color: white; padding: 10px; border-radius: 4px; font-weight: bold; cursor: pointer;}
+.btn-action.test { background: #444; }
+.btn-action.damage { background: #600; }
+
+/* --- TRIBUTO --- */
+.tributo-bar {
+    background: var(--tributo-bg);
+    color: #000;
+    padding: 20px 15px;
+    font-size: 20px;
+    margin-top: 30px;
+    box-shadow: 0 5px 15px var(--blood-glow);
+    border: 1px solid #ff4d4d;
+}
+.tributo-header { font-size: 22px; font-weight: bold; border-bottom: 2px solid #500; padding-bottom: 5px; margin-bottom: 10px; text-shadow: none;}
+
+/* --- INVENTÁRIO --- */
+.inv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.inv-slot { background: #111; border: 1px solid #333; padding: 10px; color: white; width: 100%; border-radius: 4px; text-align: center; box-sizing: border-box;}
+.inv-slot:focus { border-color: var(--blood-red); background: #1a0000; }
+
+/* --- MENU --- */
+.menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn-menu { background: #222; color: #aaa; padding: 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;}
+.btn-menu:active { background: #444; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
