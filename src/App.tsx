@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Menu, X, Edit2, ShieldAlert } from 'lucide-react';
-import { auth, db } from './lib/firebase';
-import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+import { supabase } from './lib/supabase';
 
 const defaultState = {
     name: "Ocultista",
@@ -53,38 +51,74 @@ export default function App() {
     
     if (userUid) {
       const timeoutId = setTimeout(() => {
-        setDoc(doc(db, 'players', userUid), {
-          ...state,
-          updatedAt: new Date().toISOString()
-        }).catch(err => console.error("Error syncing to Firebase", err));
+        supabase.from('players').upsert({
+          id: userUid,
+          data: state,
+          updated_at: new Date().toISOString()
+        }).then(({ error }) => {
+          if (error) console.error("Error syncing to Supabase:", error.message);
+        });
       }, 1000);
       return () => clearTimeout(timeoutId);
     }
   }, [state, userUid]);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUserUid(user.uid);
+    const initAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUserUid(session.user.id);
+      } else {
+        const { data, error } = await supabase.auth.signInAnonymously();
+        if (error) {
+          console.warn("Supabase Anon Auth falhou. Usando UUID local.", error.message);
+          let localUid = localStorage.getItem('localUid');
+          if (!localUid) {
+            localUid = crypto.randomUUID();
+            localStorage.setItem('localUid', localUid);
+          }
+          setUserUid(localUid);
+        } else if (data?.user) {
+          setUserUid(data.user.id);
+        }
+      }
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUserUid(session.user.id);
       }
     });
 
-    signInAnonymously(auth).catch(error => {
-      console.warn("Erro no login anônimo do Firebase:", error);
-    });
-
-    return unsub;
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
     if (currentPage === 'mestre' && userUid) {
-      const unsub = onSnapshot(collection(db, 'players'), (snapshot) => {
-        const pList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setPlayers(pList);
-      }, (error) => {
-         console.error('Error fetching players:', error);
+      supabase.from('players').select('*').then(({ data, error }) => {
+         if (error) console.error('Error fetching players:', error.message);
+         else if (data) setPlayers(data.map(d => ({ id: d.id, ...(d.data || {}) })));
       });
-      return unsub;
+
+      const channel = supabase.channel('public:players')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
+          setPlayers(current => {
+            let existing = [...current];
+            if (payload.eventType === 'DELETE') {
+              return existing.filter(p => p.id !== payload.old.id);
+            }
+            const formatted = { id: payload.new.id, ...(payload.new.data || {}) };
+            const index = existing.findIndex(p => p.id === payload.new.id);
+            if (index >= 0) existing[index] = formatted;
+            else existing.push(formatted);
+            return existing;
+          });
+        })
+        .subscribe();
+
+      return () => { supabase.removeChannel(channel); };
     }
   }, [currentPage, userUid]);
 
