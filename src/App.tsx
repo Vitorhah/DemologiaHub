@@ -220,28 +220,34 @@ export default function App() {
     
     const audioEl = audioRef.current;
 
+    const attemptPlay = () => {
+       if (globalOstState?.isPlaying && audioEl.paused) {
+           const playPromise = audioEl.play() as Promise<void> | undefined;
+           if (playPromise !== undefined && playPromise.catch) {
+               playPromise.then(() => {
+                   setRequiresInteraction(false);
+               }).catch(e => {
+                   console.warn('Auto-play error:', e.name, e.message);
+                   if (e.name !== 'AbortError') {
+                       setRequiresInteraction(true);
+                   }
+               });
+           }
+       }
+    };
+
     // Prevent re-assigning the same base64 to src which can interrupt playback
     if (audioEl.dataset.ostId !== loadedOstData.id) {
        audioEl.src = loadedOstData.base64;
        audioEl.dataset.ostId = loadedOstData.id;
        audioEl.volume = 0;
        audioEl.load();
+    } else {
+       attemptPlay();
     }
 
     const targetVolume = globalOstState?.isPlaying ? (globalOstState.volume ?? 1) : 0;
     
-    if (globalOstState?.isPlaying && audioEl.paused) {
-       const playPromise = audioEl.play();
-       if (playPromise !== undefined) {
-           playPromise.then(() => {
-               setRequiresInteraction(false);
-           }).catch(e => {
-               console.warn('Auto-play blocked:', e);
-               setRequiresInteraction(true);
-           });
-       }
-    }
-
     const fadeInterval = setInterval(() => {
        if (!audioEl) return;
        const current = audioEl.volume;
@@ -619,7 +625,33 @@ export default function App() {
 
   return (
     <div id="app">
-      <audio ref={audioRef} loop preload="auto" />
+      <audio 
+         ref={audioRef} 
+         loop 
+         preload="auto" 
+         onCanPlay={() => {
+            if (globalOstState?.isPlaying && audioRef.current?.paused) {
+                const p = audioRef.current.play() as Promise<void> | undefined;
+                if (p && p.catch) {
+                    p.catch(e => {
+                       if (e.name !== 'AbortError') setRequiresInteraction(true);
+                    });
+                }
+            }
+         }}
+      />
+      
+      {globalOstState?.ostId && currentPage !== 'mestre' && (
+         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[45] pointer-events-none flex flex-col items-center gap-1">
+             <div className="bg-black/80 border border-blood-red/40 px-3 py-1 rounded-full flex items-center gap-2 shadow-[0_0_10px_rgba(255,0,0,0.2)] backdrop-blur-sm">
+                <span className={`w-2 h-2 rounded-full ${globalOstState.isPlaying ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                <span className="text-[9px] text-gray-300 uppercase tracking-widest truncate max-w-[150px]">
+                   {isOstLoading ? 'BAIXANDO TRILHA...' : (globalOstState.name || 'TRILHA SONORA')}
+                </span>
+             </div>
+         </div>
+      )}
+
       {requiresInteraction && (
         <div className="fixed inset-0 bg-black/90 z-[300] flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm">
            <ShieldAlert size={64} className="text-blood-red mb-4 animate-pulse" />
