@@ -506,14 +506,35 @@ export default function App() {
         </div>
       )}
 
+      <div className="fixed bottom-0 left-0 w-full h-14 bg-[#0a0a0a] border-t border-[#222] flex flex-row items-center z-[100] shadow-[0_-5px_20px_rgba(0,0,0,0.8)]">
+        <button onClick={() => setCurrentPage('ficha')} className={`flex flex-col items-center justify-center flex-1 h-full ${currentPage === 'ficha' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
+           <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Ficha</span>
+        </button>
+        <div className="w-[1px] h-8 bg-[#222]"></div>
+        <button onClick={() => setCurrentPage('conexao')} className={`flex flex-col items-center justify-center flex-1 h-full ${currentPage === 'conexao' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
+           <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Conexão</span>
+        </button>
+        <div className="w-[1px] h-8 bg-[#222]"></div>
+        <button onClick={() => {
+                window.scrollTo(0, 0);
+                if (!isMestreAuth) {
+                  const pass = prompt("Digite a senha do mestre:");
+                  if (pass === "%mestre%") {
+                    setIsMestreAuth(true);
+                    setCurrentPage('mestre'); 
+                  } else {
+                    alert("Senha incorreta");
+                  }
+                } else {
+                  setCurrentPage('mestre'); 
+                }
+        }} className={`flex flex-col items-center justify-center flex-1 h-full ${currentPage === 'mestre' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
+           <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Mestre</span>
+        </button>
+      </div>
+
       {currentPage === 'ficha' && (
         <>
-          <div className="fixed top-2 left-2 z-40">
-            <button onClick={() => setMenuOpen(true)} className="text-gray-500 hover:text-white bg-black/30 backdrop-blur p-2 rounded-full cursor-pointer hover:bg-black/60 transition-all">
-              <Menu size={24} />
-            </button>
-          </div>
-          
           <div className="hud-container relative">
             <img className="eye-logo" src="https://i.ibb.co/xq2KhP1v/3-Sem-T-tulo.png" alt="Símbolo Demologia" />
             <div className="status-numbers relative">
@@ -705,12 +726,7 @@ export default function App() {
 
       {currentPage === 'conexao' && (
         <>
-          <div className="fixed top-2 left-2 z-40">
-            <button onClick={() => setMenuOpen(true)} className="text-gray-500 hover:text-white bg-black/30 backdrop-blur p-2 rounded-full cursor-pointer hover:bg-black/60 transition-all">
-              <Menu size={24} />
-            </button>
-          </div>
-          <div className="p-4 pt-16 min-h-screen text-center flex flex-col items-center justify-center max-w-lg mx-auto">
+          <div className="p-4 pt-8 min-h-screen text-center flex flex-col items-center justify-center max-w-lg mx-auto pb-20">
              <h2 className="text-3xl font-bold text-blood-red uppercase tracking-widest mb-4">Conexão da Ficha</h2>
              <p className="text-gray-400 text-sm mb-8">
                Ativar a conexão compartilha sua ficha em tempo real com o Mestre. Se você for desconectado, reative-a aqui.
@@ -744,12 +760,7 @@ export default function App() {
 
       {currentPage === 'mestre' && (
         <>
-          <div className="fixed top-2 left-2 z-40">
-            <button onClick={() => setMenuOpen(true)} className="text-gray-500 hover:text-white bg-black/30 backdrop-blur p-2 rounded-full cursor-pointer hover:bg-black/60 transition-all">
-              <Menu size={24} />
-            </button>
-          </div>
-          <div className="p-4 pt-16 min-h-screen">
+          <div className="p-4 pt-8 min-h-screen pb-20">
             <div className="flex flex-col items-center justify-center text-center mb-6">
                <ShieldAlert size={48} className="text-blood-red opacity-50 mb-2" />
                <h2 className="text-2xl font-bold text-blood-red uppercase tracking-widest mb-1">Painel do Mestre</h2>

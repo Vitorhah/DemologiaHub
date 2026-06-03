@@ -32,7 +32,7 @@ body {
     color: var(--text-light);
     font-family: var(--font-main);
     overflow-x: hidden;
-    padding-bottom: 40px;
+    padding-bottom: 70px;
 }
 
 button, input, textarea {
