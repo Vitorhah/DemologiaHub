@@ -53,6 +53,12 @@ export default function App() {
   const [globalOstState, setGlobalOstState] = useState<any>(null);
   const [loadedOstData, setLoadedOstData] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState(false);
+  const [requiresInteraction, setRequiresInteraction] = useState(false);
+  const [isUploadingOst, setIsUploadingOst] = useState(false);
+  const [isOstLoading, setIsOstLoading] = useState(false);
 
   const [isOnline, setIsOnline] = useState(() => {
 
@@ -156,39 +162,58 @@ export default function App() {
 
   useEffect(() => {
     if (globalOstState?.ostId && globalOstState.ostId !== loadedOstData?.id) {
+       setIsOstLoading(true);
        supabase.from('players').select('data').eq('id', globalOstState.ostId).single().then(({ data }) => {
            if (data?.data?.base64) {
                setLoadedOstData({ id: globalOstState.ostId, base64: data.data.base64, name: data.data.name });
            }
+           setIsOstLoading(false);
+       }).catch((e) => {
+           console.error("Failed to load OST:", e);
+           setIsOstLoading(false);
        });
     }
-  }, [globalOstState?.ostId]);
+  }, [globalOstState?.ostId, loadedOstData?.id]);
 
   useEffect(() => {
     if (!audioRef.current || !loadedOstData) return;
     
-    if (audioRef.current.src !== loadedOstData.base64) {
-       audioRef.current.src = loadedOstData.base64;
+    const audioEl = audioRef.current;
+
+    // Prevent re-assigning the same base64 to src which can interrupt playback
+    if (audioEl.dataset.ostId !== loadedOstData.id) {
+       audioEl.src = loadedOstData.base64;
+       audioEl.dataset.ostId = loadedOstData.id;
+       audioEl.volume = 0;
+       audioEl.load();
     }
 
     const targetVolume = globalOstState?.isPlaying ? (globalOstState.volume ?? 1) : 0;
     
-    if (globalOstState?.isPlaying && audioRef.current.paused) {
-       audioRef.current.play().catch(e => console.warn('Auto-play blocked:', e));
+    if (globalOstState?.isPlaying && audioEl.paused) {
+       const playPromise = audioEl.play();
+       if (playPromise !== undefined) {
+           playPromise.then(() => {
+               setRequiresInteraction(false);
+           }).catch(e => {
+               console.warn('Auto-play blocked:', e);
+               setRequiresInteraction(true);
+           });
+       }
     }
 
     const fadeInterval = setInterval(() => {
-       if (!audioRef.current) return;
-       const current = audioRef.current.volume;
+       if (!audioEl) return;
+       const current = audioEl.volume;
        const diff = targetVolume - current;
        if (Math.abs(diff) < 0.05) {
-           audioRef.current.volume = Math.max(0, Math.min(1, targetVolume));
-           if (targetVolume === 0 && !globalOstState?.isPlaying && !audioRef.current.paused) {
-               audioRef.current.pause();
+           audioEl.volume = Math.max(0, Math.min(1, targetVolume));
+           if (targetVolume === 0 && !globalOstState?.isPlaying && !audioEl.paused) {
+               audioEl.pause();
            }
            clearInterval(fadeInterval);
        } else {
-           audioRef.current.volume = Math.max(0, Math.min(1, current + (diff > 0 ? 0.05 : -0.05)));
+           audioEl.volume = Math.max(0, Math.min(1, current + (diff > 0 ? 0.05 : -0.05)));
        }
     }, 100);
 
@@ -222,8 +247,9 @@ export default function App() {
               return existing.filter(p => p.id !== payload.old.id);
             }
             const newRecord = payload.new as any;
-            if (newRecord.id.startsWith('OST_FILE_') || newRecord.id === 'MASTER_STATE') return existing;
+            if (newRecord?.id?.startsWith('OST_FILE_') || newRecord?.id === 'MASTER_STATE') return existing;
             
+            if (!newRecord?.id) return existing;
             const formatted = { id: newRecord.id, ...(newRecord.data || {}) };
             const index = existing.findIndex(p => p.id === newRecord.id);
             if (index >= 0) existing[index] = formatted;
@@ -540,6 +566,68 @@ export default function App() {
   return (
     <div id="app">
       <audio ref={audioRef} loop preload="auto" />
+      {requiresInteraction && (
+        <div className="fixed inset-0 bg-black/90 z-[300] flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm">
+           <ShieldAlert size={64} className="text-blood-red mb-4 animate-pulse" />
+           <h2 className="text-2xl font-bold text-white uppercase tracking-widest mb-2">Conexão de Áudio Pendente</h2>
+           <p className="text-gray-400 text-sm mb-8 max-w-sm">O Mestre iniciou a trilha sonora, mas o navegador requer que você interaja com a página para liberar o som.</p>
+           <button 
+             onClick={() => {
+                setRequiresInteraction(false);
+                audioRef.current?.play().catch(() => setRequiresInteraction(true));
+             }}
+             className="bg-blood-red hover:bg-red-800 text-white font-bold py-4 px-8 rounded uppercase tracking-wider transition-all shadow-[0_0_20px_rgba(211,0,0,0.5)] cursor-pointer"
+           >
+              Permitir Áudio
+           </button>
+        </div>
+      )}
+      
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/90 z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+           <div className="bg-[#0a0a0a] border border-[#222] p-8 rounded shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-sm w-full relative">
+              <button onClick={() => { setShowPasswordModal(false); setPasswordInput(''); setPasswordError(false); }} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20} /></button>
+              <h2 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-2">Acesso Restrito</h2>
+              <p className="text-gray-500 text-xs mb-6 uppercase tracking-wider">Digite a senha do Mestre (Senha: mestre)</p>
+              
+              <input 
+                type="password" 
+                autoFocus
+                className={`w-full bg-[#111] text-white border ${passwordError ? 'border-red-500 text-red-500' : 'border-[#333]'} p-3 rounded outline-none mb-4 focus:border-blood-red transition-colors font-mono text-center tracking-widest`}
+                value={passwordInput}
+                onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(false); }}
+                onKeyDown={(e) => {
+                   if (e.key === 'Enter') {
+                       if (passwordInput === '%mestre%' || passwordInput.toLowerCase() === 'mestre') {
+                           setIsMestreAuth(true);
+                           setShowPasswordModal(false);
+                           setCurrentPage('mestre');
+                           setPasswordInput('');
+                       } else {
+                           setPasswordError(true);
+                       }
+                   }
+                }}
+              />
+              {passwordError && <p className="text-red-500 text-[10px] text-center mb-4 uppercase font-bold tracking-wider">Senha Incorreta</p>}
+              <button 
+                onClick={() => {
+                   if (passwordInput === '%mestre%' || passwordInput.toLowerCase() === 'mestre') {
+                       setIsMestreAuth(true);
+                       setShowPasswordModal(false);
+                       setCurrentPage('mestre');
+                       setPasswordInput('');
+                   } else {
+                       setPasswordError(true);
+                   }
+                }}
+                className="w-full bg-blood-red hover:bg-red-800 text-white font-bold py-3 rounded uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                 Desbloquear
+              </button>
+           </div>
+        </div>
+      )}
       {menuOpen && (
         <div className="fixed inset-0 bg-black/80 z-50 flex">
           <div className="w-64 bg-[#0a0a0a] border-r border-[#222] h-full p-4 flex flex-col gap-4">
@@ -562,14 +650,8 @@ export default function App() {
             <button 
               onClick={() => { 
                 if (!isMestreAuth) {
-                  const pass = prompt("Digite a senha do mestre:");
-                  if (pass === "%mestre%") {
-                    setIsMestreAuth(true);
-                    setCurrentPage('mestre'); 
-                    setMenuOpen(false);
-                  } else {
-                    alert("Senha incorreta");
-                  }
+                   setShowPasswordModal(true);
+                   setMenuOpen(false);
                 } else {
                   setCurrentPage('mestre'); 
                   setMenuOpen(false); 
@@ -596,13 +678,7 @@ export default function App() {
         <button onClick={() => {
                 window.scrollTo(0, 0);
                 if (!isMestreAuth) {
-                  const pass = prompt("Digite a senha do mestre:");
-                  if (pass === "%mestre%") {
-                    setIsMestreAuth(true);
-                    setCurrentPage('mestre'); 
-                  } else {
-                    alert("Senha incorreta");
-                  }
+                   setShowPasswordModal(true);
                 } else {
                   setCurrentPage('mestre'); 
                 }
@@ -959,26 +1035,29 @@ export default function App() {
                     <p className="text-gray-400 text-xs mb-6">Importe arquivos .mp3 para sincronizar e reproduzir na ficha de todos os jogadores ativos. Limite o uso de arquivos muito grandes para evitar lentidão.</p>
                     
                     <div className="flex gap-4 items-center mb-6 border-b border-[#222] pb-6">
-                        <label className="flex-1 bg-black/50 border border-dashed border-[#555] hover:border-blood-red hover:bg-[#111] transition-all cursor-pointer rounded py-6 flex flex-col items-center justify-center gap-2">
-                           <span className="text-gray-400 text-sm font-bold uppercase tracking-wider text-center">Selecionar MP3</span>
-                           <span className="text-[#666] text-[10px]">Apenas .mp3 (Max 10MB)</span>
+                        <label className={`flex-1 border border-dashed hover:border-blood-red transition-all cursor-pointer rounded py-6 flex flex-col items-center justify-center gap-2 ${isUploadingOst ? 'bg-[#111] border-blood-red opacity-50' : 'bg-black/50 border-[#555] hover:bg-[#111]'}`}>
+                           <span className="text-gray-400 text-sm font-bold uppercase tracking-wider text-center">{isUploadingOst ? 'Importando...' : 'Selecionar MP3'}</span>
+                           <span className="text-[#666] text-[10px]">Apenas .mp3 (Max 2MB)</span>
                            <input 
                              type="file" 
                              accept=".mp3" 
                              className="hidden" 
+                             disabled={isUploadingOst}
                              onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
-                                if (file.size > 10 * 1024 * 1024) {
-                                   alert('Arquivo muito grande, limite de 10MB.');
+                                if (file.size > 2 * 1024 * 1024) {
+                                   alert('Arquivo muito grande, limite de 2MB. Comprima o MP3.');
                                    return;
                                 }
+                                setIsUploadingOst(true);
                                 const reader = new FileReader();
                                 reader.onload = async () => {
                                     const base64 = reader.result;
                                     const ostId = `OST_FILE_${Date.now()}_${encodeURIComponent(file.name)}`;
                                     await supabase.from('players').upsert({ id: ostId, data: { base64, name: file.name }, updated_at: new Date().toISOString() });
                                     fetchOsts();
+                                    setIsUploadingOst(false);
                                 };
                                 reader.readAsDataURL(file);
                              }} 
@@ -998,29 +1077,31 @@ export default function App() {
                               const isCurrent = globalOstState?.ostId === ost.id;
 
                               return (
-                                 <div key={ost.id} className={`flex items-center justify-between p-3 border rounded transition-all ${isCurrent ? 'bg-[#1a0505] border-blood-red' : 'bg-[#111] border-[#333] hover:border-[#555]'}`}>
-                                    <div className="flex flex-col truncate pr-4">
+                                 <div key={ost.id} className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded transition-all gap-4 ${isCurrent ? 'bg-[#1a0505] border-blood-red' : 'bg-[#111] border-[#333] hover:border-[#555]'}`}>
+                                    <div className="flex flex-col w-full sm:w-auto overflow-hidden">
                                        <span className={`truncate text-sm font-bold ${isCurrent ? 'text-blood-red' : 'text-gray-300'}`}>{ostName || 'Desconhecida'}</span>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
                                        {isCurrent ? (
                                          <button 
                                            onClick={() => {
                                               const newIsPlaying = !globalOstState?.isPlaying;
                                               const stateData = { ...globalOstState, isPlaying: newIsPlaying };
+                                              setGlobalOstState(stateData);
                                               supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData } });
                                            }}
-                                           className={`px-4 py-2 uppercase font-bold text-[10px] rounded border transition-all ${globalOstState?.isPlaying ? 'bg-blood-red border-blood-red text-white' : 'bg-[#222] border-[#444] text-gray-300 hover:text-white'}`}
+                                           className={`flex-1 sm:flex-none px-4 py-3 sm:py-2 uppercase font-bold text-[10px] rounded border transition-all ${globalOstState?.isPlaying ? 'bg-blood-red border-blood-red text-white' : 'bg-[#222] border-[#444] text-gray-300 hover:text-white'}`}
                                          >
                                             {globalOstState?.isPlaying ? 'Pausar (Fade Out)' : 'Tocar (Fade In)'}
                                          </button>
                                        ) : (
                                          <button 
                                            onClick={() => {
-                                              const stateData = { ostId: ost.id, name: ostName, isPlaying: true, volume: 1 };
+                                              const stateData = { ostId: ost.id, name: ostName, isPlaying: false, volume: 1 };
+                                              setGlobalOstState(stateData);
                                               supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData } });
                                            }}
-                                           className="px-4 py-2 bg-[#222] border border-[#444] text-gray-300 hover:text-white hover:border-blood-red uppercase font-bold text-[10px] rounded transition-all"
+                                           className="flex-1 sm:flex-none px-4 py-3 sm:py-2 bg-[#222] border border-[#444] text-gray-300 hover:text-white hover:border-blood-red uppercase font-bold text-[10px] rounded transition-all"
                                          >
                                             Selecionar
                                          </button>
@@ -1033,7 +1114,7 @@ export default function App() {
                                                  fetchOsts();
                                              }
                                           }}
-                                          className="p-2 text-gray-500 hover:text-red-500 bg-[#222] rounded border border-[#444]"
+                                          className="p-3 sm:p-2 text-gray-500 hover:text-red-500 bg-[#222] rounded border border-[#444]"
                                        >
                                           <Trash2 size={16} />
                                        </button>
