@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, X, Edit2, ShieldAlert } from 'lucide-react';
+import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 const defaultState = {
@@ -45,6 +45,7 @@ export default function App() {
   const [skillModalTested, setSkillModalTested] = useState(false);
   const [userUid, setUserUid] = useState<string | null>(null);
   const [players, setPlayers] = useState<any[]>([]);
+  const [isMestreAuth, setIsMestreAuth] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('rpgSheetState', JSON.stringify(state));
@@ -94,6 +95,33 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!userUid) return;
+    const channel = supabase.channel(`player_changes_${userUid}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'players', filter: `id=eq.${userUid}` }, (payload) => {
+         if (payload.new && payload.new.data) {
+             setState((prev: any) => {
+                 const newHp = payload.new.data.hp;
+                 const newPe = payload.new.data.pe;
+                 if (prev.hp.current !== newHp.current || prev.pe.current !== newPe.current) {
+                     return { ...prev, hp: newHp, pe: newPe };
+                 }
+                 return prev;
+             });
+         }
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'players', filter: `id=eq.${userUid}` }, () => {
+         if (currentPage !== 'mestre') {
+             localStorage.removeItem('rpgSheetState');
+             localStorage.removeItem('localUid');
+             window.location.reload();
+         }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [userUid, currentPage]);
 
   useEffect(() => {
     if (currentPage === 'mestre' && userUid) {
@@ -404,6 +432,20 @@ export default function App() {
     input.click();
   };
 
+  const kickPlayer = async (id: string) => {
+    if (confirm("Tem certeza que deseja expulsar esse jogador?")) {
+      await supabase.from('players').delete().eq('id', id);
+    }
+  };
+
+  const editPlayerStat = async (p: any, stat: 'hp' | 'pe', amount: number) => {
+    const newData = { ...p };
+    newData[stat].current = Math.max(0, Math.min(newData[stat].max, newData[stat].current + amount));
+    const dataToSave = { ...newData };
+    delete dataToSave.id;
+    await supabase.from('players').update({ data: dataToSave }).eq('id', p.id);
+  };
+
   const hpPercent = Math.max(0, Math.min(100, (state.hp.current / state.hp.max) * 100)) || 0;
   const pePercent = Math.max(0, Math.min(100, (state.pe.current / state.pe.max) * 100)) || 0;
   const icons = ['X', 'O', '∆', '□'];
@@ -424,7 +466,21 @@ export default function App() {
               Ficha
             </button>
             <button 
-              onClick={() => { setCurrentPage('mestre'); setMenuOpen(false); }}
+              onClick={() => { 
+                if (!isMestreAuth) {
+                  const pass = prompt("Digite a senha do mestre:");
+                  if (pass === "%mestre%") {
+                    setIsMestreAuth(true);
+                    setCurrentPage('mestre'); 
+                    setMenuOpen(false);
+                  } else {
+                    alert("Senha incorreta");
+                  }
+                } else {
+                  setCurrentPage('mestre'); 
+                  setMenuOpen(false); 
+                }
+              }}
               className={`text-left text-lg font-bold uppercase p-2 rounded ${currentPage === 'mestre' ? 'bg-[#222] text-white' : 'text-gray-500 hover:bg-[#111]'}`}
             >
               Mestre
@@ -656,17 +712,28 @@ export default function App() {
                         <div className="text-blood-red font-bold uppercase tracking-wider">{p.name || 'Desconhecido'}</div>
                         <div className="text-gray-500 text-[10px] uppercase">Ficha Conectada</div>
                      </div>
+                     <button onClick={() => kickPlayer(p.id)} className="text-red-900 hover:text-red-500 bg-red-950/30 p-1 rounded transition-colors" title="Expulsar Jogador">
+                        <Trash2 size={16} />
+                     </button>
                   </div>
                   
                   <div className="flex gap-4 mt-4 bg-[#111] border border-[#222] rounded p-2">
                     <div className="flex-1 text-center">
                       <div className="text-[10px] text-gray-500 mb-1">HP</div>
-                      <div className="text-green-500 font-bold text-lg">{p.hp?.current} <span className="text-gray-600 text-xs">/ {p.hp?.max}</span></div>
+                      <div className="flex items-center justify-center gap-2">
+                        <button onClick={() => editPlayerStat(p, 'hp', -1)} className="text-gray-500 hover:text-white"><Minus size={14} /></button>
+                        <div className="text-green-500 font-bold text-lg min-w-[40px]">{p.hp?.current} <span className="text-gray-600 text-xs">/ {p.hp?.max}</span></div>
+                        <button onClick={() => editPlayerStat(p, 'hp', 1)} className="text-gray-500 hover:text-white"><Plus size={14} /></button>
+                      </div>
                     </div>
                     <div className="w-[1px] bg-[#222]"></div>
                     <div className="flex-1 text-center">
                       <div className="text-[10px] text-gray-500 mb-1">PE</div>
-                      <div className="text-blue-500 font-bold text-lg">{p.pe?.current} <span className="text-gray-600 text-xs">/ {p.pe?.max}</span></div>
+                      <div className="flex items-center justify-center gap-2">
+                        <button onClick={() => editPlayerStat(p, 'pe', -1)} className="text-gray-500 hover:text-white"><Minus size={14} /></button>
+                        <div className="text-blue-500 font-bold text-lg min-w-[40px]">{p.pe?.current} <span className="text-gray-600 text-xs">/ {p.pe?.max}</span></div>
+                        <button onClick={() => editPlayerStat(p, 'pe', 1)} className="text-gray-500 hover:text-white"><Plus size={14} /></button>
+                      </div>
                     </div>
                   </div>
 
