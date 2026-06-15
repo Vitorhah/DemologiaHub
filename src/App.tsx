@@ -21,6 +21,30 @@ const defaultState = {
     history: [] as string[]
 };
 
+const MestreStatInput = ({ value, className, onSave }: { value: number, className: string, onSave: (val: number) => void }) => {
+    const [localVal, setLocalVal] = useState(value);
+    const [isFocused, setIsFocused] = useState(false);
+
+    useEffect(() => {
+        if (!isFocused) setLocalVal(value);
+    }, [value, isFocused]);
+
+    return (
+        <input 
+            type="number"
+            value={isFocused ? localVal : value}
+            onFocus={() => setIsFocused(true)}
+            onChange={e => setLocalVal(parseInt(e.target.value) || 0)}
+            onBlur={() => {
+                setIsFocused(false);
+                onSave(localVal);
+            }}
+            onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+            className={className}
+        />
+    );
+};
+
 export default function App() {
   const [state, setState] = useState(() => {
     try {
@@ -242,9 +266,9 @@ export default function App() {
        audioEl.dataset.ostId = loadedOstData.id;
        audioEl.volume = 0;
        audioEl.load();
-    } else {
-       attemptPlay();
     }
+    
+    attemptPlay();
 
     const targetVolume = globalOstState?.isPlaying ? (globalOstState.volume ?? 1) : 0;
     
@@ -296,7 +320,7 @@ export default function App() {
       fetchPlayersList();
       const fallbackInterval = setInterval(fetchPlayersList, 3000);
 
-      const channel = supabase.channel('public:players')
+      const channel = supabase.channel('players_list_channel')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
           setPlayers(current => {
             let existing = [...current];
@@ -792,12 +816,12 @@ export default function App() {
         <div className="status-bars">
           <div className="bar-wrapper"><div className="bar-fill hp-fill" style={{ width: `${hpPercent}%` }}></div></div>
           <div className="status-inputs">
-            <span>HP: <input type="number" value={state.hp.current} onChange={e => updateStat('hp', 'current', parseInt(e.target.value))} /> / <input type="number" value={state.hp.max} onChange={e => updateStat('hp', 'max', parseInt(e.target.value))} /></span>
+            <span>HP: <MestreStatInput value={state.hp.current} className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none" onSave={val => updateStat('hp', 'current', val)} /> / <MestreStatInput value={state.hp.max} className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none" onSave={val => updateStat('hp', 'max', val)} /></span>
           </div>
           
           <div className="bar-wrapper" style={{ marginTop: '15px' }}><div className="bar-fill pe-fill" style={{ width: `${pePercent}%` }}></div></div>
           <div className="status-inputs">
-            <span>PE: <input type="number" value={state.pe.current} onChange={e => updateStat('pe', 'current', parseInt(e.target.value))} /> / <input type="number" value={state.pe.max} onChange={e => updateStat('pe', 'max', parseInt(e.target.value))} /></span>
+            <span>PE: <MestreStatInput value={state.pe.current} className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none" onSave={val => updateStat('pe', 'current', val)} /> / <MestreStatInput value={state.pe.max} className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none" onSave={val => updateStat('pe', 'max', val)} /></span>
           </div>
         </div>
       </div>
@@ -809,7 +833,7 @@ export default function App() {
             <div className="var-box" key={key}>
               <button className="btn-remove-var" onClick={() => removeVariable(key)}>X</button>
               <input type="text" defaultValue={key} onBlur={e => renameVariable(key, e.target.value)} onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()} />
-              <input type="number" value={value === 0 ? '' : (value as number)} onChange={e => updateVariable(key, parseInt(e.target.value))} />
+              <MestreStatInput value={value as number || 0} onSave={val => updateVariable(key, val)} className="w-12 bg-transparent text-center text-white font-mono outline-none border-b border-dashed border-[#555] focus:border-blood-red" />
             </div>
           ))}
         </div>
@@ -1070,13 +1094,12 @@ export default function App() {
                     <div className="flex-1 text-center">
                       <div className="text-[10px] text-gray-500 mb-1 uppercase tracking-widest">Saúde (HP)</div>
                       <div className="flex items-center justify-center gap-1">
-                        <input type="number" 
+                        <MestreStatInput 
                                value={p.hp?.current ?? 0}
-                               onChange={(e) => {
-                                 setPlayers(current => current.map(pl => pl.id === p.id ? { ...pl, hp: { ...pl.hp, current: parseInt(e.target.value) || 0 } } : pl));
+                               onSave={(val) => {
+                                 setPlayers(current => current.map(pl => pl.id === p.id ? { ...pl, hp: { ...pl.hp, current: val } } : pl));
+                                 editPlayerStatExact(p, 'hp', val);
                                }}
-                               onBlur={e => editPlayerStatExact(p, 'hp', parseInt(e.target.value) || 0)}
-                               onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
                                className="w-12 bg-transparent text-center outline-none border-b border-dashed border-[#333] focus:border-green-500 text-green-500 font-bold text-xl" />
                         <span className="text-gray-600 text-[10px] uppercase">/ {p.hp?.max}</span>
                       </div>
@@ -1085,13 +1108,12 @@ export default function App() {
                     <div className="flex-1 text-center">
                       <div className="text-[10px] text-gray-500 mb-1 uppercase tracking-widest">Esforço (PE)</div>
                       <div className="flex items-center justify-center gap-1">
-                        <input type="number" 
+                        <MestreStatInput 
                                value={p.pe?.current ?? 0}
-                               onChange={(e) => {
-                                 setPlayers(current => current.map(pl => pl.id === p.id ? { ...pl, pe: { ...pl.pe, current: parseInt(e.target.value) || 0 } } : pl));
+                               onSave={(val) => {
+                                 setPlayers(current => current.map(pl => pl.id === p.id ? { ...pl, pe: { ...pl.pe, current: val } } : pl));
+                                 editPlayerStatExact(p, 'pe', val);
                                }}
-                               onBlur={e => editPlayerStatExact(p, 'pe', parseInt(e.target.value) || 0)}
-                               onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
                                className="w-12 bg-transparent text-center outline-none border-b border-dashed border-[#333] focus:border-blue-500 text-blue-500 font-bold text-xl" />
                         <span className="text-gray-600 text-[10px] uppercase">/ {p.pe?.max}</span>
                       </div>
