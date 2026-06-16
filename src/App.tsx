@@ -22,7 +22,7 @@ const defaultState = {
 };
 
 const MestreStatInput = ({ value, className, onSave }: { value: number, className: string, onSave: (val: number) => void }) => {
-    const [localVal, setLocalVal] = useState(value);
+    const [localVal, setLocalVal] = useState<string | number>(value);
     const [isFocused, setIsFocused] = useState(false);
 
     useEffect(() => {
@@ -34,10 +34,10 @@ const MestreStatInput = ({ value, className, onSave }: { value: number, classNam
             type="number"
             value={isFocused ? localVal : value}
             onFocus={() => setIsFocused(true)}
-            onChange={e => setLocalVal(parseInt(e.target.value) || 0)}
+            onChange={e => setLocalVal(e.target.value)}
             onBlur={() => {
                 setIsFocused(false);
-                onSave(localVal);
+                onSave(parseInt(localVal as string) || 0);
             }}
             onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
             className={className}
@@ -93,41 +93,59 @@ export default function App() {
     localStorage.setItem('rpgIsOnline', isOnline.toString());
   }, [isOnline]);
 
+  const pendingUpdatesRef = useRef<boolean>(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     localStorage.setItem('rpgSheetState', JSON.stringify(state));
     
     if (userUid && isOnline && currentPage !== 'mestre') {
-      const timeoutId = setTimeout(() => {
+      pendingUpdatesRef.current = true;
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      
+      debounceTimerRef.current = setTimeout(() => {
         supabase.from('players').upsert({
           id: userUid,
           data: state,
           updated_at: new Date().toISOString()
         }).then(({ error }) => {
           if (error) console.error("Error syncing to Supabase:", error.message);
+          pendingUpdatesRef.current = false;
         });
       }, 1000);
-      return () => clearTimeout(timeoutId);
     }
   }, [state, userUid, isOnline, currentPage]);
 
   useEffect(() => {
     const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUserUid(session.user.id);
-      } else {
-        const { data, error } = await supabase.auth.signInAnonymously();
-        if (error) {
-          console.warn("Supabase Anon Auth falhou. Usando UUID local.", error.message);
-          let localUid = localStorage.getItem('localUid');
-          if (!localUid) {
-            localUid = crypto.randomUUID();
-            localStorage.setItem('localUid', localUid);
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        
+        if (session?.user) {
+          setUserUid(session.user.id);
+        } else {
+          const { data, error } = await supabase.auth.signInAnonymously();
+          if (error) {
+            console.warn("Supabase Anon Auth falhou. Usando UUID local.", error.message);
+            let localUid = localStorage.getItem('localUid');
+            if (!localUid) {
+              localUid = crypto.randomUUID();
+              localStorage.setItem('localUid', localUid);
+            }
+            setUserUid(localUid);
+          } else if (data?.user) {
+            setUserUid(data.user.id);
           }
-          setUserUid(localUid);
-        } else if (data?.user) {
-          setUserUid(data.user.id);
         }
+      } catch (err: any) {
+         console.warn("Supabase auth error (pode ser offline ou erro de rede):", err.message);
+         let localUid = localStorage.getItem('localUid');
+         if (!localUid) {
+           localUid = crypto.randomUUID();
+           localStorage.setItem('localUid', localUid);
+         }
+         setUserUid(localUid);
       }
     };
 
@@ -146,29 +164,34 @@ export default function App() {
     if (!userUid) return;
 
     const fetchOwnState = () => {
-       supabase.from('players').select('data').eq('id', userUid).single().then(({ data }) => {
-          if (data?.data) {
+       supabase.from('players').select('data').eq('id', userUid).single().then(({ data, error }) => {
+          if (error) {
+              console.warn('Error fetching own state:', error.message);
+              return;
+          }
+          if (data?.data && !pendingUpdatesRef.current) {
              setState((prev: any) => {
                  const newHp = data.data.hp;
                  const newPe = data.data.pe;
-                 if (prev.hp.current !== newHp.current || prev.pe.current !== newPe.current) {
+                 if (prev.hp.current !== newHp.current || prev.pe.current !== newPe.current || prev.hp.max !== newHp.max || prev.pe.max !== newPe.max) {
                      return { ...prev, hp: newHp, pe: newPe };
                  }
                  return prev;
              });
           }
-       });
+       }).catch(err => console.warn('Fetch own state failed:', err.message));
     };
 
-    const fallbackInterval = setInterval(fetchOwnState, 2000);
+    fetchOwnState();
+    const fallbackInterval = setInterval(fetchOwnState, 15000);
 
     const channel = supabase.channel(`player_changes_${userUid}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'players', filter: `id=eq.${userUid}` }, (payload) => {
-         if (payload.new && payload.new.data) {
+         if (payload.new && payload.new.data && !pendingUpdatesRef.current) {
              setState((prev: any) => {
                  const newHp = payload.new.data.hp;
                  const newPe = payload.new.data.pe;
-                 if (prev.hp.current !== newHp.current || prev.pe.current !== newPe.current) {
+                 if (prev.hp.current !== newHp.current || prev.pe.current !== newPe.current || prev.hp.max !== newHp.max || prev.pe.max !== newPe.max) {
                      return { ...prev, hp: newHp, pe: newPe };
                  }
                  return prev;
@@ -194,18 +217,22 @@ export default function App() {
 
   useEffect(() => {
     const fetchMasterState = () => {
-       supabase.from('players').select('data').eq('id', 'MASTER_STATE').single().then(({ data }) => {
+       supabase.from('players').select('data').eq('id', 'MASTER_STATE').single().then(({ data, error }) => {
+          if (error) {
+              console.warn('Error fetching master state:', error.message);
+              return;
+          }
           if (data?.data?.ost) {
              setGlobalOstState((prev: any) => {
                 if (JSON.stringify(prev) !== JSON.stringify(data.data.ost)) return data.data.ost;
                 return prev;
              });
           }
-       });
+       }).catch(err => console.warn('Fetch master state request failed:', err.message));
     };
 
     fetchMasterState();
-    const fallbackInterval = setInterval(fetchMasterState, 2000);
+    const fallbackInterval = setInterval(fetchMasterState, 15000);
 
     const channel = supabase.channel('global_state_updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
@@ -265,10 +292,17 @@ export default function App() {
        audioEl.src = loadedOstData.base64;
        audioEl.dataset.ostId = loadedOstData.id;
        audioEl.volume = 0;
+       
+       const handleCanPlay = () => {
+           attemptPlay();
+           audioEl.removeEventListener('canplay', handleCanPlay);
+       };
+       audioEl.addEventListener('canplay', handleCanPlay);
+       
        audioEl.load();
+    } else {
+       attemptPlay();
     }
-    
-    attemptPlay();
 
     const targetVolume = globalOstState?.isPlaying ? (globalOstState.volume ?? 1) : 0;
     
@@ -314,11 +348,11 @@ export default function App() {
                     return current;
                 });
             }
-         });
+         }).catch(err => console.warn('Fetch players list failed:', err.message));
       };
 
       fetchPlayersList();
-      const fallbackInterval = setInterval(fetchPlayersList, 3000);
+      const fallbackInterval = setInterval(fetchPlayersList, 15000);
 
       const channel = supabase.channel('players_list_channel')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
@@ -653,25 +687,23 @@ export default function App() {
          ref={audioRef} 
          loop 
          preload="auto" 
-         onCanPlay={() => {
-            if (globalOstState?.isPlaying && audioRef.current?.paused) {
-                const p = audioRef.current.play() as Promise<void> | undefined;
-                if (p && p.catch) {
-                    p.catch(e => {
-                       if (e.name !== 'AbortError') setRequiresInteraction(true);
-                    });
-                }
-            }
-         }}
       />
       
       {globalOstState?.ostId && currentPage !== 'mestre' && (
-         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[45] pointer-events-none flex flex-col items-center gap-1">
+         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[45] pointer-events-auto flex flex-col items-center gap-1">
              <div className="bg-black/80 border border-blood-red/40 px-3 py-1 rounded-full flex items-center gap-2 shadow-[0_0_10px_rgba(255,0,0,0.2)] backdrop-blur-sm">
                 <span className={`w-2 h-2 rounded-full ${globalOstState.isPlaying ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
                 <span className="text-[9px] text-gray-300 uppercase tracking-widest truncate max-w-[150px]">
                    {isOstLoading ? 'BAIXANDO TRILHA...' : (globalOstState.name || 'TRILHA SONORA')}
                 </span>
+                {globalOstState.isPlaying && audioRef.current?.paused && !requiresInteraction && (
+                   <button 
+                       className="ml-2 bg-blood-red text-white text-[8px] px-2 py-0.5 rounded cursor-pointer animate-pulse hover:bg-red-700 pointer-events-auto"
+                       onClick={(e) => { e.stopPropagation(); if (audioRef.current) audioRef.current.play().catch(console.error); }}
+                   >
+                       ATIVAR SOM
+                   </button>
+                )}
              </div>
          </div>
       )}
@@ -1191,17 +1223,27 @@ export default function App() {
                                     </div>
                                     <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
                                        {isCurrent ? (
-                                         <button 
-                                           onClick={() => {
-                                              const newIsPlaying = !globalOstState?.isPlaying;
-                                              const stateData = { ...globalOstState, isPlaying: newIsPlaying };
-                                              setGlobalOstState(stateData);
-                                              supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData } });
-                                           }}
-                                           className={`flex-1 sm:flex-none px-4 py-3 sm:py-2 uppercase font-bold text-[10px] rounded border transition-all ${globalOstState?.isPlaying ? 'bg-blood-red border-blood-red text-white' : 'bg-[#222] border-[#444] text-gray-300 hover:text-white'}`}
-                                         >
-                                            {globalOstState?.isPlaying ? 'Pausar (Fade Out)' : 'Tocar (Fade In)'}
-                                         </button>
+                                         <>
+                                            <button 
+                                              onClick={() => {
+                                                 const newIsPlaying = !globalOstState?.isPlaying;
+                                                 const stateData = { ...globalOstState, isPlaying: newIsPlaying };
+                                                 setGlobalOstState(stateData);
+                                                 supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData } });
+                                              }}
+                                              className={`flex-1 sm:flex-none px-4 py-3 sm:py-2 uppercase font-bold text-[10px] rounded border transition-all ${globalOstState?.isPlaying ? 'bg-blood-red border-blood-red text-white' : 'bg-[#222] border-[#444] text-gray-300 hover:text-white'}`}
+                                            >
+                                               {globalOstState?.isPlaying ? 'Pausar (Fade Out)' : 'Tocar (Fade In)'}
+                                            </button>
+                                            {globalOstState?.isPlaying && audioRef.current?.paused && !requiresInteraction && (
+                                                <button 
+                                                   onClick={() => { if (audioRef.current) audioRef.current.play().catch(console.error); }}
+                                                   className="ml-2 px-3 py-2 bg-yellow-600 text-white text-[10px] font-bold rounded animate-pulse"
+                                                >
+                                                    Som Travado? Clicar!
+                                                </button>
+                                            )}
+                                         </>
                                        ) : (
                                          <button 
                                            onClick={() => {
