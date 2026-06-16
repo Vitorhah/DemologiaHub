@@ -270,7 +270,10 @@ export default function App() {
            if (data?.data?.base64) {
                try {
                    const res = await fetch(data.data.base64);
-                   const blob = await res.blob();
+                   let blob = await res.blob();
+                   if (!blob.type || blob.type === 'application/octet-stream') {
+                       blob = new Blob([blob], { type: 'audio/mpeg' });
+                   }
                    const objectUrl = URL.createObjectURL(blob);
                    setLoadedOstData({ id: globalOstState.ostId, base64: objectUrl, name: data.data.name });
                } catch(err) {
@@ -326,18 +329,20 @@ export default function App() {
        }
     }, 2000);
     
+    let currentVol = audioEl.volume || 0;
     const fadeInterval = setInterval(() => {
        if (!audioEl) return;
-       const current = audioEl.volume;
-       const diff = targetVolume - current;
+       const diff = targetVolume - currentVol;
        if (Math.abs(diff) < 0.05) {
+           currentVol = targetVolume;
            audioEl.volume = Math.max(0, Math.min(1, targetVolume));
            if (targetVolume === 0 && !globalOstState?.isPlaying && !audioEl.paused) {
                audioEl.pause();
            }
            clearInterval(fadeInterval);
        } else {
-           audioEl.volume = Math.max(0, Math.min(1, current + (diff > 0 ? 0.05 : -0.05)));
+           currentVol += (diff > 0 ? 0.05 : -0.05);
+           audioEl.volume = Math.max(0, Math.min(1, currentVol));
        }
     }, 100);
 
@@ -1216,7 +1221,12 @@ export default function App() {
                                 setIsUploadingOst(true);
                                 const reader = new FileReader();
                                 reader.onload = async () => {
-                                    const base64 = reader.result;
+                                    let base64 = reader.result as string;
+                                    if (base64.startsWith('data:;base64,')) {
+                                        base64 = base64.replace('data:;base64,', 'data:audio/mpeg;base64,');
+                                    } else if (base64.startsWith('data:application/octet-stream;base64,')) {
+                                        base64 = base64.replace('data:application/octet-stream;base64,', 'data:audio/mpeg;base64,');
+                                    }
                                     const ostId = `OST_FILE_${Date.now()}_${encodeURIComponent(file.name)}`;
                                     await supabase.from('players').upsert({ id: ostId, data: { base64, name: file.name }, updated_at: new Date().toISOString() });
                                     fetchOsts();
