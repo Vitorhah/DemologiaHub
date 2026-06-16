@@ -95,6 +95,7 @@ export default function App() {
 
   const pendingUpdatesRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const globalChannelRef = useRef<any>(null);
 
   useEffect(() => {
     localStorage.setItem('rpgSheetState', JSON.stringify(state));
@@ -235,15 +236,26 @@ export default function App() {
     const fallbackInterval = setInterval(fetchMasterState, 15000);
 
     const channel = supabase.channel('global_state_updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'id=eq.MASTER_STATE' }, (payload) => {
          const newRecord = payload.new as any;
-         if (newRecord?.id === 'MASTER_STATE' && newRecord?.data?.ost) {
+         if (newRecord?.data?.ost) {
              setGlobalOstState((prev: any) => {
                 if (JSON.stringify(prev) !== JSON.stringify(newRecord.data.ost)) return newRecord.data.ost;
                 return prev;
              });
          }
-      }).subscribe();
+      })
+      .on('broadcast', { event: 'ost_update' }, ({ payload }) => {
+         if (payload) {
+             setGlobalOstState((prev: any) => {
+                if (JSON.stringify(prev) !== JSON.stringify(payload)) return payload;
+                return prev;
+             });
+         }
+      })
+      .subscribe();
+      
+    globalChannelRef.current = channel;
 
     return () => { 
        clearInterval(fallbackInterval);
@@ -1240,7 +1252,9 @@ export default function App() {
                                                  const newIsPlaying = !globalOstState?.isPlaying;
                                                  const stateData = { ...globalOstState, isPlaying: newIsPlaying };
                                                  setGlobalOstState(stateData);
-                                                 supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData } });
+                                                 supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData }, updated_at: new Date().toISOString() })
+                                                   .then(({ error }) => { if (error) console.error("MASTER_STATE upsert error:", error.message); });
+                                                 globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: stateData }).catch(console.error);
                                               }}
                                               className={`flex-1 sm:flex-none px-4 py-3 sm:py-2 uppercase font-bold text-[10px] rounded border transition-all ${globalOstState?.isPlaying ? 'bg-blood-red border-blood-red text-white' : 'bg-[#222] border-[#444] text-gray-300 hover:text-white'}`}
                                             >
@@ -1260,7 +1274,9 @@ export default function App() {
                                            onClick={() => {
                                               const stateData = { ostId: ost.id, name: ostName, isPlaying: false, volume: 1 };
                                               setGlobalOstState(stateData);
-                                              supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData } });
+                                              supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData }, updated_at: new Date().toISOString() })
+                                                .then(({ error }) => { if (error) console.error("MASTER_STATE select error:", error.message); });
+                                              globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: stateData }).catch(console.error);
                                            }}
                                            className="flex-1 sm:flex-none px-4 py-3 sm:py-2 bg-[#222] border border-[#444] text-gray-300 hover:text-white hover:border-blood-red uppercase font-bold text-[10px] rounded transition-all"
                                          >
@@ -1307,7 +1323,9 @@ export default function App() {
                                    const stateData = { ...globalOstState, volume: newVol };
                                    // optimistically update local state immediately to avoid lag
                                    setGlobalOstState(stateData);
-                                   supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData } });
+                                   supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData }, updated_at: new Date().toISOString() })
+                                     .then(({ error }) => { if (error) console.error("MASTER_STATE volume error:", error.message); });
+                                   globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: stateData }).catch(console.error);
                                 }}
                                 className="w-full accent-blood-red"
                              />
