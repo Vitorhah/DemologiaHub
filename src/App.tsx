@@ -235,10 +235,10 @@ export default function App() {
     fetchMasterState();
     const fallbackInterval = setInterval(fetchMasterState, 15000);
 
-    const channel = supabase.channel('global_state_updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'id=eq.MASTER_STATE' }, (payload) => {
+    const channel = supabase.channel('global_state_updates', { config: { broadcast: { ack: false } } })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
          const newRecord = payload.new as any;
-         if (newRecord?.data?.ost) {
+         if (newRecord?.id === 'MASTER_STATE' && newRecord?.data?.ost) {
              setGlobalOstState((prev: any) => {
                 if (JSON.stringify(prev) !== JSON.stringify(newRecord.data.ost)) return newRecord.data.ost;
                 return prev;
@@ -1287,7 +1287,12 @@ export default function App() {
                                           onClick={async () => {
                                              if (confirm('Deletar essa música permanentemente?')) {
                                                  await supabase.from('players').delete().eq('id', ost.id);
-                                                 if (isCurrent) await supabase.from('players').delete().eq('id', 'MASTER_STATE');
+                                                 if (isCurrent) {
+                                                   await supabase.from('players').delete().eq('id', 'MASTER_STATE');
+                                                   const emptyState = { ostId: null, isPlaying: false, volume: 1 };
+                                                   setGlobalOstState(emptyState);
+                                                   globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: emptyState }).catch(console.error);
+                                                 }
                                                  fetchOsts();
                                              }
                                           }}
