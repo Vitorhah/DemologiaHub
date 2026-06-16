@@ -254,9 +254,18 @@ export default function App() {
   useEffect(() => {
     if (globalOstState?.ostId && globalOstState.ostId !== loadedOstData?.id) {
        setIsOstLoading(true);
-       supabase.from('players').select('data').eq('id', globalOstState.ostId).single().then(({ data }) => {
+       supabase.from('players').select('data').eq('id', globalOstState.ostId).single().then(async ({ data }) => {
            if (data?.data?.base64) {
-               setLoadedOstData({ id: globalOstState.ostId, base64: data.data.base64, name: data.data.name });
+               try {
+                   const res = await fetch(data.data.base64);
+                   const blob = await res.blob();
+                   const objectUrl = URL.createObjectURL(blob);
+                   setLoadedOstData({ id: globalOstState.ostId, base64: objectUrl, name: data.data.name });
+               } catch(err) {
+                   console.error("Failed to convert data URI:", err);
+                   // fallback to base64
+                   setLoadedOstData({ id: globalOstState.ostId, base64: data.data.base64, name: data.data.name });
+               }
            }
            setIsOstLoading(false);
        }).catch((e) => {
@@ -279,9 +288,7 @@ export default function App() {
                    setRequiresInteraction(false);
                }).catch(e => {
                    console.warn('Auto-play error:', e.name, e.message);
-                   if (e.name !== 'AbortError') {
-                       setRequiresInteraction(true);
-                   }
+                   setRequiresInteraction(true);
                });
            }
        }
@@ -292,19 +299,20 @@ export default function App() {
        audioEl.src = loadedOstData.base64;
        audioEl.dataset.ostId = loadedOstData.id;
        audioEl.volume = 0;
-       
-       const handleCanPlay = () => {
-           attemptPlay();
-           audioEl.removeEventListener('canplay', handleCanPlay);
-       };
-       audioEl.addEventListener('canplay', handleCanPlay);
-       
        audioEl.load();
-    } else {
-       attemptPlay();
     }
+    
+    // Always attempt to play if global state is playing
+    attemptPlay();
 
     const targetVolume = globalOstState?.isPlaying ? (globalOstState.volume ?? 1) : 0;
+    
+    // Periodically ensure playback if it's supposed to be playing
+    const playCheckInterval = setInterval(() => {
+       if (audioEl && globalOstState?.isPlaying && audioEl.paused && !requiresInteraction) {
+           attemptPlay();
+       }
+    }, 2000);
     
     const fadeInterval = setInterval(() => {
        if (!audioEl) return;
@@ -321,7 +329,10 @@ export default function App() {
        }
     }, 100);
 
-    return () => clearInterval(fadeInterval);
+    return () => {
+        clearInterval(fadeInterval);
+        clearInterval(playCheckInterval);
+    };
   }, [globalOstState, loadedOstData]);
 
   const fetchOsts = () => {
