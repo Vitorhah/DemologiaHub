@@ -322,33 +322,31 @@ export default function App() {
 
     const targetVolume = globalOstState?.isPlaying ? (globalOstState.volume ?? 1) : 0;
     
+    // Fix: Remove manual set volume interval as React's re-renders or browser threading causes it to stutter
+    audioEl.volume = Math.max(0, Math.min(1, targetVolume));
+    
+    if (targetVolume === 0 && !globalOstState?.isPlaying && !audioEl.paused) {
+        audioEl.pause();
+    }
+    
+    const handleEnded = () => {
+        if (globalOstState?.isPlaying) {
+            audioEl.currentTime = 0;
+            audioEl.play().catch(() => {});
+        }
+    };
+    audioEl.addEventListener('ended', handleEnded);
+
     // Periodically ensure playback if it's supposed to be playing
     const playCheckInterval = setInterval(() => {
        if (audioEl && globalOstState?.isPlaying && audioEl.paused && !requiresInteraction) {
            attemptPlay();
        }
     }, 2000);
-    
-    let currentVol = audioEl.volume || 0;
-    const fadeInterval = setInterval(() => {
-       if (!audioEl) return;
-       const diff = targetVolume - currentVol;
-       if (Math.abs(diff) < 0.05) {
-           currentVol = targetVolume;
-           audioEl.volume = Math.max(0, Math.min(1, targetVolume));
-           if (targetVolume === 0 && !globalOstState?.isPlaying && !audioEl.paused) {
-               audioEl.pause();
-           }
-           clearInterval(fadeInterval);
-       } else {
-           currentVol += (diff > 0 ? 0.05 : -0.05);
-           audioEl.volume = Math.max(0, Math.min(1, currentVol));
-       }
-    }, 100);
 
     return () => {
-        clearInterval(fadeInterval);
         clearInterval(playCheckInterval);
+        audioEl.removeEventListener('ended', handleEnded);
     };
   }, [globalOstState, loadedOstData]);
 
@@ -1335,16 +1333,18 @@ export default function App() {
                                 value={globalOstState?.volume ?? 1} 
                                 onChange={(e) => {
                                    const newVol = Number(e.target.value);
+                                   setGlobalOstState((prev: any) => ({ ...prev, volume: newVol }));
+                                }}
+                                onPointerUp={(e) => {
+                                   const newVol = Number((e.target as HTMLInputElement).value);
                                    const stateData = { ...globalOstState, volume: newVol };
-                                   // optimistically update local state immediately to avoid lag
-                                   setGlobalOstState(stateData);
                                    supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData }, updated_at: new Date().toISOString() })
                                      .then(({ error }) => { if (error) console.error("MASTER_STATE volume error:", error.message); });
                                    globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: stateData }).catch(console.error);
                                 }}
                                 className="w-full accent-blood-red"
                              />
-                             <div className="text-[#555] text-[10px] mt-1 italic text-center">Os jogadores terão o áudio no munto sincronizado gradualmente (Fade).</div>
+                             <div className="text-[#555] text-[10px] mt-1 italic text-center">Ajuste de volume (sincroniza ao soltar).</div>
                           </div>
                        </div>
                     )}
