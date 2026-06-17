@@ -323,20 +323,14 @@ export default function App() {
     const targetVolume = globalOstState?.isPlaying ? (globalOstState.volume ?? 1) : 0;
     
     // Fix: Remove manual set volume interval as React's re-renders or browser threading causes it to stutter
-    audioEl.volume = Math.max(0, Math.min(1, targetVolume));
+    if (Math.abs(audioEl.volume - targetVolume) > 0.01) {
+        audioEl.volume = Math.max(0, Math.min(1, targetVolume));
+    }
     
     if (targetVolume === 0 && !globalOstState?.isPlaying && !audioEl.paused) {
         audioEl.pause();
     }
     
-    const handleEnded = () => {
-        if (globalOstState?.isPlaying) {
-            audioEl.currentTime = 0;
-            audioEl.play().catch(() => {});
-        }
-    };
-    audioEl.addEventListener('ended', handleEnded);
-
     // Periodically ensure playback if it's supposed to be playing
     const playCheckInterval = setInterval(() => {
        if (audioEl && globalOstState?.isPlaying && audioEl.paused && !requiresInteraction) {
@@ -346,7 +340,6 @@ export default function App() {
 
     return () => {
         clearInterval(playCheckInterval);
-        audioEl.removeEventListener('ended', handleEnded);
     };
   }, [globalOstState, loadedOstData]);
 
