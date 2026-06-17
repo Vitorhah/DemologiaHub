@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus, Dices } from 'lucide-react';
+import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus, Dices, Maximize } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 const defaultState = {
@@ -268,19 +268,7 @@ export default function App() {
        setIsOstLoading(true);
        supabase.from('players').select('data').eq('id', globalOstState.ostId).single().then(async ({ data }) => {
            if (data?.data?.base64) {
-               try {
-                   const res = await fetch(data.data.base64);
-                   let blob = await res.blob();
-                   if (!blob.type || blob.type === 'application/octet-stream') {
-                       blob = new Blob([blob], { type: 'audio/mpeg' });
-                   }
-                   const objectUrl = URL.createObjectURL(blob);
-                   setLoadedOstData({ id: globalOstState.ostId, base64: objectUrl, name: data.data.name });
-               } catch(err) {
-                   console.error("Failed to convert data URI:", err);
-                   // fallback to base64
-                   setLoadedOstData({ id: globalOstState.ostId, base64: data.data.base64, name: data.data.name });
-               }
+               setLoadedOstData({ id: globalOstState.ostId, base64: data.data.base64, name: data.data.name });
            }
            setIsOstLoading(false);
        }).catch((e) => {
@@ -697,6 +685,16 @@ export default function App() {
   };
 
   const hpPercent = Math.max(0, Math.min(100, (state.hp.current / state.hp.max) * 100)) || 0;
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+        }
+    };
+    document.addEventListener('click', handleFirstInteraction, { once: true });
+    return () => document.removeEventListener('click', handleFirstInteraction);
+  }, []);
+
   const pePercent = Math.max(0, Math.min(100, (state.pe.current / state.pe.max) * 100)) || 0;
   const icons = ['X', 'O', '∆', '□'];
 
@@ -707,25 +705,6 @@ export default function App() {
          loop 
          preload="auto" 
       />
-      
-      {globalOstState?.ostId && currentPage !== 'mestre' && (
-         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[45] pointer-events-auto flex flex-col items-center gap-1">
-             <div className="bg-black/80 border border-blood-red/40 px-3 py-1 rounded-full flex items-center gap-2 shadow-[0_0_10px_rgba(255,0,0,0.2)] backdrop-blur-sm">
-                <span className={`w-2 h-2 rounded-full ${globalOstState.isPlaying ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                <span className="text-[9px] text-gray-300 uppercase tracking-widest truncate max-w-[150px]">
-                   {isOstLoading ? 'BAIXANDO TRILHA...' : (globalOstState.name || 'TRILHA SONORA')}
-                </span>
-                {globalOstState.isPlaying && audioRef.current?.paused && !requiresInteraction && (
-                   <button 
-                       className="ml-2 bg-blood-red text-white text-[8px] px-2 py-0.5 rounded cursor-pointer animate-pulse hover:bg-red-700 pointer-events-auto"
-                       onClick={(e) => { e.stopPropagation(); if (audioRef.current) audioRef.current.play().catch(console.error); }}
-                   >
-                       ATIVAR SOM
-                   </button>
-                )}
-             </div>
-         </div>
-      )}
 
       {requiresInteraction && (
         <div className="fixed inset-0 bg-black/90 z-[300] flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm">
@@ -845,6 +824,19 @@ export default function App() {
                 }
         }} className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full ${currentPage === 'mestre' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
            <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Mestre</span>
+        </button>
+        <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
+        <button onClick={() => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().catch(() => {});
+                }
+            }
+        }} className="flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full text-gray-500 hover:text-white hover:bg-[#111]">
+           <Maximize size={18} className="mb-1" />
+           <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Tela</span>
         </button>
       </div>
 
