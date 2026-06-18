@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus, Dices, Maximize } from 'lucide-react';
+import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus, Dices, Maximize, FileText } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 const defaultState = {
@@ -78,6 +78,7 @@ export default function App() {
   const [loadedOstData, setLoadedOstData] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showUpdateLog, setShowUpdateLog] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState(false);
   const [requiresInteraction, setRequiresInteraction] = useState(false);
@@ -723,6 +724,18 @@ export default function App() {
         </div>
       )}
       
+      {showUpdateLog && (
+        <div className="fixed inset-0 bg-black/90 z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+           <div className="bg-[#0a0a0a] border border-[#222] p-8 rounded shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-sm w-full relative">
+              <button onClick={() => setShowUpdateLog(false)} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20} /></button>
+              <h2 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-4">Update Log</h2>
+              <ul className="text-gray-400 text-sm list-none space-y-2">
+                 <li>- Added Update Log 🫥</li>
+              </ul>
+           </div>
+        </div>
+      )}
+
       {showPasswordModal && (
         <div className="fixed inset-0 bg-black/90 z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
            <div className="bg-[#0a0a0a] border border-[#222] p-8 rounded shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-sm w-full relative">
@@ -837,6 +850,11 @@ export default function App() {
         }} className="flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full text-gray-500 hover:text-white hover:bg-[#111]">
            <Maximize size={18} className="mb-1" />
            <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Tela</span>
+        </button>
+        <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
+        <button onClick={() => setShowUpdateLog(true)} className="flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full text-gray-500 hover:text-white hover:bg-[#111]">
+           <FileText size={18} className="mb-1" />
+           <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Logs</span>
         </button>
       </div>
 
