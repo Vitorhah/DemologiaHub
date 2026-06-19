@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus, Dices, Maximize, FileText, Music } from 'lucide-react';
+import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus, Dices, Maximize, FileText, Music, RotateCcw } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 const defaultState = {
@@ -94,6 +94,7 @@ export default function App() {
   const [loadedOstData, setLoadedOstData] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const fadeAnimationRef = useRef<number | null>(null);
+  const lastResetTimestampRef = useRef<number | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showUpdateLog, setShowUpdateLog] = useState(false);
   const [playerToKick, setPlayerToKick] = useState<any>(null);
@@ -429,6 +430,11 @@ export default function App() {
        audioEl.dataset.ostId = loadedOstData.id;
        audioEl.volume = 0;
        audioEl.load();
+    }
+    
+    if (globalOstState?.resetTimestamp && globalOstState.resetTimestamp !== lastResetTimestampRef.current) {
+        lastResetTimestampRef.current = globalOstState.resetTimestamp;
+        audioEl.currentTime = 0;
     }
     
     // Always attempt to play if global state is playing
@@ -1484,6 +1490,19 @@ export default function App() {
                                               className={`flex-1 sm:flex-none px-6 py-3 sm:py-2.5 uppercase font-black tracking-widest text-[10px] rounded-lg transition-all shadow-md ${globalOstState?.isPlaying ? 'bg-white text-black hover:bg-gray-200' : 'bg-blood-red text-white hover:bg-red-700 shadow-[0_0_10px_rgba(255,0,0,0.3)]'}`}
                                             >
                                                {globalOstState?.isPlaying ? 'PAUSAR' : 'TOCAR'}
+                                            </button>
+                                            <button
+                                               onClick={() => {
+                                                  const stateData = { ...globalOstState, resetTimestamp: Date.now() };
+                                                  setGlobalOstState(stateData);
+                                                  supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: stateData }, updated_at: new Date().toISOString() })
+                                                    .then(({ error }) => { if (error) console.error("MASTER_STATE reset error:", error.message); });
+                                                  globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: stateData }).catch(console.error);
+                                               }}
+                                               className="ml-2 px-3 py-2.5 bg-[#222] hover:bg-[#333] border border-[#444] hover:border-gray-500 text-gray-400 hover:text-white rounded-lg transition-all flex items-center justify-center shadow-md active:scale-95"
+                                               title="Resetar"
+                                            >
+                                               <RotateCcw size={16} />
                                             </button>
                                             {globalOstState?.isPlaying && audioRef.current?.paused && !requiresInteraction && (
                                                 <button 
