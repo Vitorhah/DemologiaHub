@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus, Dices, Maximize, FileText } from 'lucide-react';
+import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus, Dices, Maximize, FileText, Music } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 const defaultState = {
@@ -45,6 +45,8 @@ const MestreStatInput = ({ value, className, onSave }: { value: number, classNam
     );
 };
 
+import { SkillBuilder } from './SkillBuilder';
+
 export default function App() {
   const [state, setState] = useState(() => {
     try {
@@ -71,14 +73,30 @@ export default function App() {
   const [players, setPlayers] = useState<any[]>([]);
   const [isMestreAuth, setIsMestreAuth] = useState(false);
   const [initiatives, setInitiatives] = useState<Record<string, number>>({});
-  const [mestreTab, setMestreTab] = useState<'fichas' | 'ost'>('fichas');
+  const [mestreTab, setMestreTab] = useState<'fichas' | 'ost' | 'eventos'>('fichas');
+  
+  const [savedEvents, setSavedEvents] = useState<any[]>([]);
+  const savedEventsRef = useRef<any[]>([]);
+  useEffect(() => { savedEventsRef.current = savedEvents; }, [savedEvents]);
+  const [activeEventToggles, setActiveEventToggles] = useState<Record<string, boolean>>({});
+  const [editingEvent, setEditingEvent] = useState<any>(null);
+  const [customStyle, setCustomStyle] = useState<any>({ backgroundUrl: null });
+
   
   const [ostList, setOstList] = useState<any[]>([]);
   const [globalOstState, setGlobalOstState] = useState<any>(null);
+  const globalOstStateRef = useRef<any>(null);
+  
+  useEffect(() => {
+     globalOstStateRef.current = globalOstState;
+  }, [globalOstState]);
+
   const [loadedOstData, setLoadedOstData] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const fadeAnimationRef = useRef<number | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showUpdateLog, setShowUpdateLog] = useState(false);
+  const [playerToKick, setPlayerToKick] = useState<any>(null);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState(false);
   const [requiresInteraction, setRequiresInteraction] = useState(false);
@@ -97,6 +115,7 @@ export default function App() {
   const pendingUpdatesRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const globalChannelRef = useRef<any>(null);
+  const activeEventsRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     localStorage.setItem('rpgSheetState', JSON.stringify(state));
@@ -181,7 +200,7 @@ export default function App() {
                  return prev;
              });
           }
-       }).catch(err => console.warn('Fetch own state failed:', err.message));
+       }, (err) => console.warn('Fetch own state failed:', err.message));
     };
 
     fetchOwnState();
@@ -230,13 +249,19 @@ export default function App() {
                 return prev;
              });
           }
-       }).catch(err => console.warn('Fetch master state request failed:', err.message));
+       }, (err) => console.warn('Fetch master state request failed:', err.message));
+
+       supabase.from('players').select('data').eq('id', 'MASTER_EVENTS').single().then(({ data, error }) => {
+          if (!error && data?.data?.events) {
+             setSavedEvents(data.data.events);
+          }
+       }, (err) => console.warn('Fetch master events request failed:', err.message));
     };
 
     fetchMasterState();
     const fallbackInterval = setInterval(fetchMasterState, 15000);
 
-    const channel = supabase.channel('global_state_updates', { config: { broadcast: { ack: false } } })
+    const channel = supabase.channel('global_state_updates', { config: { broadcast: { ack: false, self: true } } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
          const newRecord = payload.new as any;
          if (newRecord?.id === 'MASTER_STATE' && newRecord?.data?.ost) {
@@ -245,6 +270,9 @@ export default function App() {
                 return prev;
              });
          }
+         if (newRecord?.id === 'MASTER_EVENTS' && newRecord?.data?.events) {
+             setSavedEvents(newRecord.data.events);
+         }
       })
       .on('broadcast', { event: 'ost_update' }, ({ payload }) => {
          if (payload) {
@@ -252,6 +280,103 @@ export default function App() {
                 if (JSON.stringify(prev) !== JSON.stringify(payload)) return payload;
                 return prev;
              });
+         }
+      })
+      .on('broadcast', { event: 'builder_event' }, async ({ payload }) => {
+         if (payload && (payload.target === 'all' || payload.target === userUid)) {
+             const { eventId, isToggle, action } = payload;
+             const blocks = payload.blocks || savedEventsRef.current.find(e => e.id === eventId)?.blocks;
+             
+             if (!blocks) return;
+
+             if (isToggle) {
+                 if (action === 'stop') {
+                     activeEventsRef.current[eventId] = false;
+                     setActiveEventToggles(prev => ({ ...prev, [eventId]: false }));
+                     return; // Just stop it
+                 } else if (action === 'start') {
+                     activeEventsRef.current[eventId] = true;
+                     setActiveEventToggles(prev => ({ ...prev, [eventId]: true }));
+                 }
+             }
+
+             const execBlocks = async () => {
+                 let loopStack: number[] = [];
+                 let windingDown = false;
+                 
+                 for (let i = 0; i < blocks.length; i++) {
+                     // Check if active changed
+                     if (isToggle && !windingDown && activeEventsRef.current[eventId] === false) {
+                         let foundEnd = false;
+                         let depth = 0;
+                         // Find the outermost loop_end or the next loop_end? Let's just find the next one for simplicity.
+                         for (let j = i; j < blocks.length; j++) {
+                             if (blocks[j].type === 'loop_end') {
+                                 i = j;
+                                 foundEnd = true;
+                                 break;
+                             }
+                         }
+                         if (foundEnd) {
+                             windingDown = true;
+                             continue;
+                         } else {
+                             break;
+                         }
+                     }
+
+                     const block = blocks[i];
+                     if (block.type === 'aguarde') {
+                         const waitTime = (block.value || 0) * 1000;
+                         const steps = waitTime / 100;
+                         for (let s = 0; s < steps; s++) {
+                             if (isToggle && !windingDown && activeEventsRef.current[eventId] === false) {
+                                 break;
+                             }
+                             await new Promise(r => setTimeout(r, 100));
+                         }
+                     } else if (block.type === 'mudar_fundo') {
+                         setCustomStyle((prev: any) => ({ ...prev, backgroundUrl: block.value }));
+                     } else if (block.type === 'fundo_original') {
+                         setCustomStyle((prev: any) => ({ ...prev, backgroundUrl: null }));
+                     } else if (block.type === 'imagem_fade') {
+                         setCustomStyle((prev: any) => ({ ...prev, backgroundFade: block.value }));
+                     } else if (block.type === 'play_ost') {
+                         const rawName = block.ostId ? block.ostId.split('_').slice(3).join('_') : '';
+                         const ostName = rawName ? decodeURIComponent(rawName) : 'OST';
+                         const newState = { ostId: block.ostId, name: ostName, isPlaying: true, volume: block.volume ?? 1, fadeTime: block.fadeTime ?? 1 };
+                         setGlobalOstState(newState);
+                         supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: newState }, updated_at: new Date().toISOString() }).then(({ error }) => { if (error) console.error(error); });
+                         globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: newState }).catch(console.error);
+                     } else if (block.type === 'stop_ost') {
+                         const currentOstState = globalOstStateRef.current;
+                         if (currentOstState) {
+                             const newState = { ...currentOstState, isPlaying: false, fadeTime: block.fadeTime ?? 1 };
+                             setGlobalOstState(newState);
+                             supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: newState }, updated_at: new Date().toISOString() }).then(({ error }) => { if (error) console.error(error); });
+                             globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: newState }).catch(console.error);
+                         }
+                     } else if (block.type === 'loop') {
+                         loopStack.push(i);
+                     } else if (block.type === 'loop_end') {
+                         if (loopStack.length > 0) {
+                             if (windingDown) {
+                                 loopStack.pop();
+                             } else {
+                                 const startIdx = loopStack[loopStack.length - 1]; // peek
+                                 await new Promise(r => setTimeout(r, 50));
+                                 i = startIdx; // jump back
+                             }
+                         }
+                     }
+                 }
+                 
+                 // When done
+                 if (isToggle) {
+                     activeEventsRef.current[eventId] = false;
+                 }
+             };
+             execBlocks();
          }
       })
       .subscribe();
@@ -272,7 +397,7 @@ export default function App() {
                setLoadedOstData({ id: globalOstState.ostId, base64: data.data.base64, name: data.data.name });
            }
            setIsOstLoading(false);
-       }).catch((e) => {
+       }, (e) => {
            console.error("Failed to load OST:", e);
            setIsOstLoading(false);
        });
@@ -310,14 +435,38 @@ export default function App() {
     attemptPlay();
 
     const targetVolume = globalOstState?.isPlaying ? (globalOstState.volume ?? 1) : 0;
+    const fadeMs = (globalOstState?.fadeTime ?? 0) * 1000;
     
-    // Fix: Remove manual set volume interval as React's re-renders or browser threading causes it to stutter
-    if (Math.abs(audioEl.volume - targetVolume) > 0.01) {
-        audioEl.volume = Math.max(0, Math.min(1, targetVolume));
+    if (fadeAnimationRef.current !== null) {
+        cancelAnimationFrame(fadeAnimationRef.current);
+        fadeAnimationRef.current = null;
     }
-    
-    if (targetVolume === 0 && !globalOstState?.isPlaying && !audioEl.paused) {
-        audioEl.pause();
+
+    if (fadeMs <= 0) {
+       if (Math.abs(audioEl.volume - targetVolume) > 0.01) {
+           audioEl.volume = Math.max(0, Math.min(1, targetVolume));
+       }
+       if (targetVolume === 0 && !globalOstState?.isPlaying && !audioEl.paused) {
+           audioEl.pause();
+       }
+    } else {
+       const startVol = audioEl.volume;
+       const volDiff = targetVolume - startVol;
+       const startTime = performance.now();
+       
+       const animateFade = (time: number) => {
+           let elapsed = time - startTime;
+           if (elapsed >= fadeMs) {
+               audioEl.volume = Math.max(0, Math.min(1, targetVolume));
+               if (targetVolume === 0 && !globalOstState?.isPlaying && !audioEl.paused) {
+                   audioEl.pause();
+               }
+           } else {
+               audioEl.volume = Math.max(0, Math.min(1, startVol + volDiff * (elapsed / fadeMs)));
+               fadeAnimationRef.current = requestAnimationFrame(animateFade);
+           }
+       };
+       fadeAnimationRef.current = requestAnimationFrame(animateFade);
     }
     
     // Periodically ensure playback if it's supposed to be playing
@@ -356,7 +505,7 @@ export default function App() {
                     return current;
                 });
             }
-         }).catch(err => console.warn('Fetch players list failed:', err.message));
+         }, (err) => console.warn('Fetch players list failed:', err.message));
       };
 
       fetchPlayersList();
@@ -671,12 +820,6 @@ export default function App() {
     input.click();
   };
 
-  const kickPlayer = async (id: string) => {
-    if (confirm("Desconectar esse jogador? Ele precisará reativar na aba Conexão.")) {
-      await supabase.from('players').delete().eq('id', id);
-    }
-  };
-
   const editPlayerStatExact = async (p: any, stat: 'hp' | 'pe', value: number) => {
     const newData = { ...p };
     newData[stat].current = Math.max(0, Math.min(newData[stat].max, value));
@@ -700,7 +843,18 @@ export default function App() {
   const icons = ['X', 'O', '∆', '□'];
 
   return (
-    <div id="app">
+    <div id="app" style={
+      customStyle.backgroundUrl 
+      ? { 
+          backgroundImage: customStyle.backgroundFade !== undefined ? `linear-gradient(rgba(0,0,0,${customStyle.backgroundFade / 100}), rgba(0,0,0,${customStyle.backgroundFade / 100})), url(${customStyle.backgroundUrl})` : `url(${customStyle.backgroundUrl})`, 
+          backgroundSize: 'cover', 
+          backgroundPosition: 'center', 
+          backgroundAttachment: 'fixed', 
+          minHeight: '100vh',
+          transition: 'background-image 0.5s ease-in-out'
+        } 
+      : {}
+    }>
       <audio 
          ref={audioRef} 
          loop 
@@ -726,11 +880,14 @@ export default function App() {
       
       {showUpdateLog && (
         <div className="fixed inset-0 bg-black/90 z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
-           <div className="bg-[#0a0a0a] border border-[#222] p-8 rounded shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-sm w-full relative">
+           <div className="bg-[#0a0a0a] border border-[#222] p-8 rounded shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-xl w-full relative">
               <button onClick={() => setShowUpdateLog(false)} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20} /></button>
-              <h2 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-4">Update Log</h2>
+              <h2 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-4">Creative Update</h2>
               <ul className="text-gray-400 text-sm list-none space-y-2">
-                 <li>- Added Update Log 🫥</li>
+                 <li><span className="text-emerald-500 font-bold mr-2">+</span> <b>Blocos de Áudio (OST):</b> O SkillBuilder agora permite usar blocos para Tocar OST e Parar OST com suporte a Fade In / Out, Volume.</li>
+                 <li><span className="text-purple-500 font-bold mr-2">+</span> <b>Bloco de Fundo:</b> Novo bloco adicionado para aplicar Imagem com efeito de Fade no SkillBuilder.</li>
+                 <li><span className="text-blue-500 font-bold mr-2">✓</span> <b>Sincronização:</b> Sistema de OST do Mestre e SkillBuilder agora sincronizam a música entre si perfeitamente.</li>
+                 <li><span className="text-yellow-500 font-bold mr-2">🛠</span> <b>Correções:</b> Ajustes na transição suave de Fade das Músicas, no controle do Slider de Volume da Dashboard do Mestre para refletir corretamente o volume e fixes para as OSTs reiniciarem de forma inconsistente.</li>
               </ul>
            </div>
         </div>
@@ -741,7 +898,7 @@ export default function App() {
            <div className="bg-[#0a0a0a] border border-[#222] p-8 rounded shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-sm w-full relative">
               <button onClick={() => { setShowPasswordModal(false); setPasswordInput(''); setPasswordError(false); }} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20} /></button>
               <h2 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-2">Acesso Restrito</h2>
-              <p className="text-gray-500 text-xs mb-6 uppercase tracking-wider">Digite a senha do Mestre (Senha: mestre)</p>
+              <p className="text-gray-500 text-xs mb-6 uppercase tracking-wider">Digite a senha do Mestre</p>
               
               <input 
                 type="password" 
@@ -751,7 +908,7 @@ export default function App() {
                 onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(false); }}
                 onKeyDown={(e) => {
                    if (e.key === 'Enter') {
-                       if (passwordInput === '%mestre%' || passwordInput.toLowerCase() === 'mestre') {
+                       if (passwordInput === import.meta.env.VITE_MESTRE_PASSWORD) {
                            setIsMestreAuth(true);
                            setShowPasswordModal(false);
                            setCurrentPage('mestre');
@@ -765,7 +922,7 @@ export default function App() {
               {passwordError && <p className="text-red-500 text-[10px] text-center mb-4 uppercase font-bold tracking-wider">Senha Incorreta</p>}
               <button 
                 onClick={() => {
-                   if (passwordInput === '%mestre%' || passwordInput.toLowerCase() === 'mestre') {
+                   if (passwordInput === import.meta.env.VITE_MESTRE_PASSWORD) {
                        setIsMestreAuth(true);
                        setShowPasswordModal(false);
                        setCurrentPage('mestre');
@@ -781,6 +938,37 @@ export default function App() {
            </div>
         </div>
       )}
+
+      {playerToKick && (
+        <div className="fixed inset-0 bg-black/90 z-[300] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+           <div className="bg-[#0a0a0a] border border-[#333] p-8 rounded-xl shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-sm w-full relative">
+              <h2 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-2">Atenção!</h2>
+              <p className="text-gray-400 text-sm mb-6">
+                Tem certeza que deseja desconectar a ficha <strong className="text-white uppercase tracking-wider">{playerToKick.name}</strong>?
+              </p>
+              
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setPlayerToKick(null)}
+                  className="flex-1 bg-[#111] hover:bg-[#222] border border-[#333] text-gray-300 hover:text-white font-bold py-3 px-4 rounded-lg uppercase tracking-wider text-xs transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={async () => {
+                      const id = playerToKick.id;
+                      setPlayerToKick(null);
+                      await supabase.from('players').delete().eq('id', id);
+                  }}
+                  className="flex-1 bg-red-900/50 hover:bg-red-800 border border-red-500/50 text-white font-bold py-3 px-4 rounded-lg uppercase tracking-wider text-xs transition-colors cursor-pointer"
+                >
+                  Confirmar
+                </button>
+              </div>
+           </div>
+        </div>
+      )}
+
       {menuOpen && (
         <div className="fixed inset-0 bg-black/80 z-50 flex">
           <div className="w-64 bg-[#0a0a0a] border-r border-[#222] h-full p-4 flex flex-col gap-4">
@@ -819,44 +1007,64 @@ export default function App() {
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 w-full h-14 bg-[#0a0a0a] border-t border-[#222] flex flex-row items-center z-[100] shadow-[0_-5px_20px_rgba(0,0,0,0.8)] overflow-x-auto overflow-y-hidden no-scrollbar">
-        <button onClick={() => setCurrentPage('ficha')} className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full ${currentPage === 'ficha' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
-           <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Ficha</span>
-        </button>
-        <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
-        <button onClick={() => setCurrentPage('conexao')} className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full ${currentPage === 'conexao' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
-           <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Conexão</span>
-        </button>
-        <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
-        <button onClick={() => {
-                window.scrollTo(0, 0);
-                if (!isMestreAuth) {
-                   setShowPasswordModal(true);
-                } else {
-                  setCurrentPage('mestre'); 
-                }
-        }} className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full ${currentPage === 'mestre' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-[#111]'}`}>
-           <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Mestre</span>
-        </button>
-        <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
-        <button onClick={() => {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(() => {});
-            } else {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen().catch(() => {});
-                }
-            }
-        }} className="flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full text-gray-500 hover:text-white hover:bg-[#111]">
-           <Maximize size={18} className="mb-1" />
-           <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Tela</span>
-        </button>
-        <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
-        <button onClick={() => setShowUpdateLog(true)} className="flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full text-gray-500 hover:text-white hover:bg-[#111]">
-           <FileText size={18} className="mb-1" />
-           <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Logs</span>
-        </button>
-      </div>
+      {currentPage !== 'mestre' ? (
+        <div className="fixed bottom-0 left-0 w-full h-14 bg-black/95 backdrop-blur-md border-t border-[#222] flex flex-row items-center z-[100] shadow-[0_-5px_20px_rgba(0,0,0,0.8)] overflow-x-auto overflow-y-hidden no-scrollbar">
+          <button onClick={() => setCurrentPage('ficha')} className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full transition-colors ${currentPage === 'ficha' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+             <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Ficha</span>
+          </button>
+          <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
+          <button onClick={() => setCurrentPage('conexao')} className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full transition-colors ${currentPage === 'conexao' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+             <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Conexão</span>
+          </button>
+          <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
+          <button onClick={() => {
+                  window.scrollTo(0, 0);
+                  if (!isMestreAuth) {
+                     setShowPasswordModal(true);
+                  } else {
+                    setCurrentPage('mestre'); 
+                  }
+          }} className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full transition-colors ${currentPage === 'mestre' ? 'text-blood-red' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+             <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Mestre</span>
+          </button>
+          <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
+          <button onClick={() => {
+              if (!document.fullscreenElement) {
+                  document.documentElement.requestFullscreen().catch(() => {});
+              } else {
+                  if (document.exitFullscreen) {
+                      document.exitFullscreen().catch(() => {});
+                  }
+              }
+          }} className="flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full text-gray-500 hover:text-white hover:bg-white/5 transition-colors">
+             <Maximize size={18} className="mb-1" />
+             <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Tela</span>
+          </button>
+          <div className="w-[1px] h-8 shrink-0 bg-[#222]"></div>
+          <button onClick={() => setShowUpdateLog(true)} className="flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full text-gray-500 hover:text-white hover:bg-white/5 transition-colors">
+             <FileText size={18} className="mb-1" />
+             <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">Logs</span>
+          </button>
+        </div>
+      ) : (
+        <div className="fixed bottom-0 left-0 w-full h-14 bg-black/95 backdrop-blur-md border-t border-blood-red/30 flex flex-row items-center z-[100] shadow-[0_-5px_20px_rgba(255,0,0,0.15)]">
+          <button onClick={() => setCurrentPage('ficha')} className="flex flex-col items-center justify-center flex-1 h-full text-gray-500 hover:text-white hover:bg-blood-red/5 transition-colors">
+            <span className="text-xs uppercase font-bold tracking-widest mt-1">Ficha</span>
+          </button>
+          <div className="w-[1px] h-8 bg-blood-red/20"></div>
+          <button onClick={() => setMestreTab('ost')} className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${mestreTab === 'ost' ? 'text-blood-red bg-blood-red/10 border-t-2 border-blood-red' : 'text-gray-500 hover:text-white hover:bg-blood-red/5'}`}>
+            <span className="text-xs uppercase font-bold tracking-widest mt-1">OST</span>
+          </button>
+          <div className="w-[1px] h-8 bg-blood-red/20"></div>
+          <button onClick={() => setMestreTab('eventos')} className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${mestreTab === 'eventos' ? 'text-blood-red bg-blood-red/10 border-t-2 border-blood-red' : 'text-gray-500 hover:text-white hover:bg-blood-red/5'}`}>
+            <span className="text-xs uppercase font-bold tracking-widest mt-1">Eventos</span>
+          </button>
+          <div className="w-[1px] h-8 bg-blood-red/20"></div>
+          <button onClick={() => setMestreTab('fichas')} className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${mestreTab === 'fichas' ? 'text-blood-red bg-blood-red/10 border-t-2 border-blood-red' : 'text-gray-500 hover:text-white hover:bg-blood-red/5'}`}>
+            <span className="text-xs uppercase font-bold tracking-widest mt-1">Players</span>
+          </button>
+        </div>
+      )}
 
       {currentPage === 'ficha' && (
         <>
@@ -1085,128 +1293,130 @@ export default function App() {
 
       {currentPage === 'mestre' && (
         <>
-          <div className="p-4 pt-8 min-h-screen pb-20">
-            <div className="flex flex-col items-center justify-center text-center mb-6">
-               <ShieldAlert size={48} className="text-blood-red opacity-50 mb-2" />
-               <h2 className="text-2xl font-bold text-blood-red uppercase tracking-widest mb-1">Painel do Mestre</h2>
-            </div>
-
-            <div className="flex gap-4 justify-center mb-8">
-              <button 
-                onClick={() => setMestreTab('fichas')} 
-                className={`px-4 py-2 border-b-2 font-bold uppercase tracking-wider text-sm transition-colors ${mestreTab === 'fichas' ? 'border-blood-red text-blood-red' : 'border-transparent text-gray-500 hover:text-white'}`}
-              >
-                Fichas
-              </button>
-              <button 
-                onClick={() => setMestreTab('ost')} 
-                className={`px-4 py-2 border-b-2 font-bold uppercase tracking-wider text-sm transition-colors ${mestreTab === 'ost' ? 'border-blood-red text-blood-red' : 'border-transparent text-gray-500 hover:text-white'}`}
-              >
-                Trilha Sonora (OST)
-              </button>
+          <div className="min-h-screen pb-20 font-sans">
+            <div className="flex flex-col items-center justify-center text-center mb-10 pt-12 relative z-10">
+               <div className="relative">
+                  <div className="absolute inset-0 blur-3xl bg-blood-red/20 rounded-full scale-150"></div>
+                  <img className="w-24 h-24 object-contain opacity-80" src="https://i.ibb.co/xq2KhP1v/3-Sem-T-tulo.png" alt="Símbolo Demologia" />
+               </div>
+               <h2 className="text-3xl font-black text-white mt-4 uppercase tracking-[0.3em] drop-shadow-[0_0_10px_rgba(255,0,0,0.5)]">Modo Mestre</h2>
+               <p className="text-blood-red/70 text-[10px] font-mono tracking-[0.3em] mt-2 uppercase border border-blood-red/30 bg-blood-red/10 px-3 py-1 rounded-full">Acesso Restrito</p>
             </div>
 
             {mestreTab === 'fichas' ? (
               <>
-                <div className="flex flex-col items-center justify-center text-center mb-6">
-                   <p className="text-gray-500 text-xs max-w-sm mb-4">
-                      Exibindo todas as fichas ativas (atualização em tempo real). 
+                <div className="flex flex-col items-center justify-center text-center mb-8">
+                   <p className="text-gray-400 text-xs mt-2 max-w-sm">
+                      Acompanhamento simultâneo de fichas em tempo real.
                    </p>
-                   <button 
-                     onClick={() => {
-                       const newInits: Record<string, number> = {};
-                       players.forEach(p => {
-                          const agl = p.variables?.['AGL'] || 0;
-                          const roll = Math.floor(Math.random() * 20) + 1;
-                          newInits[p.id] = roll + agl;
-                       });
-                       setInitiatives({ ...initiatives, ...newInits });
-                     }}
-                     className="flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#222] border border-[#333] hover:border-blood-red/50 text-gray-300 hover:text-white font-bold py-3 px-6 rounded uppercase tracking-wider text-xs transition-all shadow-[0_0_15px_rgba(0,0,0,0.5)]"
-                   >
-                     <Dices size={16} className="text-blood-red" />
-                     Gerar Iniciativas (1d20 + AGL)
-                   </button>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto px-4">
               {[...players].sort((a, b) => (initiatives[b.id] ?? -1) - (initiatives[a.id] ?? -1)).map(p => (
-                <div key={p.id} className="bg-[#0a0a0a] border border-[#222] rounded p-4 relative overflow-hidden">
+                <div key={p.id} className="bg-black/80 backdrop-blur-md border border-[#333] hover:border-blood-red/50 rounded-xl p-5 relative overflow-hidden transition-colors shadow-lg">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blood-red to-transparent opacity-50"></div>
-                  <div className="flex justify-between items-start mb-2">
+                  <div className="flex justify-between items-start mb-4 relative z-10">
                      <div>
-                        <div className="text-blood-red font-bold text-lg uppercase tracking-wider">{p.name || 'Desconhecido'}</div>
-                        <div className="text-green-500 font-mono text-[10px] uppercase">● Ficha Conectada</div>
+                        <div className="text-white font-bold text-xl uppercase tracking-widest">{p.name || 'Desconhecido'}</div>
+                        <div className="flex items-center gap-1.5 mt-1">
+                           <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                           <span className="text-gray-400 font-mono text-[10px] uppercase tracking-wider">Conectado</span>
+                        </div>
                      </div>
-                     <div className="flex items-stretch gap-2 shrink-0">
+                     <div className="flex items-center gap-3 shrink-0">
                        {initiatives[p.id] !== undefined && (
-                         <div className="bg-[#111] border border-[#333] text-blood-red px-2 py-1 flex flex-col items-center justify-center rounded min-w-[40px]" title="Iniciativa">
-                           <span className="text-[8px] uppercase text-gray-500 leading-none">Inic.</span>
-                           <span className="font-bold text-sm leading-none mt-1">{initiatives[p.id]}</span>
+                         <div className="bg-blood-red/10 border border-blood-red/30 text-blood-red px-3 py-1 flex flex-col items-center justify-center rounded-lg min-w-[48px] shadow-[0_0_10px_rgba(255,0,0,0.1)]" title="Iniciativa">
+                           <span className="text-[9px] uppercase text-blood-red/70 font-semibold tracking-wider mb-0.5">Inic</span>
+                           <span className="font-black text-lg leading-none">{initiatives[p.id]}</span>
                          </div>
                        )}
-                       <button onClick={() => kickPlayer(p.id)} className="text-gray-500 hover:text-red-500 bg-black/50 border border-gray-800 hover:border-red-900/50 p-2 rounded transition-all flex items-center justify-center" title="Desconectar Jogador">
-                          <Trash2 size={16} />
+                       <button onClick={() => setPlayerToKick(p)} className="text-[#555] hover:text-red-500 bg-transparent hover:bg-red-500/10 p-2 rounded-full transition-all flex items-center justify-center relative z-20 cursor-pointer" title="Desconectar Jogador">
+                          <Trash2 size={18} />
                        </button>
                      </div>
                   </div>
                   
-                  <div className="flex gap-4 mt-4 bg-[#111] border border-[#222] rounded-lg p-3">
-                    <div className="flex-1 text-center">
-                      <div className="text-[10px] text-gray-500 mb-1 uppercase tracking-widest">Saúde (HP)</div>
-                      <div className="flex items-center justify-center gap-1">
+                  <div className="flex gap-4 bg-[#111]/80 border border-[#222] rounded-lg p-4 relative z-10">
+                    <div className="flex-1">
+                      <div className="text-[10px] text-gray-500 mb-1 max-w-fit uppercase tracking-widest border-b border-[#333] pb-1">HP</div>
+                      <div className="flex items-baseline gap-1 mt-2">
                         <MestreStatInput 
                                value={p.hp?.current ?? 0}
                                onSave={(val) => {
                                  setPlayers(current => current.map(pl => pl.id === p.id ? { ...pl, hp: { ...pl.hp, current: val } } : pl));
                                  editPlayerStatExact(p, 'hp', val);
                                }}
-                               className="w-12 bg-transparent text-center outline-none border-b border-dashed border-[#333] focus:border-green-500 text-green-500 font-bold text-xl" />
-                        <span className="text-gray-600 text-[10px] uppercase">/ {p.hp?.max}</span>
+                               className="w-10 bg-transparent outline-none border-b border-[#333] focus:border-green-500 text-green-500 font-bold text-2xl font-mono text-left" />
+                        <span className="text-gray-600 text-xs font-mono">/ {p.hp?.max}</span>
                       </div>
                     </div>
                     <div className="w-[1px] bg-[#222]"></div>
-                    <div className="flex-1 text-center">
-                      <div className="text-[10px] text-gray-500 mb-1 uppercase tracking-widest">Esforço (PE)</div>
-                      <div className="flex items-center justify-center gap-1">
+                    <div className="flex-1">
+                      <div className="text-[10px] text-gray-500 mb-1 max-w-fit uppercase tracking-widest border-b border-[#333] pb-1">PE</div>
+                      <div className="flex items-baseline gap-1 mt-2">
                         <MestreStatInput 
                                value={p.pe?.current ?? 0}
                                onSave={(val) => {
                                  setPlayers(current => current.map(pl => pl.id === p.id ? { ...pl, pe: { ...pl.pe, current: val } } : pl));
                                  editPlayerStatExact(p, 'pe', val);
                                }}
-                               className="w-12 bg-transparent text-center outline-none border-b border-dashed border-[#333] focus:border-blue-500 text-blue-500 font-bold text-xl" />
-                        <span className="text-gray-600 text-[10px] uppercase">/ {p.pe?.max}</span>
+                               className="w-10 bg-transparent outline-none border-b border-[#333] focus:border-blue-500 text-blue-500 font-bold text-2xl font-mono text-left" />
+                        <span className="text-gray-600 text-xs font-mono">/ {p.pe?.max}</span>
                       </div>
                     </div>
                   </div>
 
                   {p.history && p.history.length > 0 && (
-                     <div className="mt-4 pt-4 border-t border-[#222]">
-                        <div className="text-[10px] text-gray-500 mb-2">Última Ação:</div>
-                        <div className="text-xs text-gray-400 line-clamp-2" dangerouslySetInnerHTML={{ __html: p.history[0] }}></div>
+                     <div className="mt-4 pt-3 border-t border-[#222] relative z-10">
+                        <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1">Última Ação</div>
+                        <div className="text-xs text-gray-400 line-clamp-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: p.history[0] }}></div>
                      </div>
                   )}
                 </div>
               ))}
               {players.length === 0 && (
-                <div className="col-span-full text-center text-gray-500 italic py-10 border border-dashed border-[#333] rounded">
-                  Nenhum jogador conectado no momento.<br/>
-                  <span className="text-[10px]">A ficha do jogador será sincronizada automaticamente.</span>
+                <div className="col-span-full flex flex-col items-center justify-center py-20 text-[#555]">
+                  <Dices size={48} className="mb-4 opacity-50" />
+                  <p className="font-bold uppercase tracking-widest text-lg">Nenhum Jogador</p>
+                  <p className="text-xs mt-2 max-w-xs text-center">Aguardando conexão das fichas dos jogadores. Elas serão sincronizadas automaticamente.</p>
                 </div>
               )}
             </div>
+
+            {players.length > 0 && (
+                <button 
+                  onClick={() => {
+                    const newInits: Record<string, number> = {};
+                    players.forEach(p => {
+                       const agl = p.variables?.['AGL'] || 0;
+                       const roll = Math.floor(Math.random() * 20) + 1;
+                       newInits[p.id] = roll + agl;
+                    });
+                    setInitiatives({ ...initiatives, ...newInits });
+                  }}
+                  className="fixed bottom-24 right-6 w-16 h-16 bg-blood-red hover:bg-red-700 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(255,0,0,0.5)] border border-red-400/30 hover:scale-110 active:scale-95 transition-all z-[150] cursor-pointer group"
+                  title="Rolar Iniciativas"
+                >
+                  <Dices size={28} className="text-white group-hover:rotate-12 transition-transform" strokeWidth={1.5} />
+                </button>
+            )}
               </>
-            ) : (
-              <div className="max-w-2xl mx-auto flex flex-col gap-6">
-                 <div className="bg-[#0a0a0a] border border-[#222] rounded p-6 shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-                    <h3 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-4">Gerenciador de Músicas</h3>
-                    <p className="text-gray-400 text-xs mb-6">Importe arquivos .mp3 para sincronizar e reproduzir na ficha de todos os jogadores ativos. Limite o uso de arquivos muito grandes para evitar lentidão.</p>
+            ) : mestreTab === 'ost' ? (
+              <div className="max-w-2xl mx-auto flex flex-col gap-6 px-4">
+                 <div className="bg-black/80 backdrop-blur-md border border-[#333] rounded-xl p-6 shadow-lg relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blood-red to-transparent opacity-50"></div>
+                    <div className="flex items-center gap-3 mb-4 mt-2">
+                       <Music size={24} className="text-blood-red" />
+                       <h3 className="text-xl font-bold text-white uppercase tracking-widest">Painel Trilha Sonora</h3>
+                    </div>
+                    <p className="text-gray-400 text-xs mb-6 max-w-sm leading-relaxed">Importe arquivos .mp3 para sincronizar e reproduzir nas fichas de todos os jogadores simultaneamente.</p>
                     
-                    <div className="flex gap-4 items-center mb-6 border-b border-[#222] pb-6">
-                        <label className={`flex-1 border border-dashed hover:border-blood-red transition-all cursor-pointer rounded py-6 flex flex-col items-center justify-center gap-2 ${isUploadingOst ? 'bg-[#111] border-blood-red opacity-50' : 'bg-black/50 border-[#555] hover:bg-[#111]'}`}>
-                           <span className="text-gray-400 text-sm font-bold uppercase tracking-wider text-center">{isUploadingOst ? 'Importando...' : 'Selecionar MP3'}</span>
-                           <span className="text-[#666] text-[10px]">Apenas .mp3 (Max 2MB)</span>
+                    <div className="flex gap-4 items-center mb-8 border-b border-[#222] pb-8">
+                        <label className={`w-full border border-dashed hover:border-blood-red transition-all cursor-pointer rounded-xl py-8 flex flex-col items-center justify-center gap-2 ${isUploadingOst ? 'bg-[#111] border-blood-red opacity-50' : 'bg-black/40 border-[#333] hover:bg-[#111]'}`}>
+                           <span className="text-gray-300 text-sm font-bold uppercase tracking-wider text-center flex gap-2 items-center">
+                               {isUploadingOst ? <span className="animate-pulse">Importando...</span> : <>Selecionar <Music size={16} className="text-blood-red" /></>}
+                           </span>
+                           <span className="text-[#555] text-[10px] font-mono">.MP3 (Max 2MB) Recomendado p/ não travar</span>
                            <input 
                              type="file" 
                              accept=".mp3" 
@@ -1239,11 +1449,14 @@ export default function App() {
                         </label>
                     </div>
 
-                    <div className="flex flex-col gap-3">
-                       <h4 className="text-gray-500 uppercase tracking-widest text-[10px] mb-2">Selecione uma faixa e regule:</h4>
-                       <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-2 no-scrollbar">
+                    <div className="flex flex-col gap-4">
+                       <h4 className="text-gray-500 uppercase tracking-widest text-[10px] font-bold">Faixas Disponíveis ({ostList.length})</h4>
+                       <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2 no-scrollbar">
                            {ostList.length === 0 && (
-                              <div className="text-center text-[#555] italic text-xs py-4">Nenhuma música importada.</div>
+                              <div className="text-center flex flex-col items-center py-8 text-[#444]">
+                                <Music size={32} className="mb-2 opacity-50" />
+                                <span className="text-xs uppercase font-bold tracking-widest">Vault Vazio</span>
+                              </div>
                            )}
                            {ostList.map(ost => {
                               const rawName = ost.id.split('_').slice(3).join('_');
@@ -1251,9 +1464,10 @@ export default function App() {
                               const isCurrent = globalOstState?.ostId === ost.id;
 
                               return (
-                                 <div key={ost.id} className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded transition-all gap-4 ${isCurrent ? 'bg-[#1a0505] border-blood-red' : 'bg-[#111] border-[#333] hover:border-[#555]'}`}>
+                                 <div key={ost.id} className={`flex flex-col sm:flex-row items-center justify-between p-4 border rounded-xl transition-all gap-4 ${isCurrent ? 'bg-blood-red/10 border-blood-red/50 shadow-[0_0_10px_rgba(255,0,0,0.1)]' : 'bg-black/50 border-[#222] hover:bg-[#111] hover:border-[#333]'}`}>
                                     <div className="flex flex-col w-full sm:w-auto overflow-hidden">
-                                       <span className={`truncate text-sm font-bold ${isCurrent ? 'text-blood-red' : 'text-gray-300'}`}>{ostName || 'Desconhecida'}</span>
+                                       <span className={`truncate text-sm font-bold tracking-wider uppercase ${isCurrent ? 'text-white' : 'text-gray-400'}`}>{ostName || 'Desconhecida'}</span>
+                                       {isCurrent && <span className="text-[9px] text-blood-red uppercase tracking-widest mt-1 font-bold">● Faixa Ativa</span>}
                                     </div>
                                     <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
                                        {isCurrent ? (
@@ -1267,16 +1481,16 @@ export default function App() {
                                                    .then(({ error }) => { if (error) console.error("MASTER_STATE upsert error:", error.message); });
                                                  globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: stateData }).catch(console.error);
                                               }}
-                                              className={`flex-1 sm:flex-none px-4 py-3 sm:py-2 uppercase font-bold text-[10px] rounded border transition-all ${globalOstState?.isPlaying ? 'bg-blood-red border-blood-red text-white' : 'bg-[#222] border-[#444] text-gray-300 hover:text-white'}`}
+                                              className={`flex-1 sm:flex-none px-6 py-3 sm:py-2.5 uppercase font-black tracking-widest text-[10px] rounded-lg transition-all shadow-md ${globalOstState?.isPlaying ? 'bg-white text-black hover:bg-gray-200' : 'bg-blood-red text-white hover:bg-red-700 shadow-[0_0_10px_rgba(255,0,0,0.3)]'}`}
                                             >
-                                               {globalOstState?.isPlaying ? 'Pausar (Fade Out)' : 'Tocar (Fade In)'}
+                                               {globalOstState?.isPlaying ? 'PAUSAR' : 'TOCAR'}
                                             </button>
                                             {globalOstState?.isPlaying && audioRef.current?.paused && !requiresInteraction && (
                                                 <button 
                                                    onClick={() => { if (audioRef.current) audioRef.current.play().catch(console.error); }}
-                                                   className="ml-2 px-3 py-2 bg-yellow-600 text-white text-[10px] font-bold rounded animate-pulse"
+                                                   className="ml-2 px-3 py-2.5 bg-yellow-600 text-white text-[10px] uppercase font-bold rounded-lg animate-pulse"
                                                 >
-                                                    Som Travado? Clicar!
+                                                    Tentar Forçar (Play)
                                                 </button>
                                             )}
                                          </>
@@ -1289,7 +1503,7 @@ export default function App() {
                                                 .then(({ error }) => { if (error) console.error("MASTER_STATE select error:", error.message); });
                                               globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: stateData }).catch(console.error);
                                            }}
-                                           className="flex-1 sm:flex-none px-4 py-3 sm:py-2 bg-[#222] border border-[#444] text-gray-300 hover:text-white hover:border-blood-red uppercase font-bold text-[10px] rounded transition-all"
+                                           className="flex-1 sm:flex-none px-5 py-3 sm:py-2.5 bg-transparent border border-[#444] text-[#888] hover:text-white hover:bg-[#222] hover:border-gray-500 uppercase font-bold tracking-widest text-[10px] rounded-lg transition-all"
                                          >
                                             Selecionar
                                          </button>
@@ -1307,9 +1521,9 @@ export default function App() {
                                                  fetchOsts();
                                              }
                                           }}
-                                          className="p-3 sm:p-2 text-gray-500 hover:text-red-500 bg-[#222] rounded border border-[#444]"
+                                          className="p-3 sm:p-2.5 text-[#555] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
                                        >
-                                          <Trash2 size={16} />
+                                          <Trash2 size={18} />
                                        </button>
                                     </div>
                                  </div>
@@ -1353,7 +1567,17 @@ export default function App() {
                     )}
                  </div>
               </div>
-            )}
+            ) : mestreTab === 'eventos' ? (
+              <SkillBuilder 
+                 savedEvents={savedEvents}
+                 setSavedEvents={setSavedEvents}
+                 userUid={userUid}
+                 globalChannelRef={globalChannelRef}
+                 players={players}
+                 activeToggles={activeEventToggles}
+                 ostList={ostList}
+              />
+            ) : null}
           </div>
         </>
       )}
