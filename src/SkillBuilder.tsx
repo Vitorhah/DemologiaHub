@@ -177,14 +177,14 @@ export const SkillBuilder = ({
                                  <div className="flex w-full gap-2 relative">
                                     <input 
                                         type="text" 
-                                        placeholder="URL da Imagem"
+                                        placeholder="URL da Imagem ou Vídeo (MP4)"
                                         value={typeof block.value === 'string' ? block.value : block.value?.data || ''}
                                         onChange={(e) => updateBlock(block.id, e.target.value)}
                                         className="bg-[#111] border border-[#333] flex-1 text-white p-2 rounded text-xs focus:border-purple-500 outline-none transition-colors"
                                     />
                                     <label className="bg-[#222] hover:bg-[#333] border border-[#444] text-white p-2 rounded cursor-pointer transition-colors flex items-center justify-center">
                                        <Upload size={16} />
-                                       <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                                       <input type="file" accept="image/*,video/mp4,video/*" className="hidden" onChange={(e) => {
                                            const file = e.target.files?.[0];
                                            if (file) {
                                                const reader = new FileReader();
@@ -260,8 +260,17 @@ export const SkillBuilder = ({
                                          onChange={(e) => updateBlockFields(block.id, { fadeTime: parseFloat(e.target.value) || 0 })}
                                          className="bg-[#111] border border-[#333] w-16 text-center text-white p-1.5 rounded font-mono focus:border-emerald-500 outline-none transition-colors"
                                      />
-                                     <span className="text-gray-500 ml-1 text-[10px] uppercase font-bold tracking-widest">s</span>
+                                     <span className="text-gray-500 ml-1 text-[10px] uppercase font-bold tracking-widest mr-3">s</span>
                                  </div>
+                                 <label className="flex items-center gap-1 text-gray-500 text-[10px] uppercase font-bold tracking-widest cursor-pointer whitespace-nowrap">
+                                     <input 
+                                         type="checkbox"
+                                         checked={block.resetBeforePlay || false}
+                                         onChange={(e) => updateBlockFields(block.id, { resetBeforePlay: e.target.checked })}
+                                         className="rounded bg-black border-[#444] text-emerald-500 accent-emerald-500"
+                                     />
+                                     <span>Resetar</span>
+                                 </label>
                               </div>
                            )}
                            {block.type === 'stop_ost' && (

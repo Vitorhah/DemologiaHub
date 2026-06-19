@@ -2,6 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Menu, X, Edit2, ShieldAlert, Trash2, Minus, Plus, Dices, Maximize, FileText, Music, RotateCcw } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
+const isVideoBackground = (url: string | null | undefined): boolean => {
+  if (!url) return false;
+  return url.startsWith('data:video/') || url.endsWith('.mp4') || url.toLowerCase().includes('.mp4') || url.toLowerCase().includes('.webm');
+};
+
 const defaultState = {
     name: "Ocultista",
     hp: { current: 100, max: 100 },
@@ -345,7 +350,14 @@ export default function App() {
                      } else if (block.type === 'play_ost') {
                          const rawName = block.ostId ? block.ostId.split('_').slice(3).join('_') : '';
                          const ostName = rawName ? decodeURIComponent(rawName) : 'OST';
-                         const newState = { ostId: block.ostId, name: ostName, isPlaying: true, volume: block.volume ?? 1, fadeTime: block.fadeTime ?? 1 };
+                         const newState = { 
+                            ostId: block.ostId, 
+                            name: ostName, 
+                            isPlaying: true, 
+                            volume: block.volume ?? 1, 
+                            fadeTime: block.fadeTime ?? 1,
+                            resetTimestamp: block.resetBeforePlay ? Date.now() : undefined
+                        };
                          setGlobalOstState(newState);
                          supabase.from('players').upsert({ id: 'MASTER_STATE', data: { ost: newState }, updated_at: new Date().toISOString() }).then(({ error }) => { if (error) console.error(error); });
                          globalChannelRef.current?.send({ type: 'broadcast', event: 'ost_update', payload: newState }).catch(console.error);
@@ -852,7 +864,9 @@ export default function App() {
     <div id="app" style={
       customStyle.backgroundUrl 
       ? { 
-          backgroundImage: customStyle.backgroundFade !== undefined ? `linear-gradient(rgba(0,0,0,${customStyle.backgroundFade / 100}), rgba(0,0,0,${customStyle.backgroundFade / 100})), url(${customStyle.backgroundUrl})` : `url(${customStyle.backgroundUrl})`, 
+          backgroundImage: isVideoBackground(customStyle.backgroundUrl) 
+            ? 'none' 
+            : (customStyle.backgroundFade !== undefined ? `linear-gradient(rgba(0,0,0,${customStyle.backgroundFade / 100}), rgba(0,0,0,${customStyle.backgroundFade / 100})), url(${customStyle.backgroundUrl})` : `url(${customStyle.backgroundUrl})`), 
           backgroundSize: 'cover', 
           backgroundPosition: 'center', 
           backgroundAttachment: 'fixed', 
@@ -861,6 +875,26 @@ export default function App() {
         } 
       : {}
     }>
+      {isVideoBackground(customStyle.backgroundUrl) && (
+        <div className="fixed inset-0 z-[-10] w-full h-full pointer-events-none overflow-hidden bg-black">
+           <video
+              src={customStyle.backgroundUrl}
+              autoPlay
+              muted
+              playsInline
+              className="w-full h-full object-cover"
+              onEnded={() => {
+                 setCustomStyle((prev: any) => ({ ...prev, backgroundUrl: null }));
+              }}
+           />
+           {customStyle.backgroundFade !== undefined && (
+              <div 
+                 className="absolute inset-0 transition-opacity duration-500" 
+                 style={{ backgroundColor: `rgba(0,0,0,${customStyle.backgroundFade / 100})` }}
+              />
+           )}
+        </div>
+      )}
       <audio 
          ref={audioRef} 
          loop 
