@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Settings, Clock, Image as ImageIcon, Layers, Plus, X, Save, ArrowLeft, Trash2, ArrowRight, ArrowUp, ArrowDown, Type, StopCircle, Upload, Undo2, Music, PauseCircle, Contrast } from 'lucide-react';
+import { Play, Settings, Clock, Image as ImageIcon, Layers, Plus, X, Save, ArrowLeft, Trash2, ArrowRight, ArrowUp, ArrowDown, Type, StopCircle, Upload, Undo2, Music, PauseCircle, Contrast, Copy, GripVertical } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 export const SkillBuilder = ({ 
@@ -16,8 +16,12 @@ export const SkillBuilder = ({
   const [showAddMenuMain, setShowAddMenuMain] = useState(false);
   const [showAddMenuBlock, setShowAddMenuBlock] = useState(false);
 
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   const saveToMaster = async (eventsList: any[]) => {
       setSavedEvents(eventsList);
+      localStorage.setItem('local_master_events', JSON.stringify(eventsList));
       await supabase.from('players').upsert({ 
           id: 'MASTER_EVENTS', 
           data: { events: eventsList }, 
@@ -84,6 +88,65 @@ export const SkillBuilder = ({
      });
   };
 
+  const duplicateBlock = (id: string) => {
+     setEditingEvent((prev: any) => {
+        if (!prev || !prev.blocks) return prev;
+        const index = prev.blocks.findIndex((b: any) => b.id === id);
+        if (index === -1) return prev;
+        const blockToCopy = prev.blocks[index];
+        const duplicatedBlock = {
+           ...blockToCopy,
+           id: `${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
+        };
+        const newBlocks = [...prev.blocks];
+        newBlocks.splice(index + 1, 0, duplicatedBlock);
+        return { ...prev, blocks: newBlocks };
+     });
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+     const target = e.target as HTMLElement;
+     const closestInteractive = target.closest('input, select, button, label, select option, input[type="range"]');
+     if (closestInteractive) {
+        e.preventDefault();
+        return;
+     }
+     setDraggedIndex(index);
+     e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+     e.preventDefault();
+     if (draggedIndex === null || draggedIndex === index) return;
+     setDragOverIndex(index);
+  };
+
+  const handleDragEnd = () => {
+     setDraggedIndex(null);
+     setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+     e.preventDefault();
+     if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+     setEditingEvent((prev: any) => {
+        if (!prev || !prev.blocks) return prev;
+        const blocks = [...prev.blocks];
+        const draggedBlock = blocks[draggedIndex];
+        
+        // Remove item from original index
+        blocks.splice(draggedIndex, 1);
+        // Insert item at target index
+        blocks.splice(targetIndex, 0, draggedBlock);
+
+        return { ...prev, blocks };
+      });
+
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+  };
+
   const updateBlock = (id: string, value: any) => {
      setEditingEvent((prev: any) => ({
         ...prev,
@@ -136,7 +199,7 @@ export const SkillBuilder = ({
            </div>
 
            <div className="flex flex-col gap-3 relative">
-               <div className="absolute top-0 bottom-0 left-[19px] w-1 bg-[#222] z-0"></div>
+               <div className="absolute top-0 bottom-0 left-[19px] w-1 bg-[#1A1A1A] z-0"></div>
                {editingEvent.blocks.length === 0 && (
                    <div className="relative z-10 text-center py-10 text-[#555] uppercase text-xs font-bold tracking-widest border border-dashed border-[#333] rounded-xl bg-black/40">
                       Nenhum bloco. Clique no botão + abaixo.
@@ -144,10 +207,28 @@ export const SkillBuilder = ({
                )}
                {editingEvent.blocks.map((block: any, index: number) => (
                    <div key={block.id} className="relative z-10 flex gap-3 group">
-                       <div className="w-10 flex items-start justify-center pt-3">
+                       <div className="w-10 flex items-start justify-center pt-3 select-none">
                           <div className={`w-4 h-4 rounded-full border-[3px] border-[#0a0a0a] shadow-[0_0_10px_rgba(255,255,255,0.1)] ${block.type === 'quando_iniciado' ? 'bg-yellow-500 shadow-yellow-500/50' : block.type.includes('fundo') ? 'bg-purple-500 shadow-purple-500/50' : 'bg-blue-500 shadow-blue-500/50'}`}></div>
                        </div>
-                       <div className={`flex-1 flex flex-col sm:flex-row items-center gap-3 p-4 rounded-lg border ${block.type === 'quando_iniciado' ? 'bg-yellow-900/20 border-yellow-500/30' : block.type.includes('fundo') ? 'bg-purple-900/20 border-purple-500/30' : 'bg-blue-900/20 border-blue-500/30'} shadow-lg transition-all hover:bg-black/80`}>
+                       <div 
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, index)}
+                          onDragOver={(e) => handleDragOver(e, index)}
+                          onDragEnd={handleDragEnd}
+                          onDrop={(e) => handleDrop(e, index)}
+                          className={`flex-1 flex flex-col sm:flex-row items-center gap-3 p-4 rounded-lg border transition-all hover:bg-black/80 cursor-grab active:cursor-grabbing ${
+                              block.type === 'quando_iniciado' ? 'bg-yellow-900/20 border-yellow-500/30' : 
+                              block.type.includes('fundo') ? 'bg-purple-900/20 border-purple-500/30' : 
+                              'bg-blue-900/20 border-blue-500/30'
+                          } ${
+                              draggedIndex === index ? 'opacity-30 border-dashed border-gray-600' : ''
+                          } ${
+                              dragOverIndex === index && draggedIndex !== index ? 'border-dashed border-red-500 bg-red-950/20 scale-[1.01]' : ''
+                          } shadow-lg`}
+                       >
+                           <div className="flex items-center justify-center text-gray-500/50 hover:text-gray-300 pr-1 select-none cursor-grab active:cursor-grabbing" title="Arrastar para reordenar">
+                              <GripVertical size={16} />
+                           </div>
                            {block.type === 'quando_iniciado' && (
                               <div className="flex items-center w-full">
                                  <Play size={20} className="text-yellow-500 mr-2" />
@@ -163,7 +244,7 @@ export const SkillBuilder = ({
                                      step="0.1"
                                      value={block.value}
                                      onChange={(e) => updateBlock(block.id, parseFloat(e.target.value) || 0)}
-                                     className="bg-[#111] border border-[#333] w-20 text-center text-white p-1.5 rounded font-mono focus:border-blue-500 outline-none transition-colors"
+                                     className="bg-[#1A1A1A] border border-[#333] w-20 text-center text-white p-1.5 rounded font-mono focus:border-blue-500 outline-none transition-colors"
                                  />
                                  <span className="text-gray-500 ml-2 text-xs uppercase font-bold tracking-widest">Seg.</span>
                               </div>
@@ -180,9 +261,9 @@ export const SkillBuilder = ({
                                         placeholder="URL da Imagem ou Vídeo (MP4)"
                                         value={typeof block.value === 'string' ? block.value : block.value?.data || ''}
                                         onChange={(e) => updateBlock(block.id, e.target.value)}
-                                        className="bg-[#111] border border-[#333] flex-1 text-white p-2 rounded text-xs focus:border-purple-500 outline-none transition-colors"
+                                        className="bg-[#1A1A1A] border border-[#333] flex-1 text-white p-2 rounded text-xs focus:border-purple-500 outline-none transition-colors"
                                     />
-                                    <label className="bg-[#222] hover:bg-[#333] border border-[#444] text-white p-2 rounded cursor-pointer transition-colors flex items-center justify-center">
+                                    <label className="bg-[#1A1A1A] hover:bg-[#2a2a2a] border border-[#444] text-white p-2 rounded cursor-pointer transition-colors flex items-center justify-center">
                                        <Upload size={16} />
                                        <input type="file" accept="image/*,video/mp4,video/*" className="hidden" onChange={(e) => {
                                            const file = e.target.files?.[0];
@@ -215,7 +296,7 @@ export const SkillBuilder = ({
                                      max="100"
                                      value={block.value !== undefined ? block.value : 50}
                                      onChange={(e) => updateBlock(block.id, parseFloat(e.target.value) || 0)}
-                                     className="bg-[#111] border border-[#333] w-20 text-center text-white p-1.5 rounded font-mono focus:border-purple-500 outline-none transition-colors"
+                                     className="bg-[#1A1A1A] border border-[#333] w-20 text-center text-white p-1.5 rounded font-mono focus:border-purple-500 outline-none transition-colors"
                                  />
                                  <span className="text-gray-500 ml-2 text-xs uppercase font-bold tracking-widest">%</span>
                               </div>
@@ -229,7 +310,7 @@ export const SkillBuilder = ({
                                  <select
                                      value={block.ostId || ''}
                                      onChange={(e) => updateBlockFields(block.id, { ostId: e.target.value })}
-                                     className="bg-[#111] border border-[#333] text-white p-2 rounded text-xs focus:border-emerald-500 outline-none transition-colors max-w-[150px]"
+                                     className="bg-[#1A1A1A] border border-[#333] text-white p-2 rounded text-xs focus:border-emerald-500 outline-none transition-colors max-w-[150px]"
                                  >
                                      <option value="">(Nenhuma)</option>
                                      {ostList.map((ost: any) => {
@@ -258,7 +339,7 @@ export const SkillBuilder = ({
                                          step="0.1"
                                          value={block.fadeTime !== undefined ? block.fadeTime : 1}
                                          onChange={(e) => updateBlockFields(block.id, { fadeTime: parseFloat(e.target.value) || 0 })}
-                                         className="bg-[#111] border border-[#333] w-16 text-center text-white p-1.5 rounded font-mono focus:border-emerald-500 outline-none transition-colors"
+                                         className="bg-[#1A1A1A] border border-[#333] w-16 text-center text-white p-1.5 rounded font-mono focus:border-emerald-500 outline-none transition-colors"
                                      />
                                      <span className="text-gray-500 ml-1 text-[10px] uppercase font-bold tracking-widest mr-3">s</span>
                                  </div>
@@ -283,7 +364,7 @@ export const SkillBuilder = ({
                                      step="0.1"
                                      value={block.fadeTime !== undefined ? block.fadeTime : 1}
                                      onChange={(e) => updateBlockFields(block.id, { fadeTime: parseFloat(e.target.value) || 0 })}
-                                     className="bg-[#111] border border-[#333] w-16 text-center text-white p-1.5 rounded font-mono focus:border-emerald-500 outline-none transition-colors"
+                                     className="bg-[#1A1A1A] border border-[#333] w-16 text-center text-white p-1.5 rounded font-mono focus:border-emerald-500 outline-none transition-colors"
                                  />
                                  <span className="text-gray-500 ml-1 text-[10px] uppercase font-bold tracking-widest">s</span>
                               </div>
@@ -301,11 +382,13 @@ export const SkillBuilder = ({
                               </div>
                            )}
                            
-                           <div className="flex items-center ml-auto gap-1 sm:opacity-0 group-hover:opacity-100 transition-opacity mt-2 sm:mt-0">
-                               <button disabled={index === 0} onClick={() => moveBlock(index, -1)} className="text-[#555] hover:text-white p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"><ArrowUp size={18} /></button>
-                               <button disabled={index === editingEvent.blocks.length - 1} onClick={() => moveBlock(index, 1)} className="text-[#555] hover:text-white p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"><ArrowDown size={18} /></button>
+                           <div className="flex items-center ml-auto gap-1 sm:opacity-0 group-hover:opacity-100 transition-opacity mt-2 sm:mt-0 select-none">
+                               <button title="Duplicar Bloco" onClick={(e) => { e.stopPropagation(); duplicateBlock(block.id); }} className="text-[#555] hover:text-yellow-400 p-1.5 transition-colors"><Copy size={16} /></button>
                                <div className="w-[1px] h-4 bg-[#333] mx-1"></div>
-                               <button onClick={() => removeBlock(block.id)} className="text-[#555] hover:text-red-500 p-1.5"><Trash2 size={18} /></button>
+                               <button disabled={index === 0} onClick={(e) => { e.stopPropagation(); moveBlock(index, -1); }} className="text-[#555] hover:text-white p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"><ArrowUp size={18} /></button>
+                               <button disabled={index === editingEvent.blocks.length - 1} onClick={(e) => { e.stopPropagation(); moveBlock(index, 1); }} className="text-[#555] hover:text-white p-1.5 disabled:opacity-30 disabled:cursor-not-allowed" title="Mover para baixo"><ArrowDown size={18} /></button>
+                               <div className="w-[1px] h-4 bg-[#333] mx-1"></div>
+                               <button onClick={(e) => { e.stopPropagation(); removeBlock(block.id); }} className="text-[#555] hover:text-red-500 p-1.5 transition-colors" title="Excluir Bloco"><Trash2 size={18} /></button>
                            </div>
                        </div>
                    </div>
@@ -314,35 +397,35 @@ export const SkillBuilder = ({
 
            <div className="fixed bottom-20 right-6 z-50 flex flex-col items-end gap-2">
                {showAddMenuBlock && (
-                  <div className="bg-black/90 border border-[#333] p-4 rounded-xl shadow-2xl flex flex-col gap-4 min-w-[250px] max-h-[60vh] overflow-y-auto overflow-x-hidden mb-2 origin-bottom-right animate-in slide-in-from-bottom-5">
+                  <div className="bg-black/95 border border-[#333] p-5 sm:p-6 rounded-xl shadow-[0_0_30px_rgba(0,0,0,0.95)] flex flex-col gap-5 w-72 sm:w-80 max-h-[75vh] overflow-y-auto overflow-x-hidden mb-2 origin-bottom-right animate-in slide-in-from-bottom-5">
                       <div>
-                          <p className="text-[10px] uppercase font-black tracking-widest text-[#555] mb-2 pl-1 border-b border-[#222] pb-1">Evento</p>
-                          <button onClick={() => addBlock('quando_iniciado')} className="w-full text-left bg-transparent hover:bg-yellow-500/10 text-yellow-500 p-2 rounded text-xs font-bold uppercase tracking-wider flex items-center transition-colors"><Play size={14} className="mr-2"/> Quando Iniciado</button>
+                          <p className="text-[11px] uppercase font-black tracking-widest text-gray-500 mb-3 pl-1 border-b border-[#1A1A1A] pb-1.5">Evento</p>
+                          <button onClick={() => addBlock('quando_iniciado')} className="w-full text-left bg-transparent hover:bg-yellow-500/15 text-yellow-500 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><Play size={16} className="mr-3"/> Quando Iniciado</button>
                       </div>
                       <div>
-                          <p className="text-[10px] uppercase font-black tracking-widest text-[#555] mb-2 pl-1 border-b border-[#222] pb-1">Controle</p>
-                          <button onClick={() => addBlock('aguarde')} className="w-full text-left bg-transparent hover:bg-blue-500/10 text-blue-400 p-2 rounded text-xs font-bold uppercase tracking-wider flex items-center transition-colors"><Clock size={14} className="mr-2"/> Aguarde</button>
-                          <button onClick={() => addBlock('loop')} className="w-full text-left bg-transparent hover:bg-blue-500/10 text-blue-400 p-2 rounded text-xs font-bold uppercase tracking-wider flex items-center transition-colors"><Layers size={14} className="mr-2"/> Início do Loop</button>
-                          <button onClick={() => addBlock('loop_end')} className="w-full text-left bg-transparent hover:bg-blue-500/10 text-blue-400 p-2 rounded text-xs font-bold uppercase tracking-wider flex items-center transition-colors"><StopCircle size={14} className="mr-2"/> Fim do Loop</button>
+                          <p className="text-[11px] uppercase font-black tracking-widest text-[#555] mb-3 pl-1 border-b border-[#1A1A1A] pb-1.5">Controle</p>
+                          <button onClick={() => addBlock('aguarde')} className="w-full text-left bg-transparent hover:bg-blue-500/15 text-blue-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><Clock size={16} className="mr-3"/> Aguarde</button>
+                          <button onClick={() => addBlock('loop')} className="w-full text-left bg-transparent hover:bg-blue-500/15 text-blue-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><Layers size={16} className="mr-3"/> Início do Loop</button>
+                          <button onClick={() => addBlock('loop_end')} className="w-full text-left bg-transparent hover:bg-blue-500/15 text-blue-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><StopCircle size={16} className="mr-3"/> Fim do Loop</button>
                       </div>
                       <div>
-                          <p className="text-[10px] uppercase font-black tracking-widest text-[#555] mb-2 pl-1 border-b border-[#222] pb-1">Aparência</p>
-                          <button onClick={() => addBlock('mudar_fundo')} className="w-full text-left bg-transparent hover:bg-purple-500/10 text-purple-400 p-2 rounded text-xs font-bold uppercase tracking-wider flex items-center transition-colors"><ImageIcon size={14} className="mr-2"/> Trocar Fundo</button>
-                          <button onClick={() => addBlock('fundo_original')} className="w-full text-left bg-transparent hover:bg-purple-500/10 text-purple-400 p-2 rounded text-xs font-bold uppercase tracking-wider flex items-center transition-colors"><Undo2 size={14} className="mr-2"/> Fundo Original</button>
-                          <button onClick={() => addBlock('imagem_fade')} className="w-full text-left bg-transparent hover:bg-purple-500/10 text-purple-400 p-2 rounded text-xs font-bold uppercase tracking-wider flex items-center transition-colors"><Contrast size={14} className="mr-2"/> Imagem Fade</button>
+                          <p className="text-[11px] uppercase font-black tracking-widest text-[#555] mb-3 pl-1 border-b border-[#1A1A1A] pb-1.5">Aparência</p>
+                          <button onClick={() => addBlock('mudar_fundo')} className="w-full text-left bg-transparent hover:bg-purple-500/15 text-purple-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><ImageIcon size={16} className="mr-3"/> Trocar Fundo</button>
+                          <button onClick={() => addBlock('fundo_original')} className="w-full text-left bg-transparent hover:bg-purple-500/15 text-purple-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><Undo2 size={16} className="mr-3"/> Fundo Original</button>
+                          <button onClick={() => addBlock('imagem_fade')} className="w-full text-left bg-transparent hover:bg-purple-500/15 text-purple-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><Contrast size={16} className="mr-3"/> Imagem Fade</button>
                       </div>
                       <div>
-                          <p className="text-[10px] uppercase font-black tracking-widest text-[#555] mb-2 pl-1 border-b border-[#222] pb-1">Som</p>
-                          <button onClick={() => addBlock('play_ost')} className="w-full text-left bg-transparent hover:bg-emerald-500/10 text-emerald-400 p-2 rounded text-xs font-bold uppercase tracking-wider flex items-center transition-colors"><Music size={14} className="mr-2"/> Tocar OST</button>
-                          <button onClick={() => addBlock('stop_ost')} className="w-full text-left bg-transparent hover:bg-emerald-500/10 text-emerald-400 p-2 rounded text-xs font-bold uppercase tracking-wider flex items-center transition-colors"><PauseCircle size={14} className="mr-2"/> Parar OST</button>
+                          <p className="text-[11px] uppercase font-black tracking-widest text-[#555] mb-3 pl-1 border-b border-[#1A1A1A] pb-1.5">Som</p>
+                          <button onClick={() => addBlock('play_ost')} className="w-full text-left bg-transparent hover:bg-emerald-500/15 text-emerald-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><Music size={16} className="mr-3"/> Tocar OST</button>
+                          <button onClick={() => addBlock('stop_ost')} className="w-full text-left bg-transparent hover:bg-emerald-500/15 text-emerald-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><PauseCircle size={16} className="mr-3"/> Parar OST</button>
                       </div>
                   </div>
                )}
                <button 
                   onClick={() => setShowAddMenuBlock(!showAddMenuBlock)}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(0,0,0,0.8)] border transition-all z-[150] cursor-pointer ${showAddMenuBlock ? 'bg-[#222] border-[#444] rotate-45' : 'bg-blood-red hover:bg-red-700 border-red-500/30'}`}
+                  className={`w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_25px_rgba(0,0,0,0.9)] border transition-all z-[150] cursor-pointer ${showAddMenuBlock ? 'bg-[#1A1A1A] border-[#444] rotate-45' : 'bg-blood-red hover:bg-red-700 border-red-500/40'}`}
                >
-                  <Plus size={28} className="text-white" strokeWidth={2} />
+                  <Plus size={32} className="text-white" strokeWidth={2.5} />
                </button>
            </div>
         </div>
@@ -351,7 +434,7 @@ export const SkillBuilder = ({
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-6 px-4">
-        <div className="flex items-center justify-between gap-3 mb-6 mt-2 border-b border-[#222] pb-6">
+        <div className="flex items-center justify-between gap-3 mb-6 mt-2 border-b border-[#1A1A1A] pb-6">
            <div>
               <h3 className="text-xl font-bold text-white uppercase tracking-widest flex items-center gap-2"><Settings className="text-blood-red" /> Skill Builder</h3>
               <p className="text-gray-500 text-xs mt-1 uppercase tracking-wider">Crie lógicas e automatize eventos</p>
@@ -369,14 +452,14 @@ export const SkillBuilder = ({
               {savedEvents.map((ev: any) => {
                  const isToggleActive = ev.isToggle && activeToggles[ev.id];
                  return (
-                 <div key={ev.id} className={`bg-black/80 backdrop-blur-md border ${isToggleActive ? 'border-blood-red/50 shadow-[0_0_20px_rgba(255,0,0,0.2)]' : 'border-[#222] hover:border-[#444]'} rounded-xl p-5 relative overflow-hidden transition-all flex flex-col justify-between`}>
+                 <div key={ev.id} className={`bg-black/80 backdrop-blur-md border ${isToggleActive ? 'border-blood-red/50 shadow-[0_0_20px_rgba(255,0,0,0.2)]' : 'border-[#1A1A1A] hover:border-[#444]'} rounded-xl p-5 relative overflow-hidden transition-all flex flex-col justify-between`}>
                     <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${ev.isToggle ? 'from-yellow-600' : 'from-blood-red'} to-transparent opacity-30`}></div>
                     <div>
                         <div className="flex items-center justify-between mb-2">
                            <h4 className="text-white font-bold text-lg uppercase tracking-widest truncate">{ev.name}</h4>
                            {ev.isToggle && <span className="text-[9px] uppercase tracking-widest text-yellow-500 border border-yellow-500/30 bg-yellow-900/20 px-2 py-0.5 rounded ml-2">Toggle</span>}
                         </div>
-                        <div className="flex gap-2 items-center text-xs text-gray-400 font-mono bg-[#111] border border-[#222] w-fit px-2 py-1 rounded mb-6">
+                        <div className="flex gap-2 items-center text-xs text-gray-400 font-mono bg-[#1A1A1A] border border-[#1A1A1A] w-fit px-2 py-1 rounded mb-6">
                            <Layers size={12} /> {ev.blocks?.length || 0} Blocos
                         </div>
                     </div>
@@ -413,13 +496,13 @@ export const SkillBuilder = ({
         <div className="fixed bottom-24 right-6 z-[160] flex flex-col items-end gap-2">
             {showAddMenuMain && (
                <div className="bg-black/95 border border-[#333] p-4 rounded-xl shadow-2xl flex flex-col gap-2 min-w-[200px] mb-2 origin-bottom-right animate-in fade-in slide-in-from-bottom-5">
-                   <button onClick={() => createEvent(false)} className="w-full text-left hover:bg-[#222] p-3 rounded text-sm font-bold uppercase tracking-widest text-[#aaa] hover:text-white transition-colors border border-transparent hover:border-[#444]"><span className="text-blood-red mr-2">●</span> Evento Padrão</button>
-                   <button onClick={() => createEvent(true)} className="w-full text-left hover:bg-[#222] p-3 rounded text-sm font-bold uppercase tracking-widest text-[#aaa] hover:text-white transition-colors border border-transparent hover:border-[#444]"><span className="text-yellow-500 mr-2">●</span> Evento Toggle</button>
+                   <button onClick={() => createEvent(false)} className="w-full text-left hover:bg-[#1A1A1A] p-3 rounded text-sm font-bold uppercase tracking-widest text-[#aaa] hover:text-white transition-colors border border-transparent hover:border-[#444]"><span className="text-blood-red mr-2">●</span> Evento Padrão</button>
+                   <button onClick={() => createEvent(true)} className="w-full text-left hover:bg-[#1A1A1A] p-3 rounded text-sm font-bold uppercase tracking-widest text-[#aaa] hover:text-white transition-colors border border-transparent hover:border-[#444]"><span className="text-yellow-500 mr-2">●</span> Evento Toggle</button>
                </div>
             )}
             <button 
                onClick={() => setShowAddMenuMain(!showAddMenuMain)}
-               className={`w-14 h-14 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(0,0,0,0.8)] border transition-all cursor-pointer group ${showAddMenuMain ? 'bg-[#222] border-[#555] rotate-45' : 'bg-[#111] hover:bg-[#222] border-[#333] hover:border-blood-red'}`}
+               className={`w-14 h-14 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(0,0,0,0.8)] border transition-all cursor-pointer group ${showAddMenuMain ? 'bg-[#1A1A1A] border-[#555] rotate-45' : 'bg-[#1A1A1A] hover:bg-[#2a2a2a] border-[#333] hover:border-blood-red'}`}
             >
                <Plus size={28} className={`transition-colors ${showAddMenuMain ? 'text-white' : 'text-blood-red group-hover:text-red-500'}`} strokeWidth={2} />
             </button>
@@ -429,19 +512,19 @@ export const SkillBuilder = ({
            <div className="fixed inset-0 bg-black/90 z-[300] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-[#0a0a0a] border border-[#333] p-6 rounded-xl shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-sm w-full relative">
                  <button onClick={() => setShowPlayerSelect(null)} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20} /></button>
-                 <h2 className="text-xl font-bold text-white uppercase tracking-widest mb-4 flex items-center border-b border-[#222] pb-3"><Play size={20} className="text-blood-red mr-2" /> Executar Em:</h2>
+                 <h2 className="text-xl font-bold text-white uppercase tracking-widest mb-4 flex items-center border-b border-[#1A1A1A] pb-3"><Play size={20} className="text-blood-red mr-2" /> Executar Em:</h2>
                  
                  <div className="flex flex-col gap-3">
-                    <button onClick={() => executeEvent(savedEvents.find(e => e.id === showPlayerSelect.eventId), 'all', showPlayerSelect.action as any)} className="w-full bg-[#111] hover:bg-blood-red/20 border border-[#333] hover:border-blood-red text-white p-4 rounded flex items-center justify-between uppercase tracking-wider text-xs font-bold transition-all group cursor-pointer">
+                    <button onClick={() => executeEvent(savedEvents.find(e => e.id === showPlayerSelect.eventId), 'all', showPlayerSelect.action as any)} className="w-full bg-[#1A1A1A] hover:bg-blood-red/20 border border-[#333] hover:border-blood-red text-white p-4 rounded flex items-center justify-between uppercase tracking-wider text-xs font-bold transition-all group cursor-pointer">
                        <span>Todos os Jogadores</span>
                        <ArrowRight size={16} className="text-gray-500 group-hover:text-blood-red transition-colors" />
                     </button>
                     
-                    <div className="w-full h-[1px] bg-[#222] my-2"></div>
+                    <div className="w-full h-[1px] bg-[#1A1A1A] my-2"></div>
                     
                     {players.length === 0 && <span className="text-[#555] text-xs text-center italic">Nenhum jogador online.</span>}
                     {players.map(p => (
-                       <button key={p.id} onClick={() => executeEvent(savedEvents.find(e => e.id === showPlayerSelect.eventId), p.id, showPlayerSelect.action as any)} className="w-full bg-[#111] hover:bg-[#222] border border-[#333] hover:border-gray-500 text-gray-300 hover:text-white p-4 rounded flex items-center justify-between uppercase tracking-wider text-xs font-bold transition-all group cursor-pointer">
+                       <button key={p.id} onClick={() => executeEvent(savedEvents.find(e => e.id === showPlayerSelect.eventId), p.id, showPlayerSelect.action as any)} className="w-full bg-[#1A1A1A] hover:bg-[#2a2a2a] border border-[#333] hover:border-gray-500 text-gray-300 hover:text-white p-4 rounded flex items-center justify-between uppercase tracking-wider text-xs font-bold transition-all group cursor-pointer">
                          <span>{p.name || 'Desconhecido'}</span>
                          <ArrowRight size={16} className="text-gray-600 group-hover:text-white transition-colors" />
                        </button>

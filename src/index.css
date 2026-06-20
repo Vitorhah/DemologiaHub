@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@theme {
+    --color-blood-red: var(--blood-red);
+}
+
 /* --- FONTES E VARIÁVEIS --- */
 @font-face {
     font-family: 'Blur Light Regular';
@@ -8,14 +12,14 @@
 
 :root {
     --bg-dark: #050505;
-    --blood-red: #d30000;
-    --blood-glow: rgba(211, 0, 0, 0.6);
+    --blood-red: #A4133C;
+    --blood-glow: rgba(164, 19, 60, 0.6);
     --pe-blue: #00a8ff;
     --pe-glow: rgba(0, 168, 255, 0.6);
     --paper-bg: linear-gradient(180deg, #f0f0f0 0%, #dcdcdc 100%);
-    --tributo-bg: linear-gradient(180deg, #ff1a1a 0%, #b30000 100%);
+    --tributo-bg: linear-gradient(180deg, #C91A4E 0%, #A4133C 100%);
     --text-light: #ececec;
-    --text-dark: #111;
+    --text-dark: #1A1A1A;
     --font-main: 'Blur Light Regular', 'Courier New', Courier, monospace;
 }
 
@@ -98,7 +102,7 @@ button, input, textarea {
 }
 
 .bar-wrapper {
-    background: #111;
+    background: #1A1A1A;
     height: 12px;
     border-radius: 6px;
     margin-bottom: 10px;
@@ -152,7 +156,7 @@ button, input, textarea {
     gap: 10px;
 }
 .var-box {
-    background: #111;
+    background: #1A1A1A;
     border: 1px solid #333;
     padding: 10px;
     border-radius: 4px;
@@ -171,21 +175,21 @@ button, input, textarea {
     position: absolute; top: 2px; right: 2px; background: transparent; color: #555; font-size: 10px; cursor: pointer;
 }
 .btn-add {
-    background: #222; color: white; width: 100%; padding: 10px; border-radius: 4px; margin-top: 10px; font-weight: bold; cursor: pointer;
+    background: #1A1A1A; color: white; width: 100%; padding: 10px; border-radius: 4px; margin-top: 10px; font-weight: bold; cursor: pointer;
 }
 
 /* --- ROLAGEM DE DADOS --- */
 .dice-panel {
     background: #0a0a0a;
     padding: 15px;
-    border: 1px solid #222;
+    border: 1px solid #1A1A1A;
     border-radius: 8px;
 }
 .dice-input-group {
     display: flex; gap: 10px;
 }
 .dice-input {
-    flex: 1; padding: 12px; background: #111; color: #fff; border: 1px solid #333; border-radius: 4px; font-size: 16px;
+    flex: 1; padding: 12px; background: #1A1A1A; color: #fff; border: 1px solid #333; border-radius: 4px; font-size: 16px;
 }
 .btn-roll {
     background: var(--blood-red); color: white; padding: 12px 20px; border-radius: 4px; font-weight: bold; text-shadow: 1px 1px 2px #000; cursor: pointer;
@@ -248,18 +252,18 @@ button, input, textarea {
     font-size: 20px;
     margin-top: 30px;
     box-shadow: 0 5px 15px var(--blood-glow);
-    border: 1px solid #ff4d4d;
+    border: 1px solid #A4133C;
 }
-.tributo-header { font-size: 22px; font-weight: bold; border-bottom: 2px solid #500; padding-bottom: 5px; margin-bottom: 10px; text-shadow: none;}
+.tributo-header { font-size: 22px; font-weight: bold; border-bottom: 2px solid #850f30; padding-bottom: 5px; margin-bottom: 10px; text-shadow: none;}
 
 /* --- INVENTÁRIO --- */
 .inv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.inv-slot { background: #111; border: 1px solid #333; padding: 10px; color: white; width: 100%; border-radius: 4px; text-align: center; box-sizing: border-box;}
-.inv-slot:focus { border-color: var(--blood-red); background: #1a0000; }
+.inv-slot { background: #1A1A1A; border: 1px solid #333; padding: 10px; color: white; width: 100%; border-radius: 4px; text-align: center; box-sizing: border-box;}
+.inv-slot:focus { border-color: var(--blood-red); background: #1A1A1A; }
 
 /* --- MENU --- */
 .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.btn-menu { background: #222; color: #aaa; padding: 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;}
+.btn-menu { background: #1A1A1A; color: #aaa; padding: 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;}
 .btn-menu:active { background: #444; }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
