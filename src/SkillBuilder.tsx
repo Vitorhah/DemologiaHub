@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Settings, Clock, Image as ImageIcon, Layers, Plus, X, Save, ArrowLeft, Trash2, ArrowRight, ArrowUp, ArrowDown, Type, StopCircle, Upload, Undo2, Music, PauseCircle, Contrast, Copy, GripVertical } from 'lucide-react';
+import { Play, Settings, Clock, Image as ImageIcon, Layers, Plus, X, Save, ArrowLeft, Trash2, ArrowRight, ArrowUp, ArrowDown, Type, StopCircle, Upload, Undo2, Music, PauseCircle, Contrast, Copy, GripVertical, Clapperboard } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 export const SkillBuilder = ({ 
@@ -62,6 +62,9 @@ export const SkillBuilder = ({
      else if (type === 'imagem_fade') defaultBlock.value = 50;
      else if (type === 'play_ost') { defaultBlock.ostId = ''; defaultBlock.volume = 1; defaultBlock.fadeTime = 1; }
      else if (type === 'stop_ost') { defaultBlock.fadeTime = 1; }
+     else if (type === 'cutscene') { defaultBlock.title = ''; defaultBlock.subtitle = ''; defaultBlock.zoom = 2.5; defaultBlock.bars = true; defaultBlock.duration = 6; defaultBlock.ostId = ''; defaultBlock.textColor = '#FFFFFF'; defaultBlock.subtitleColor = '#ef4444'; defaultBlock.fontFamily = ''; defaultBlock.textShadow = true; }
+     else if (type === 'fade_block') { defaultBlock.opacityStart = 0; defaultBlock.opacityEnd = 1; defaultBlock.duration = 1; defaultBlock.fadeStyle = 'Linear'; defaultBlock.layer = 'Tela'; }
+     else if (type === 'open_board') { defaultBlock.aba = 'null'; defaultBlock.delay = 0; }
 
      setEditingEvent((prev: any) => ({
         ...prev,
@@ -381,6 +384,140 @@ export const SkillBuilder = ({
                                  <span className="font-bold uppercase tracking-wider text-sm text-blue-500">Loop (Fim)</span>
                               </div>
                            )}
+                           {block.type === 'cutscene' && (
+                              <div className="flex flex-col w-full gap-3">
+                                 <div className="flex items-center border-b border-[#333]/50 pb-3">
+                                    <Clapperboard size={20} className="text-pink-500 mr-2" />
+                                    <span className="font-bold uppercase tracking-wider text-sm text-pink-500">Bloco Cinemático</span>
+                                 </div>
+                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <input type="text" placeholder="Título (Ex: O ANULADOR)" value={block.title || ''} onChange={(e) => updateBlockFields(block.id, { title: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-2 rounded text-white text-xs"/>
+                                    <input type="text" placeholder="Subtítulo..." value={block.subtitle || ''} onChange={(e) => updateBlockFields(block.id, { subtitle: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-2 rounded text-white text-xs"/>
+                                    
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[40px]">Zoom</span>
+                                       <input type="number" step="0.1" value={block.zoom !== undefined ? block.zoom : 2.5} onChange={(e) => updateBlockFields(block.id, { zoom: parseFloat(e.target.value) || 1 })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs w-16 text-center"/>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[30px]">Cor (Tít)</span>
+                                       <div className="flex gap-2 items-center flex-1">
+                                          <input type="color" value={block.textColor || '#FFFFFF'} onChange={(e) => updateBlockFields(block.id, { textColor: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-0.5 rounded w-8 h-8 cursor-pointer"/>
+                                          <input type="text" placeholder="#FFFFFF" value={block.textColor || '#FFFFFF'} onChange={(e) => updateBlockFields(block.id, { textColor: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs w-full text-center uppercase"/>
+                                       </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[30px]">Cor (Sub)</span>
+                                       <div className="flex gap-2 items-center flex-1">
+                                          <input type="color" value={block.subtitleColor || '#ef4444'} onChange={(e) => updateBlockFields(block.id, { subtitleColor: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-0.5 rounded w-8 h-8 cursor-pointer"/>
+                                          <input type="text" placeholder="#ef4444" value={block.subtitleColor || '#ef4444'} onChange={(e) => updateBlockFields(block.id, { subtitleColor: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs w-full text-center uppercase"/>
+                                       </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[30px]">Fonte</span>
+                                       <select value={block.fontFamily || ''} onChange={(e) => updateBlockFields(block.id, { fontFamily: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs flex-1">
+                                          <option value="">Padrão</option>
+                                          <option value="font-sans">Inter</option>
+                                          <option value="font-mono">Mono</option>
+                                          <option value="font-archivo">Archivo</option>
+                                          <option value="font-space">Space</option>
+                                       </select>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[30px]">OST</span>
+                                       <select value={block.ostId || ''} onChange={(e) => updateBlockFields(block.id, { ostId: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs flex-1">
+                                          <option value="">(Nenhuma)</option>
+                                          {ostList.map((ost: any) => {
+                                             const rawName = ost.id.split('_').slice(3).join('_');
+                                             const ostName = decodeURIComponent(rawName);
+                                             return <option key={ost.id} value={ost.id}>{ostName || 'OST'}</option>;
+                                          })}
+                                       </select>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[40px]">Tempo</span>
+                                       <input type="number" step="0.1" value={block.duration !== undefined ? block.duration : 6} onChange={(e) => updateBlockFields(block.id, { duration: parseFloat(e.target.value) || 1 })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs w-16 text-center"/>
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest">seg</span>
+                                    </div>
+
+                                    <div className="flex gap-4">
+                                       <label className="flex items-center gap-2 text-gray-500 text-[10px] uppercase font-bold tracking-widest cursor-pointer w-fit">
+                                          <input type="checkbox" checked={block.bars !== undefined ? block.bars : true} onChange={(e) => updateBlockFields(block.id, { bars: e.target.checked })} className="rounded bg-black border-[#444] text-pink-500 accent-pink-500"/>
+                                          Barras Cinemáticas
+                                       </label>
+                                       <label className="flex items-center gap-2 text-gray-500 text-[10px] uppercase font-bold tracking-widest cursor-pointer w-fit">
+                                          <input type="checkbox" checked={block.textShadow !== undefined ? block.textShadow : true} onChange={(e) => updateBlockFields(block.id, { textShadow: e.target.checked })} className="rounded bg-black border-[#444] text-pink-500 accent-pink-500"/>
+                                          Sombra no Texto
+                                       </label>
+                                    </div>
+                                 </div>
+                              </div>
+                           )}
+                           {block.type === 'fade_block' && (
+                              <div className="flex flex-col w-full gap-3">
+                                 <div className="flex items-center border-b border-[#333]/50 pb-3">
+                                    <div className="w-5 h-5 rounded bg-black border border-white/20 mr-2 flex items-center justify-center"><div className="w-2 h-2 bg-white/50 rounded-full"></div></div>
+                                    <span className="font-bold uppercase tracking-wider text-sm text-gray-300">Fade Block</span>
+                                 </div>
+                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[70px]">Opacidade Ini.</span>
+                                       <input type="number" step="0.1" max="1" min="0" value={block.opacityStart !== undefined ? block.opacityStart : 0} onChange={(e) => updateBlockFields(block.id, { opacityStart: parseFloat(e.target.value) || 0 })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs w-16 text-center"/>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[70px]">Opacidade Fim</span>
+                                       <input type="number" step="0.1" max="1" min="0" value={block.opacityEnd !== undefined ? block.opacityEnd : 1} onChange={(e) => updateBlockFields(block.id, { opacityEnd: parseFloat(e.target.value) || 0 })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs w-16 text-center"/>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[70px]">Tempo</span>
+                                       <input type="number" step="0.1" value={block.duration !== undefined ? block.duration : 1} onChange={(e) => updateBlockFields(block.id, { duration: parseFloat(e.target.value) || 0 })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs w-16 text-center"/>
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest">seg</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[70px]">Animação</span>
+                                       <select value={block.fadeStyle || 'Linear'} onChange={(e) => updateBlockFields(block.id, { fadeStyle: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs flex-1">
+                                          <option value="Linear">Linear</option>
+                                          <option value="Quad">Quad</option>
+                                          <option value="Exponencial">Exponencial</option>
+                                       </select>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[70px]">Layer</span>
+                                       <select value={block.layer || 'Tela'} onChange={(e) => updateBlockFields(block.id, { layer: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs flex-1">
+                                          <option value="Tela">Tela (cobre UI)</option>
+                                          <option value="Fundo">Fundo (não cobre UI)</option>
+                                       </select>
+                                    </div>
+                                 </div>
+                              </div>
+                           )}
+                           {block.type === 'open_board' && (
+                              <div className="flex flex-col w-full gap-3">
+                                 <div className="flex items-center border-b border-[#333]/50 pb-3">
+                                    <div className="w-5 h-5 rounded bg-blue-500/20 border border-blue-500 mr-2 flex items-center justify-center"><div className="w-2 h-2 bg-blue-500 rounded-sm"></div></div>
+                                    <span className="font-bold uppercase tracking-wider text-sm text-blue-400">Open Board</span>
+                                 </div>
+                                 <div className="flex flex-col gap-3">
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[50px]">Aba</span>
+                                       <select value={block.aba || 'null'} onChange={(e) => updateBlockFields(block.id, { aba: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs flex-1">
+                                          <option value="ficha">Ficha</option>
+                                          <option value="log">Log</option>
+                                          <option value="conexao">Conexão</option>
+                                          <option value="null">Null (Vazio)</option>
+                                       </select>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[50px]">Delay</span>
+                                       <input type="number" step="0.1" value={block.delay !== undefined ? block.delay : 0} onChange={(e) => updateBlockFields(block.id, { delay: parseFloat(e.target.value) || 0 })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs w-16 text-center"/>
+                                       <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest">seg</span>
+                                    </div>
+                                 </div>
+                              </div>
+                           )}
                            
                            <div className="flex items-center ml-auto gap-1 sm:opacity-0 group-hover:opacity-100 transition-opacity mt-2 sm:mt-0 select-none">
                                <button title="Duplicar Bloco" onClick={(e) => { e.stopPropagation(); duplicateBlock(block.id); }} className="text-[#555] hover:text-yellow-400 p-1.5 transition-colors"><Copy size={16} /></button>
@@ -418,6 +555,15 @@ export const SkillBuilder = ({
                           <p className="text-[11px] uppercase font-black tracking-widest text-[#555] mb-3 pl-1 border-b border-[#1A1A1A] pb-1.5">Som</p>
                           <button onClick={() => addBlock('play_ost')} className="w-full text-left bg-transparent hover:bg-emerald-500/15 text-emerald-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><Music size={16} className="mr-3"/> Tocar OST</button>
                           <button onClick={() => addBlock('stop_ost')} className="w-full text-left bg-transparent hover:bg-emerald-500/15 text-emerald-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><PauseCircle size={16} className="mr-3"/> Parar OST</button>
+                      </div>
+                      <div>
+                          <p className="text-[11px] uppercase font-black tracking-widest text-[#555] mb-3 pl-1 border-b border-[#1A1A1A] pb-1.5">Cutscene</p>
+                          <button onClick={() => addBlock('cutscene')} className="w-full text-left bg-transparent hover:bg-pink-500/15 text-pink-500 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><Clapperboard size={16} className="mr-3"/> Bloco Cinemático</button>
+                          <button onClick={() => addBlock('fade_block')} className="w-full text-left bg-transparent hover:bg-gray-500/15 text-gray-300 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><div className="w-4 h-4 rounded border border-gray-400 mr-3"></div> Fade Block</button>
+                      </div>
+                      <div>
+                          <p className="text-[11px] uppercase font-black tracking-widest text-[#555] mb-3 pl-1 border-b border-[#1A1A1A] pb-1.5 mt-3">Sistema</p>
+                          <button onClick={() => addBlock('open_board')} className="w-full text-left bg-transparent hover:bg-blue-500/15 text-blue-400 p-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center transition-colors"><div className="w-4 h-4 rounded border border-blue-400 mr-3"></div> Open Board</button>
                       </div>
                   </div>
                )}

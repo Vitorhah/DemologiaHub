@@ -1,7 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;700;900&family=JetBrains+Mono:wght@400;700;800&family=Inter:wght@400;700;900&display=swap');
 @import "tailwindcss";
 
 @theme {
     --color-blood-red: var(--blood-red);
+    --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+    --font-archivo: "Archivo Black", sans-serif;
+    --font-space: "Space Grotesk", sans-serif;
 }
 
 /* --- FONTES E VARIÁVEIS --- */

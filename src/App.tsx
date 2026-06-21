@@ -16,8 +16,30 @@ import {
   Copy,
   Cloud,
   CloudOff,
+  Zap,
+  Users,
 } from "lucide-react";
-import { supabase } from "./lib/supabase";
+import { supabase, supabaseUrl, supabaseAnonKey } from "./lib/supabase";
+
+const TypewriterText = ({ text, className, style, speed = 50 }: { text: string, className?: string, style?: any, speed?: number }) => {
+  const [displayedText, setDisplayedText] = useState("");
+
+  useEffect(() => {
+    setDisplayedText("");
+    if (!text) return;
+    
+    let i = 0;
+    const interval = setInterval(() => {
+      setDisplayedText(text.substring(0, i + 1));
+      i++;
+      if (i >= text.length) clearInterval(interval);
+    }, speed);
+    
+    return () => clearInterval(interval);
+  }, [text, speed]);
+
+  return <span className={className} style={{...style, display: 'inline-block'}}>{displayedText}</span>;
+}
 
 const isVideoBackground = (url: string | null | undefined): boolean => {
   if (!url) return false;
@@ -214,6 +236,7 @@ export default function App() {
     "fichas" | "ost" | "eventos" | "extras"
   >("fichas");
   const [globalGridState, setGlobalGridState] = useState<any>({ objects: [] });
+  const [deletingFichaId, setDeletingFichaId] = useState<string | null>(null);
 
   const [savedEvents, setSavedEvents] = useState<any[]>(() => {
     try {
@@ -240,6 +263,13 @@ export default function App() {
   const [ostList, setOstList] = useState<any[]>([]);
   const [globalOstState, setGlobalOstState] = useState<any>(null);
   const globalOstStateRef = useRef<any>(null);
+  
+  const [cutsceneState, setCutsceneState] = useState<any>(null);
+  const [fadeBlockState, setFadeBlockState] = useState<any>(null);
+  const cutsceneStateRef = useRef<any>(null);
+  useEffect(() => {
+    cutsceneStateRef.current = cutsceneState;
+  }, [cutsceneState]);
 
   useEffect(() => {
     globalOstStateRef.current = globalOstState;
@@ -262,6 +292,15 @@ export default function App() {
   const handleSupabaseError = (err: any, context?: string) => {
     if (!err) return;
     const msg = typeof err === 'string' ? err : err.message || '';
+    if (
+      msg.toLowerCase().includes("failed to fetch") ||
+      msg.toLowerCase().includes("fetch") ||
+      msg.toLowerCase().includes("typeerror") ||
+      msg.toLowerCase().includes("network")
+    ) {
+      console.warn(`Supabase Connection warning [${context || 'General'}]:`, msg);
+      return;
+    }
     console.error(`Supabase Error [${context || 'General'}]:`, msg);
     if (
       msg.includes("API key") ||
@@ -272,6 +311,14 @@ export default function App() {
       msg.includes("invalid-api-key")
     ) {
       setSupabaseConfigError(`Chave API inválida ou ausente (${msg}). Configure VITE_SUPABASE_URL e VITE_SUPABASE_PUBLIC_ANON_KEY nos segredos.`);
+    } else if (
+      msg.toLowerCase().includes("permission denied") ||
+      msg.toLowerCase().includes("does not exist") ||
+      msg.toLowerCase().includes("table players") ||
+      msg.toLowerCase().includes("row level security") ||
+      msg.toLowerCase().includes("policy")
+    ) {
+      setSupabaseConfigError(`Erro de Banco de Dados (${msg}). A tabela 'players' não foi criada no novo projeto ou as permissões de leitura/escrita (Políticas e RLS) não estão configuradas como descritas abaixo.`);
     }
   };
 
@@ -439,9 +486,7 @@ export default function App() {
 
   useEffect(() => {
     const initAuth = async () => {
-      const envUrl = (import.meta as any).env.VITE_SUPABASE_URL || "";
-      const envKey = (import.meta as any).env.VITE_SUPABASE_PUBLIC_ANON_KEY || (import.meta as any).env.VITE_SUPABASE_ANON_KEY || "";
-      if (!envUrl || !envKey) {
+      if (!supabaseUrl || !supabaseAnonKey) {
         setSupabaseConfigError("Configuração do Supabase ausente. Suas variáveis de ambiente VITE_SUPABASE_URL e/ou VITE_SUPABASE_PUBLIC_ANON_KEY não estão definidas nos segredos.");
       }
 
@@ -888,6 +933,83 @@ export default function App() {
                     })
                     .catch(console.error);
                 }
+              } else if (block.type === "cutscene") {
+                setCutsceneState({ ...block, active: true });
+                if (activeFichaId !== "main") {
+                   setActiveFichaId("main");
+                   setCurrentPage("ficha");
+                } else if (currentPage !== "ficha") {
+                   setCurrentPage("ficha");
+                }
+                if (block.ostId) {
+                  const rawName = block.ostId ? block.ostId.split("_").slice(3).join("_") : "";
+                  const ostName = rawName ? decodeURIComponent(rawName) : "OST";
+                  setGlobalOstState({
+                    ostId: block.ostId,
+                    name: ostName,
+                    isPlaying: true,
+                    volume: 1,
+                    fadeTime: 1,
+                  });
+                }
+                const waitTime = (block.duration || 6) * 1000;
+                const steps = waitTime / 100;
+                for (let s = 0; s < steps; s++) {
+                  if (
+                    isToggle &&
+                    !windingDown &&
+                    activeEventsRef.current[eventId] === false
+                  ) {
+                    break;
+                  }
+                  await new Promise((r) => setTimeout(r, 100));
+                }
+                setCutsceneState({ ...block, active: false });
+                // We don't nullify immediately to allow fade out animation. Let the component handle it or do it after 2s.
+                setTimeout(() => {
+                   setCutsceneState(null);
+                }, 2000);
+              } else if (block.type === "fade_block") {
+                setFadeBlockState({ ...block, active: false });
+                await new Promise((r) => setTimeout(r, 50));
+                setFadeBlockState({ ...block, active: true });
+                
+                const waitTime = (block.duration || 1) * 1000;
+                const steps = waitTime / 100;
+                for (let s = 0; s < steps; s++) {
+                  if (
+                    isToggle &&
+                    !windingDown &&
+                    activeEventsRef.current[eventId] === false
+                  ) {
+                    break;
+                  }
+                  await new Promise((r) => setTimeout(r, 100));
+                }
+              } else if (block.type === "open_board") {
+                if (block.delay && block.delay > 0) {
+                  const waitTime = block.delay * 1000;
+                  const steps = waitTime / 100;
+                  for (let s = 0; s < steps; s++) {
+                    if (isToggle && !windingDown && activeEventsRef.current[eventId] === false) break;
+                    await new Promise((r) => setTimeout(r, 100));
+                  }
+                }
+                
+                if (block.aba) {
+                   if (block.aba === 'null') {
+                     setCurrentPage('null' as any);
+                   } else if (block.aba === 'ficha') {
+                     setActiveFichaId('main');
+                     setCurrentPage('ficha');
+                     setShowUpdateLog(false);
+                   } else if (block.aba === 'log') {
+                     setShowUpdateLog(true);
+                   } else {
+                     setCurrentPage(block.aba as any);
+                     setShowUpdateLog(false);
+                   }
+                }
               } else if (block.type === "loop") {
                 loopStack.push(i);
               } else if (block.type === "loop_end") {
@@ -1165,7 +1287,17 @@ export default function App() {
           .then(
             ({ data, error }) => {
               if (error) {
-                console.error("Error fetching players:", error.message);
+                const msg = error.message || '';
+                if (
+                  msg.toLowerCase().includes("failed to fetch") ||
+                  msg.toLowerCase().includes("fetch") ||
+                  msg.toLowerCase().includes("typeerror") ||
+                  msg.toLowerCase().includes("network")
+                ) {
+                  console.warn("Error fetching players (connection):", msg);
+                } else {
+                  console.error("Error fetching players:", msg);
+                }
                 handleSupabaseError(error, "Buscar Lista de Jogadores");
               } else if (data) {
                 setPlayers((current) => {
@@ -1586,26 +1718,115 @@ export default function App() {
     Math.max(0, Math.min(100, (state.pe.current / state.pe.max) * 100)) || 0;
   const icons = ["X", "O", "∆", "□"];
 
+  const renderHud = () => (
+    <div className="hud-container relative pointer-events-auto">
+      <img
+        className="eye-logo"
+        src="https://i.ibb.co/xq2KhP1v/3-Sem-T-tulo.png"
+        alt="Símbolo Demologia"
+      />
+      <div className="status-numbers relative">
+        <input
+          className="bg-transparent text-white font-bold text-center text-4xl uppercase outline-none w-full drop-shadow-[0_0_10px_rgba(211,0,0,0.6)]"
+          style={{
+            textShadow: "2px 2px 0px #500",
+            marginBottom: "-10px",
+            zIndex: 10,
+          }}
+          value={state.name || ""}
+          onChange={(e) =>
+            setState((prev: any) => ({ ...prev, name: e.target.value }))
+          }
+          placeholder="NOME"
+        />
+        <div className="pe-text z-0">
+          <span>
+            {state.pe.current}/{state.pe.max}
+          </span>
+          PE
+        </div>
+        <div className="hp-text z-0">
+          <span>
+            {state.hp.current}/{state.hp.max}
+          </span>
+          HP
+        </div>
+      </div>
+
+      <div className="status-bars">
+        <div className="bar-wrapper">
+          <div
+            className="bar-fill hp-fill"
+            style={{ width: `${hpPercent}%` }}
+          ></div>
+        </div>
+        <div className="status-inputs">
+          <span>
+            HP:{" "}
+            <MestreStatInput
+              value={state.hp.current}
+              className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
+              onSave={(val) => updateStat("hp", "current", val)}
+            />{" "}
+            /{" "}
+            <MestreStatInput
+              value={state.hp.max}
+              className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
+              onSave={(val) => updateStat("hp", "max", val)}
+            />
+          </span>
+        </div>
+
+        <div className="bar-wrapper" style={{ marginTop: "15px" }}>
+          <div
+            className="bar-fill pe-fill"
+            style={{ width: `${pePercent}%` }}
+          ></div>
+        </div>
+        <div className="status-inputs">
+          <span>
+            PE:{" "}
+            <MestreStatInput
+              value={state.pe.current}
+              className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
+              onSave={(val) => updateStat("pe", "current", val)}
+            />{" "}
+            /{" "}
+            <MestreStatInput
+              value={state.pe.max}
+              className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
+              onSave={(val) => updateStat("pe", "max", val)}
+            />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div
-      id="app"
-      style={
-        customStyle.backgroundUrl
-          ? {
-              backgroundImage: isVideoBackground(customStyle.backgroundUrl)
-                ? "none"
-                : customStyle.backgroundFade !== undefined
-                  ? `linear-gradient(rgba(0,0,0,${customStyle.backgroundFade / 100}), rgba(0,0,0,${customStyle.backgroundFade / 100})), url(${customStyle.backgroundUrl})`
-                  : `url(${customStyle.backgroundUrl})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundAttachment: "fixed",
-              minHeight: "100vh",
-              transition: "background-image 0.5s ease-in-out",
-            }
-          : {}
-      }
-    >
+    <div id="app" className="relative min-h-screen">
+      <div 
+        id="app-bg"
+        className="fixed inset-0 z-[-15]"
+        style={{
+          ...(customStyle.backgroundUrl
+            ? {
+                backgroundImage: isVideoBackground(customStyle.backgroundUrl)
+                  ? "none"
+                  : customStyle.backgroundFade !== undefined
+                    ? `linear-gradient(rgba(0,0,0,${customStyle.backgroundFade / 100}), rgba(0,0,0,${customStyle.backgroundFade / 100})), url(${customStyle.backgroundUrl})`
+                    : `url(${customStyle.backgroundUrl})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                backgroundAttachment: "fixed",
+                transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + 's ease-out' : '1s ease-out'}`,
+              }
+            : {
+                backgroundColor: '#0a0a0a'
+              }),
+          transform: cutsceneState?.active ? `scale(${cutsceneState.zoom || 1})` : 'scale(1)'
+        }}
+      />
       {supabaseConfigError && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[9999] flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-[#111] border-2 border-blood-red/60 rounded-2xl max-w-2xl w-full p-6 md:p-8 shadow-[0_0_50px_rgba(255,0,0,0.3)] relative my-8">
@@ -1633,8 +1854,56 @@ export default function App() {
 
             <div className="space-y-6 text-gray-300 text-sm leading-relaxed max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
               <p>
-                O aplicativo detectou que a conexão com o banco de dados do Supabase falhou (por exemplo: erro <strong>Invalid API key</strong>, chaves expiradas ou ausentes). Para que a sincronização em tempo real das fichas, controle do mestre, músicas e eventos funcionem em múltiplos dispositivos, configure as chaves do Supabase.
+                O aplicativo detectou que a conexão com o banco de dados do Supabase falhou (por exemplo: erro <strong>Invalid API key</strong>, chaves expiradas ou permissões do PostgreSQL pendentes). Para que a sincronização funcione em tempo real com o mestre, os jogadores, as músicas e eventos em múltiplos dispositivos, realize o passo a passo a seguir:
               </p>
+
+              <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-xl">
+                <h3 className="font-bold text-yellow-400 uppercase tracking-wider text-xs mb-2 flex items-center gap-2">
+                  <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
+                  🚨 CRÍTICO: Criar Tabela e Configurar SQL no Supabase
+                </h3>
+                <p className="text-xs text-gray-400 leading-relaxed mb-2">
+                  Como você está usando um novo projeto do Supabase (ou mudou de servidor), é <strong>absolutamente necessário</strong> criar o banco de dados e as políticas de acesso. Caso contrário, você receberá erro de permissão ou tabela inexistente ("relation players does not exist"):
+                </p>
+                <ol className="mb-3 space-y-2 list-decimal list-inside text-xs text-gray-400">
+                  <li>No painel do seu projeto Supabase, acesse a guia <strong>SQL Editor</strong> no menu lateral esquerdo.</li>
+                  <li>Clique em <strong>New Query</strong> (Nova Consulta).</li>
+                  <li>Copie e cole todo o código SQL abaixo no painel:</li>
+                </ol>
+                <div className="relative group mt-2 mb-3">
+                  <pre className="text-[10px] text-gray-300 font-mono bg-black/60 p-3 rounded-lg border border-[#222] overflow-x-auto max-h-[180px] whitespace-pre select-all">
+{`-- 1. Criar a tabela de jogadores/dados do RPG
+CREATE TABLE IF NOT EXISTS public.players (
+    id TEXT PRIMARY KEY,
+    data JSONB DEFAULT '{}'::jsonb
+);
+
+-- 2. Habilitar o RLS (Row Level Security)
+ALTER TABLE public.players ENABLE ROW LEVEL SECURITY;
+
+-- 3. Remover políticas antigas caso existam
+DROP POLICY IF EXISTS "enable_read_all" ON public.players;
+DROP POLICY IF EXISTS "enable_insert_all" ON public.players;
+DROP POLICY IF EXISTS "enable_update_all" ON public.players;
+DROP POLICY IF EXISTS "enable_delete_all" ON public.players;
+
+-- 4. Criar políticas irrestritas para as fichas e mestre compartilhados
+CREATE POLICY "enable_read_all" ON public.players FOR SELECT USING (true);
+CREATE POLICY "enable_insert_all" ON public.players FOR INSERT WITH CHECK (true);
+CREATE POLICY "enable_update_all" ON public.players FOR UPDATE USING (true);
+CREATE POLICY "enable_delete_all" ON public.players FOR DELETE USING (true);
+
+-- 5. Garantir permissões de acesso e leitura/escrita pública
+GRANT ALL ON TABLE public.players TO anon;
+GRANT ALL ON TABLE public.players TO authenticated;
+GRANT ALL ON TABLE public.players TO service_role;`}
+                  </pre>
+                </div>
+                <ol start={4} className="space-y-2 list-decimal list-inside text-xs text-gray-400">
+                  <li>Clique no botão azul <strong>Run</strong> (no canto inferior direito ou use Ctrl+Enter/Cmd+Enter) para executar o código.</li>
+                  <li>Pronto! O erro de permissão sumirá instantaneamente no Vercel e aqui no visualizador.</li>
+                </ol>
+              </div>
 
               <div className="bg-black/40 border border-[#333] p-4 rounded-xl">
                 <h3 className="font-bold text-white uppercase tracking-wider text-xs mb-3 flex items-center gap-2">
@@ -1672,23 +1941,22 @@ export default function App() {
                   Como Criar/Mudar para um Servidor mais Perto (São Paulo)
                 </h3>
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  Criar o projeto em um servidor em São Paulo diminui drasticamente a latência e deixa as rolagens e atualizações instantâneas no Brasil:
+                  Criar o projeto em um servidor em São Paulo diminui drasticamente a latência e deixa as rolagens e atualizações de vida e energia instantâneas no Brasil:
                 </p>
                 <ol className="mt-2 space-y-2 list-decimal list-inside text-xs text-gray-400">
                   <li>Crie um novo projeto no site do Supabase clicando em <strong>New Project</strong>.</li>
                   <li>Na tela de criação, configure o nome, senha do banco, e na opção de <strong>Region</strong> escolha <strong>São Paulo (sa-east-1)</strong>.</li>
                   <li>Aguarde cerca de 2 minutos para o servidor iniciar.</li>
-                  <li>Vá em <strong>Settings &gt; API</strong>, copie a nova URL e chave anônima, e substitua as anteriores nos segredos do AI Studio.</li>
-                  <li>Clique para reiniciar o servidor de desenvolvimento do AI Studio para que as alterações tenham efeito rápido!</li>
+                  <li>Vá em <strong>Settings &gt; API</strong>, copie a nova URL e chave anônima, e substitua as anteriores nos segredos do AI Studio / Vercel.</li>
                 </ol>
               </div>
 
               <div className="bg-[#1A1A1A] p-4 rounded-xl border border-[#333]">
                 <h3 className="font-bold text-white uppercase tracking-wider text-xs mb-2">
-                  Onde Configuro as Chaves no AI Studio?
+                  Onde Configuro as Chaves no Vercel ou AI Studio?
                 </h3>
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  Para configurar, vá no painel de ferramentas à esquerda ou no painel superior à direita (ícone de Chave ou Configurações/Secrets), adicione as chaves <strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_PUBLIC_ANON_KEY</strong> e salve. Em seguida, reinicie o app.
+                  Para o Vercel: adicione as Environment Variables chamadas <strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_PUBLIC_ANON_KEY</strong> nas configurações do projeto na dashboard da Vercel e faça um novo Deploy. No AI Studio, configure no menu lateral/superior em Secrets.
                 </p>
               </div>
             </div>
@@ -1708,7 +1976,13 @@ export default function App() {
         </div>
       )}
       {isVideoBackground(customStyle.backgroundUrl) && (
-        <div className="fixed inset-0 z-[-10] w-full h-full pointer-events-none overflow-hidden bg-black">
+        <div 
+          className="fixed inset-0 z-[-10] w-full h-full pointer-events-none overflow-hidden bg-black object-cover"
+          style={{
+             transform: cutsceneState?.active ? `scale(${cutsceneState.zoom || 1})` : 'scale(1)',
+             transition: cutsceneState?.active ? `transform ${cutsceneState.duration || 6}s ease-out` : 'transform 1s ease-out'
+          }}
+        >
           <video
             src={customStyle.backgroundUrl}
             autoPlay
@@ -1730,8 +2004,52 @@ export default function App() {
         </div>
       )}
       <audio ref={audioRef} loop preload="auto" />
+      
+      {/* Fade Block Overlay */}
+      {fadeBlockState !== null && (
+        <div 
+          className={`fixed inset-0 pointer-events-none transition-all ${fadeBlockState.layer === 'Tela' ? 'z-[999]' : 'z-[5]'}`}
+          style={{
+             backgroundColor: `rgba(0, 0, 0, ${fadeBlockState.active ? fadeBlockState.opacityEnd : fadeBlockState.opacityStart})`,
+             transitionDuration: `${fadeBlockState.duration || 1}s`,
+             transitionTimingFunction: fadeBlockState.fadeStyle === 'Exponencial' ? 'cubic-bezier(0.87, 0, 0.13, 1)' : fadeBlockState.fadeStyle === 'Quad' ? 'cubic-bezier(0.45, 0, 0.55, 1)' : 'linear',
+          }}
+        />
+      )}
 
-      {requiresInteraction && (
+      {/* Cinematic Overlay */}
+      <div className={`fixed inset-0 pointer-events-none flex flex-col justify-center items-center z-[500] transition-opacity duration-1000 ${cutsceneState?.active ? 'opacity-100' : 'opacity-0'}`}>
+         {/* Cinematic Bars */}
+         {cutsceneState?.bars && (
+            <>
+               <div className="absolute top-0 left-0 right-0 bg-black/95 transition-all duration-[2000ms]" style={{ height: cutsceneState?.active ? '15vh' : '0vh' }}></div>
+               <div className="absolute bottom-0 left-0 right-0 bg-black/95 transition-all duration-[2000ms]" style={{ height: cutsceneState?.active ? '15vh' : '0vh' }}></div>
+            </>
+         )}
+         {/* Title Display */}
+         {(cutsceneState?.title || cutsceneState?.subtitle) && (
+            <div className={`text-center drop-shadow-[0_0_20px_rgba(0,0,0,1)] max-w-4xl px-6 flex flex-col gap-4 ${cutsceneState?.fontFamily || 'font-archivo'}`}>
+              {cutsceneState.title && (
+                 <TypewriterText 
+                    className={`text-5xl md:text-7xl lg:text-8xl font-black uppercase tracking-[0.1em] md:tracking-[0.2em] leading-none ${cutsceneState?.textShadow !== false ? '[text-shadow:4px_4px_0px_#000]' : ''}`} 
+                    style={{ color: cutsceneState.textColor || '#FFFFFF' }}
+                    text={cutsceneState.title}
+                 />
+              )}
+              {cutsceneState.subtitle && (
+                 <TypewriterText
+                    className={`text-sm md:text-base lg:text-xl uppercase font-bold tracking-[0.3em] font-mono ${cutsceneState?.textShadow !== false ? '[text-shadow:2px_2px_0px_#000]' : ''}`} 
+                    style={{ color: cutsceneState.subtitleColor || (cutsceneState.textColor ? `${cutsceneState.textColor}aa` : '#ef4444') }}
+                    text={cutsceneState.subtitle}
+                    speed={30}
+                 />
+              )}
+            </div>
+         )}
+      </div>
+
+      <div className={`w-full min-h-screen transition-opacity duration-700 ${cutsceneState?.active ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+        {requiresInteraction && (
         <div className="fixed inset-0 bg-black/90 z-[300] flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm">
           <ShieldAlert
             size={64}
@@ -1955,7 +2273,7 @@ export default function App() {
         </div>
       )}
 
-      {currentPage !== "mestre" ? (
+      {currentPage !== "mestre" && currentPage !== "null" ? (
         <div className="fixed bottom-0 left-0 w-full h-14 bg-black/95 backdrop-blur-md border-t border-[#1A1A1A] flex flex-row items-center z-[100] shadow-[0_-5px_20px_rgba(0,0,0,0.8)] overflow-x-auto overflow-y-hidden no-scrollbar">
           <button
             onClick={() => {
@@ -2024,185 +2342,90 @@ export default function App() {
           </button>
           <div className="w-[1px] h-8 shrink-0 bg-[#1A1A1A]"></div>
         </div>
-      ) : (
-        <div className="fixed bottom-0 left-0 w-full h-14 bg-black/95 backdrop-blur-md border-t border-blood-red/30 flex flex-row items-center z-[100] shadow-[0_-5px_20px_rgba(255,0,0,0.15)]">
+      ) : currentPage === "mestre" ? (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-lg h-15 bg-black/95 backdrop-blur-md border border-blood-red/30 rounded-2xl flex flex-row items-center justify-around z-[130] shadow-[0_8px_32px_rgba(0,0,0,0.8)] px-2">
           <button
             onClick={() => {
               setActiveFichaId("main");
               setCurrentPage("ficha");
             }}
-            className="flex flex-col items-center justify-center flex-1 h-full text-gray-500 hover:text-white hover:bg-blood-red/5 transition-colors"
+            className="flex flex-col items-center justify-center flex-1 h-full py-1 text-gray-500 hover:text-white hover:bg-white/5 rounded-xl transition-all duration-200 cursor-pointer"
           >
-            <span className="text-xs uppercase font-bold tracking-widest mt-1">
-              Ficha
+            <FileText size={16} className="text-gray-500 group-hover:text-white" />
+            <span className="text-[9px] uppercase font-bold tracking-wider mt-0.5">
+              Player
             </span>
           </button>
 
-          <div className="w-[1px] h-8 bg-blood-red/20"></div>
-          <button
-            onClick={() => setMestreTab("ost")}
-            className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${mestreTab === "ost" ? "text-blood-red bg-blood-red/10 border-t-2 border-blood-red" : "text-gray-500 hover:text-white hover:bg-blood-red/5"}`}
-          >
-            <span className="text-xs uppercase font-bold tracking-widest mt-1">
-              OST
-            </span>
-          </button>
-          <div className="w-[1px] h-8 bg-blood-red/20"></div>
-          <button
-            onClick={() => setMestreTab("eventos")}
-            className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${mestreTab === "eventos" ? "text-blood-red bg-blood-red/10 border-t-2 border-blood-red" : "text-gray-500 hover:text-white hover:bg-blood-red/5"}`}
-          >
-            <span className="text-xs uppercase font-bold tracking-widest mt-1">
-              Eventos
-            </span>
-          </button>
-          <div className="w-[1px] h-8 bg-blood-red/20"></div>
+          <div className="w-[1px] h-6 bg-blood-red/10 shrink-0"></div>
+
           <button
             onClick={() => setMestreTab("fichas")}
-            className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${mestreTab === "fichas" ? "text-blood-red bg-blood-red/10 border-t-2 border-blood-red" : "text-gray-500 hover:text-white hover:bg-blood-red/5"}`}
+            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-all duration-200 rounded-xl cursor-pointer ${
+              mestreTab === "fichas"
+                ? "text-blood-red bg-blood-red/10 font-black scale-105"
+                : "text-gray-500 hover:text-white hover:bg-white/5"
+            }`}
           >
-            <span className="text-xs uppercase font-bold tracking-widest mt-1">
+            <Users size={16} className={mestreTab === "fichas" ? "text-blood-red" : "text-gray-500"} />
+            <span className="text-[9px] uppercase font-bold tracking-wider mt-0.5">
               Players
             </span>
           </button>
-          <div className="w-[1px] h-8 bg-blood-red/20"></div>
+
+          <div className="w-[1px] h-6 bg-blood-red/10 shrink-0"></div>
+
+          <button
+            onClick={() => setMestreTab("ost")}
+            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-all duration-200 rounded-xl cursor-pointer ${
+              mestreTab === "ost"
+                ? "text-blood-red bg-blood-red/10 font-black scale-105"
+                : "text-gray-500 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <Music size={16} className={mestreTab === "ost" ? "text-blood-red" : "text-gray-500"} />
+            <span className="text-[9px] uppercase font-bold tracking-wider mt-0.5">
+              OST
+            </span>
+          </button>
+
+          <div className="w-[1px] h-6 bg-blood-red/10 shrink-0"></div>
+
+          <button
+            onClick={() => setMestreTab("eventos")}
+            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-all duration-200 rounded-xl cursor-pointer ${
+              mestreTab === "eventos"
+                ? "text-blood-red bg-blood-red/10 font-black scale-105"
+                : "text-gray-500 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <Zap size={16} className={mestreTab === "eventos" ? "text-blood-red" : "text-gray-500"} />
+            <span className="text-[9px] uppercase font-bold tracking-wider mt-0.5">
+              Eventos
+            </span>
+          </button>
+
+          <div className="w-[1px] h-6 bg-blood-red/10 shrink-0"></div>
+
           <button
             onClick={() => setMestreTab("extras")}
-            className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${mestreTab === "extras" ? "text-blood-red bg-blood-red/10 border-t-2 border-blood-red" : "text-gray-500 hover:text-white hover:bg-blood-red/5"}`}
+            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-all duration-200 rounded-xl cursor-pointer ${
+              mestreTab === "extras"
+                ? "text-blood-red bg-blood-red/10 font-black scale-105"
+                : "text-gray-500 hover:text-white hover:bg-white/5"
+            }`}
           >
-            <span className="text-xs uppercase font-bold tracking-widest mt-1">
+            <Ghost size={16} className={mestreTab === "extras" ? "text-blood-red" : "text-gray-500"} />
+            <span className="text-[9px] uppercase font-bold tracking-wider mt-0.5">
               Extras
             </span>
           </button>
         </div>
-      )}
+      ) : null}
 
       {(currentPage === "ficha" || currentPage === "ficha_extra") && (
         <>
-          {currentPage === "ficha_extra" && (
-            <div className="absolute top-4 left-4 right-4 z-50 flex justify-between items-center pointer-events-none">
-              <button
-                onClick={() => {
-                  setActiveFichaId("main");
-                  setCurrentPage("mestre");
-                  setMestreTab("extras");
-                }}
-                className="pointer-events-auto bg-[#1A1A1A]/90 backdrop-blur-md border border-[#555] text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-[9px] md:text-[10px] uppercase font-bold tracking-widest shadow-xl flex items-center gap-1.5 md:gap-2 transition-all hover:bg-[#333]"
-              >
-                <X size={14} /> Fechar Extra
-              </button>
-
-              {(() => {
-                const activeFicha = extraFichas.find((f) => f.id === activeFichaId);
-                if (!activeFicha) return null;
-                return (
-                  <button
-                    onClick={() => toggleFichaSync(activeFicha)}
-                    className={`pointer-events-auto backdrop-blur-md border px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-[9px] md:text-[10px] uppercase font-bold tracking-widest shadow-xl flex items-center gap-1.5 md:gap-2 transition-all ${
-                      activeFicha.synchronized
-                        ? "bg-blue-500/10 border-blue-500/40 text-blue-400"
-                        : "bg-[#1A1A1A]/90 hover:bg-[#333] border-[#555] text-gray-400"
-                    }`}
-                    title={activeFicha.synchronized ? "Parar Sincronização de Ficha" : "Sincronizar com Nuvem"}
-                  >
-                    {activeFicha.synchronized ? (
-                      <>
-                        <Cloud size={14} className="animate-pulse" />
-                        <span>Sincronizado</span>
-                      </>
-                    ) : (
-                      <>
-                        <CloudOff size={14} />
-                        <span>Sincronizar</span>
-                      </>
-                    )}
-                  </button>
-                );
-              })()}
-            </div>
-          )}
-          <div className="hud-container relative">
-            <img
-              className="eye-logo"
-              src="https://i.ibb.co/xq2KhP1v/3-Sem-T-tulo.png"
-              alt="Símbolo Demologia"
-            />
-            <div className="status-numbers relative">
-              <input
-                className="bg-transparent text-white font-bold text-center text-4xl uppercase outline-none w-full drop-shadow-[0_0_10px_rgba(211,0,0,0.6)]"
-                style={{
-                  textShadow: "2px 2px 0px #500",
-                  marginBottom: "-10px",
-                  zIndex: 10,
-                }}
-                value={state.name || ""}
-                onChange={(e) =>
-                  setState((prev: any) => ({ ...prev, name: e.target.value }))
-                }
-                placeholder="NOME"
-              />
-              <div className="pe-text z-0">
-                <span>
-                  {state.pe.current}/{state.pe.max}
-                </span>
-                PE
-              </div>
-              <div className="hp-text z-0">
-                <span>
-                  {state.hp.current}/{state.hp.max}
-                </span>
-                HP
-              </div>
-            </div>
-
-            <div className="status-bars">
-              <div className="bar-wrapper">
-                <div
-                  className="bar-fill hp-fill"
-                  style={{ width: `${hpPercent}%` }}
-                ></div>
-              </div>
-              <div className="status-inputs">
-                <span>
-                  HP:{" "}
-                  <MestreStatInput
-                    value={state.hp.current}
-                    className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
-                    onSave={(val) => updateStat("hp", "current", val)}
-                  />{" "}
-                  /{" "}
-                  <MestreStatInput
-                    value={state.hp.max}
-                    className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
-                    onSave={(val) => updateStat("hp", "max", val)}
-                  />
-                </span>
-              </div>
-
-              <div className="bar-wrapper" style={{ marginTop: "15px" }}>
-                <div
-                  className="bar-fill pe-fill"
-                  style={{ width: `${pePercent}%` }}
-                ></div>
-              </div>
-              <div className="status-inputs">
-                <span>
-                  PE:{" "}
-                  <MestreStatInput
-                    value={state.pe.current}
-                    className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
-                    onSave={(val) => updateStat("pe", "current", val)}
-                  />{" "}
-                  /{" "}
-                  <MestreStatInput
-                    value={state.pe.max}
-                    className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
-                    onSave={(val) => updateStat("pe", "max", val)}
-                  />
-                </span>
-              </div>
-            </div>
-          </div>
+          {renderHud()}
 
           <div className="section">
             <div className="section-title">Variáveis de Status</div>
@@ -2806,12 +3029,6 @@ export default function App() {
 
             {mestreTab === "fichas" ? (
               <>
-                <div className="flex flex-col items-center justify-center text-center mb-8">
-                  <p className="text-gray-400 text-xs mt-2 max-w-sm">
-                    Acompanhamento simultâneo de fichas em tempo real.
-                  </p>
-                </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto px-4">
                   {(() => {
                     const syncedExtrasAsPlayers = extraFichas
@@ -3418,36 +3635,21 @@ export default function App() {
               />
             ) : mestreTab === "extras" ? (
               <div className="max-w-6xl mx-auto flex flex-col gap-6 px-4">
-                <div className="bg-black/80 backdrop-blur-md border border-[#333] rounded-xl p-6 shadow-lg relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blood-red to-transparent opacity-50"></div>
-                  <div className="flex justify-between items-center mb-4 mt-2">
-                    <div className="flex items-center gap-3">
-                      <Ghost size={24} className="text-blood-red" />
-                      <h3 className="text-xl font-bold text-white uppercase tracking-widest">
-                        Fichas Extras
-                      </h3>
+                <div className="bg-[#050505]/95 backdrop-blur-md border border-blood-red/15 rounded-2xl p-6 shadow-[0_4px_30px_rgba(255,0,0,0.05)] relative overflow-hidden mb-2">
+                  <div className="absolute inset-0 bg-gradient-to-r from-blood-red/5 to-transparent"></div>
+                  <div className="flex items-center gap-4 relative z-10 w-full">
+                    <div className="p-3 bg-blood-red/10 border border-blood-red/20 rounded-xl text-blood-red">
+                      <Ghost size={26} />
                     </div>
-                    <button
-                      onClick={() => {
-                        setExtraFichas([
-                          {
-                            ...defaultState,
-                            id: Date.now().toString(),
-                            name: "Novo Extra",
-                            notes: "",
-                          },
-                          ...extraFichas,
-                        ]);
-                      }}
-                      className="bg-blood-red hover:bg-red-700 text-white py-2 px-3 rounded-lg transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
-                    >
-                      <Plus size={14} /> Novo
-                    </button>
+                    <div>
+                      <h3 className="text-lg font-black text-white uppercase tracking-wider">
+                        Nuvem & Fichas Extras
+                      </h3>
+                      <p className="text-[#a0a0a0] text-xs mt-1 leading-relaxed">
+                        Crie e gerencie NPCs, monstros e chefes instantaneamente. Sincronize com a nuvem para os jogadores acompanharem em tempo real.
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-gray-400 text-xs mb-2 max-w-lg leading-relaxed">
-                    Fichas secundárias locais para controle rápido de NPCs e
-                    Bosses.
-                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -3471,14 +3673,14 @@ export default function App() {
                         } hover:border-blood-red/50 rounded-xl p-5 relative overflow-hidden transition-all shadow-lg flex flex-col justify-between group`}
                       >
                         <div>
-                          {ficha.synchronized && (
-                            <div className="absolute top-0 right-0 bg-blue-500/10 text-blue-400 text-[8px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-bl border-l border-b border-blue-500/20 flex items-center gap-1 z-20">
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
-                              Sincronizado
-                            </div>
-                          )}
                           <div className="flex justify-between items-start mb-4 relative z-10 w-full gap-2">
-                            <div className="flex-1 min-w-0">
+                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                              {ficha.synchronized && (
+                                <div className="inline-flex items-center gap-1.5 bg-blue-500/10 text-blue-400 text-[8px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded border border-blue-500/20 mb-1 w-max">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+                                  Sincronizado
+                                </div>
+                              )}
                               <input
                                 type="text"
                                 value={ficha.name}
@@ -3523,32 +3725,49 @@ export default function App() {
                               >
                                 <Copy size={14} />
                               </button>
-                              <button
-                                onClick={() => {
-                                  if (window.confirm("Excluir esta ficha?")) {
-                                    if (ficha.synchronized) {
-                                      // also delete from DB
-                                      supabase
-                                        .from("players")
-                                        .delete()
-                                        .eq("id", `EXTRA_FICHA_${ficha.id}`)
-                                        .then(({ error }) => {
-                                          if (error) console.error("Error deleting synced sheet:", error.message);
-                                        });
-                                    }
-                                    setExtraFichas(
-                                      extraFichas.filter((f) => f.id !== ficha.id),
-                                    );
-                                    if (activeFichaId === ficha.id) {
-                                      setActiveFichaId("main");
-                                      setCurrentPage("mestre");
-                                    }
-                                  }
-                                }}
-                                className="text-[#555] hover:text-red-500 bg-transparent hover:bg-red-500/10 p-1.5 rounded-full transition-all shrink-0"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                              {deletingFichaId === ficha.id ? (
+                                <div className="flex items-center gap-1 bg-blood-red/10 border border-blood-red/25 px-1.5 py-0.5 rounded-lg z-20">
+                                  <span className="text-[10px] text-red-500 font-bold uppercase tracking-wider">Deletar?</span>
+                                  <button
+                                    onClick={() => {
+                                      if (ficha.synchronized) {
+                                        supabase
+                                          .from("players")
+                                          .delete()
+                                          .eq("id", `EXTRA_FICHA_${ficha.id}`)
+                                          .then(({ error }) => {
+                                            if (error) console.error("Error deleting synced sheet:", error.message);
+                                          });
+                                      }
+                                      setExtraFichas(
+                                        extraFichas.filter((f) => f.id !== ficha.id),
+                                      );
+                                      if (activeFichaId === ficha.id) {
+                                        setActiveFichaId("main");
+                                        setCurrentPage("mestre");
+                                      }
+                                      setDeletingFichaId(null);
+                                    }}
+                                    className="text-white hover:text-green-400 bg-green-500/20 hover:bg-green-500/30 px-1 py-0.5 rounded text-[10px] font-black cursor-pointer"
+                                  >
+                                    Sim
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletingFichaId(null)}
+                                    className="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 px-1 py-0.5 rounded text-[10px] font-black cursor-pointer"
+                                  >
+                                    Não
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setDeletingFichaId(ficha.id)}
+                                  className="text-[#555] hover:text-red-500 bg-transparent hover:bg-red-500/10 p-1.5 rounded-full transition-all shrink-0 cursor-pointer"
+                                  title="Excluir ficha"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -3698,6 +3917,28 @@ export default function App() {
                 )}
               </div>
             ) : null}
+
+            {mestreTab === "extras" && (
+              <div className="fixed bottom-24 right-6 z-[160] flex flex-col items-end gap-2">
+                <button
+                  onClick={() => {
+                    setExtraFichas([
+                      {
+                        ...defaultState,
+                        id: Date.now().toString(),
+                        name: "Novo Extra",
+                        notes: "",
+                      },
+                      ...extraFichas,
+                    ]);
+                  }}
+                  className="w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_25px_rgba(0,0,0,0.9)] border transition-all z-[150] cursor-pointer bg-blood-red hover:bg-red-700 border-red-500/40 hover:scale-110 active:scale-95 group"
+                  title="Adicionar Ficha Extra"
+                >
+                  <Plus size={32} className="text-white" strokeWidth={2.5} />
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -3774,6 +4015,7 @@ export default function App() {
             </div>
           );
         })()}
+      </div>
     </div>
   );
 }
