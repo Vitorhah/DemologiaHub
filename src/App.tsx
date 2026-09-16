@@ -18,6 +18,8 @@ import {
   CloudOff,
   Zap,
   Users,
+  User,
+  Radio,
 } from "lucide-react";
 import { supabase, supabaseUrl, supabaseAnonKey } from "./lib/supabase";
 
@@ -55,7 +57,7 @@ const defaultState = {
   name: "Ocultista",
   hp: { current: 100, max: 100 },
   pe: { current: 60, max: 60 },
-  variables: { OCU: 4, FOR: 1 } as Record<string, number>,
+  variables: { SAN: 1, AGL: 1, INT: 1, FOR: 1, VIT: 1, OCU: 1 } as Record<string, number>,
   skills: [
     {
       id: 1,
@@ -125,6 +127,11 @@ const MestreStatInput = ({
 
 import { SkillBuilder } from "./SkillBuilder";
 import { TabletopGrid } from "./components/TabletopGrid";
+import { QuickDiceSection } from "./components/QuickDiceSection";
+import { RollingTerminal } from "./components/RollingTerminal";
+import { FormulaShortcutsSection } from "./components/FormulaShortcutsSection";
+import { DossierVariablesSection } from "./components/DossierVariablesSection";
+import { DossierInventorySection } from "./components/DossierInventorySection";
 
 export default function App() {
   const [mainState, setMainState] = useState(() => {
@@ -218,6 +225,13 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState("ficha");
   const [activeTributo, setActiveTributo] = useState(false);
   const [diceInput, setDiceInput] = useState("");
+  const [lastRollResult, setLastRollResult] = useState<{
+    formula: string;
+    result: number;
+    details: string;
+    critical?: "crit" | "fumble" | "normal";
+  } | null>(null);
+  const [quickDiceQty, setQuickDiceQty] = useState<number>(1);
   const historyRef = useRef<HTMLDivElement>(null);
   const [isShaking, setIsShaking] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -1431,10 +1445,20 @@ export default function App() {
     }));
   };
 
-  const processManualRoll = () => {
+  const executeRoll = (formulaToRoll: string) => {
     vibrate(50);
-    const roll = parseAndRoll(diceInput);
+    const trimmed = formulaToRoll.trim();
+    if (!trimmed) return;
+    const normalized = trimmed.replace(/(^|[^0-9])d(\d+)/gi, "$11d$2");
+    const roll = parseAndRoll(normalized);
     if (roll) {
+      let critical: "crit" | "fumble" | "normal" = "normal";
+      const upper = normalized.toUpperCase();
+      if (upper.includes("1D20") && roll.details.includes("1D20")) {
+        if (roll.details.includes("[20]")) critical = "crit";
+        else if (roll.details.includes("[1]")) critical = "fumble";
+      }
+      setLastRollResult({ ...roll, critical });
       addToHistory(
         `Rolou: <b>${roll.formula}</b> <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
       );
@@ -1444,6 +1468,10 @@ export default function App() {
         '<span style="color: #ffaa00;">Fórmula manual inválida.</span>',
       );
     }
+  };
+
+  const processManualRoll = () => {
+    executeRoll(diceInput);
   };
 
   const updateStat = (
@@ -1560,6 +1588,12 @@ export default function App() {
     const roll = parseAndRoll(formula);
     if (roll) {
       const tipoStr = type === "test" ? "Teste" : "Dano";
+      setLastRollResult({
+        formula: `${skill.name || "Habilidade"} (${tipoStr})`,
+        result: roll.result,
+        details: roll.details,
+        critical: "normal",
+      });
       addToHistory(
         `<b>${skill.name || "Habilidade"}</b> (${tipoStr}) <br>Fórmula: ${roll.formula} <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
       );
@@ -1628,6 +1662,27 @@ export default function App() {
       newInv[index] = val;
       return { ...prev, inventory: newInv };
     });
+  };
+
+  const addInventorySlot = () => {
+    setState((prev: any) => ({
+      ...prev,
+      inventory: [...prev.inventory, ""],
+    }));
+  };
+
+  const removeInventorySlot = (index: number) => {
+    setState((prev: any) => ({
+      ...prev,
+      inventory: prev.inventory.filter((_: any, i: number) => i !== index),
+    }));
+  };
+
+  const clearAllInventory = () => {
+    setState((prev: any) => ({
+      ...prev,
+      inventory: prev.inventory.map(() => ""),
+    }));
   };
 
   const clearHistory = () => {
@@ -2038,7 +2093,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               )}
               {cutsceneState.subtitle && (
                  <TypewriterText
-                    className={`text-sm md:text-base lg:text-xl uppercase font-bold tracking-[0.3em] font-mono ${cutsceneState?.textShadow !== false ? '[text-shadow:2px_2px_0px_#000]' : ''}`} 
+                    className={`text-sm md:text-base lg:text-xl uppercase font-bold tracking-[0.3em] ${!cutsceneState?.fontFamily ? 'font-mono' : ''} ${cutsceneState?.textShadow !== false ? '[text-shadow:2px_2px_0px_#000]' : ''}`} 
                     style={{ color: cutsceneState.subtitleColor || (cutsceneState.textColor ? `${cutsceneState.textColor}aa` : '#ef4444') }}
                     text={cutsceneState.subtitle}
                     speed={30}
@@ -2247,6 +2302,16 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
             <button
               onClick={() => {
+                setCurrentPage("oraculo");
+                setMenuOpen(false);
+              }}
+              className={`text-left text-lg font-bold uppercase p-2 rounded ${currentPage === "oraculo" ? "bg-[#1A1A1A] text-white" : "text-gray-500 hover:bg-[#1A1A1A]"}`}
+            >
+              Oráculo
+            </button>
+
+            <button
+              onClick={() => {
                 setCurrentPage("conexao");
                 setMenuOpen(false);
               }}
@@ -2274,29 +2339,57 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       )}
 
       {currentPage !== "mestre" && currentPage !== "null" ? (
-        <div className="fixed bottom-0 left-0 w-full h-14 bg-black/95 backdrop-blur-md border-t border-[#1A1A1A] flex flex-row items-center z-[100] shadow-[0_-5px_20px_rgba(0,0,0,0.8)] overflow-x-auto overflow-y-hidden no-scrollbar">
+        <div className="fixed bottom-0 left-0 w-full h-14 bg-[#0b0b0d]/95 backdrop-blur-md border-t border-[#303036] flex flex-row items-center z-[100] shadow-[0_-4px_20px_rgba(0,0,0,0.85)] overflow-x-auto overflow-y-hidden no-scrollbar">
           <button
             onClick={() => {
               setActiveFichaId("main");
               setCurrentPage("ficha");
             }}
-            className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full transition-colors ${currentPage === "ficha" ? "text-blood-red" : "text-gray-500 hover:text-white hover:bg-white/5"}`}
+            className={`flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full transition-all relative ${currentPage === "ficha" ? "text-white bg-[#8f171c]/15" : "text-[#99999f] hover:text-white hover:bg-white/5"}`}
           >
-            <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">
+            {currentPage === "ficha" && (
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-[var(--op-red)] shadow-[0_0_8px_#8f171c]" />
+            )}
+            <User size={15} className={currentPage === "ficha" ? "text-[var(--op-red-bright)]" : "text-[#68686e]"} />
+            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
               Ficha
             </span>
           </button>
 
-          <div className="w-[1px] h-8 shrink-0 bg-[#1A1A1A]"></div>
+          <div className="w-[1px] h-6 shrink-0 bg-[#303036]"></div>
+
+          <button
+            onClick={() => {
+              setCurrentPage("oraculo");
+            }}
+            className={`flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full transition-all relative ${currentPage === "oraculo" ? "text-white bg-[#8f171c]/15" : "text-[#99999f] hover:text-white hover:bg-white/5"}`}
+          >
+            {currentPage === "oraculo" && (
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-[var(--op-red)] shadow-[0_0_8px_#8f171c]" />
+            )}
+            <Dices size={15} className={currentPage === "oraculo" ? "text-[var(--op-red-bright)]" : "text-[#68686e]"} />
+            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
+              Oráculo
+            </span>
+          </button>
+
+          <div className="w-[1px] h-6 shrink-0 bg-[#303036]"></div>
+
           <button
             onClick={() => setCurrentPage("conexao")}
-            className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full transition-colors ${currentPage === "conexao" ? "text-blood-red" : "text-gray-500 hover:text-white hover:bg-white/5"}`}
+            className={`flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full transition-all relative ${currentPage === "conexao" ? "text-white bg-[#8f171c]/15" : "text-[#99999f] hover:text-white hover:bg-white/5"}`}
           >
-            <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">
+            {currentPage === "conexao" && (
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-[var(--op-red)] shadow-[0_0_8px_#8f171c]" />
+            )}
+            <Radio size={15} className={currentPage === "conexao" ? "text-[var(--op-red-bright)]" : "text-[#68686e]"} />
+            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
               Conexão
             </span>
           </button>
-          <div className="w-[1px] h-8 shrink-0 bg-[#1A1A1A]"></div>
+
+          <div className="w-[1px] h-6 shrink-0 bg-[#303036]"></div>
+
           <button
             onClick={() => {
               window.scrollTo(0, 0);
@@ -2306,13 +2399,19 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 setCurrentPage("mestre");
               }
             }}
-            className={`flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full transition-colors ${currentPage === "mestre" ? "text-blood-red" : "text-gray-500 hover:text-white hover:bg-white/5"}`}
+            className={`flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full transition-all relative ${currentPage === "mestre" ? "text-white bg-[#8f171c]/15" : "text-[#99999f] hover:text-white hover:bg-white/5"}`}
           >
-            <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">
+            {currentPage === "mestre" && (
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-[var(--op-red)] shadow-[0_0_8px_#8f171c]" />
+            )}
+            <ShieldAlert size={15} className={currentPage === "mestre" ? "text-[var(--op-red-bright)]" : "text-[#68686e]"} />
+            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
               Mestre
             </span>
           </button>
-          <div className="w-[1px] h-8 shrink-0 bg-[#1A1A1A]"></div>
+
+          <div className="w-[1px] h-6 shrink-0 bg-[#303036]"></div>
+
           <button
             onClick={() => {
               if (!document.fullscreenElement) {
@@ -2323,24 +2422,25 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 }
               }
             }}
-            className="flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full text-gray-500 hover:text-white hover:bg-white/5 transition-colors"
+            className="flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full text-[#99999f] hover:text-white hover:bg-white/5 transition-all"
           >
-            <Maximize size={18} className="mb-1" />
-            <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">
+            <Maximize size={15} className="text-[#68686e]" />
+            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
               Tela
             </span>
           </button>
-          <div className="w-[1px] h-8 shrink-0 bg-[#1A1A1A]"></div>
+
+          <div className="w-[1px] h-6 shrink-0 bg-[#303036]"></div>
+
           <button
             onClick={() => setShowUpdateLog(true)}
-            className="flex flex-col items-center justify-center shrink-0 min-w-[120px] h-full text-gray-500 hover:text-white hover:bg-white/5 transition-colors"
+            className="flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full text-[#99999f] hover:text-white hover:bg-white/5 transition-all"
           >
-            <FileText size={18} className="mb-1" />
-            <span className="text-xs uppercase font-bold tracking-widest leading-none mt-1">
+            <FileText size={15} className="text-[#68686e]" />
+            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
               Logs
             </span>
           </button>
-          <div className="w-[1px] h-8 shrink-0 bg-[#1A1A1A]"></div>
         </div>
       ) : currentPage === "mestre" ? (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-lg h-15 bg-black/95 backdrop-blur-md border border-blood-red/30 rounded-2xl flex flex-row items-center justify-around z-[130] shadow-[0_8px_32px_rgba(0,0,0,0.8)] px-2">
@@ -2457,38 +2557,6 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             <button className="btn-add" onClick={addVariable}>
               + ADICIONAR VARIÁVEL
             </button>
-          </div>
-
-          <div className="section">
-            <div className="section-title">Oráculo (Rolagem)</div>
-            <div className="dice-panel">
-              <div className="dice-input-group">
-                <input
-                  type="text"
-                  className="dice-input"
-                  placeholder="Ex: 1d20+OCU"
-                  value={diceInput}
-                  onChange={(e) => setDiceInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && processManualRoll()}
-                />
-                <button className="btn-roll" onClick={processManualRoll}>
-                  ROLAR
-                </button>
-              </div>
-              <div
-                className="dice-history"
-                ref={historyRef}
-                style={isShaking ? { animation: "shake 0.3s ease" } : {}}
-              >
-                {state.history.map((h, i) => (
-                  <div
-                    key={i}
-                    className="log-entry"
-                    dangerouslySetInnerHTML={{ __html: h }}
-                  />
-                ))}
-              </div>
-            </div>
           </div>
 
           <div className="section">
@@ -2936,6 +3004,31 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             </div>
           </div>
         </>
+      )}
+
+      {currentPage === "oraculo" && (
+        <div className="pb-36 max-w-xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 space-y-3.5 sm:space-y-4">
+          <QuickDiceSection
+            quickDiceQty={quickDiceQty}
+            setQuickDiceQty={setQuickDiceQty}
+            onRoll={executeRoll}
+            lastRoll={lastRollResult}
+          />
+          <RollingTerminal
+            diceInput={diceInput}
+            setDiceInput={setDiceInput}
+            onRoll={processManualRoll}
+            history={state.history}
+            historyRef={historyRef}
+            isShaking={isShaking}
+            title="Terminal de Rolagem"
+          />
+          <FormulaShortcutsSection
+            onRollFormula={executeRoll}
+            setDiceInput={setDiceInput}
+            diceInput={diceInput}
+          />
+        </div>
       )}
 
       {currentPage === "grid" && (

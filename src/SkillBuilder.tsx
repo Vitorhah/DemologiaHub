@@ -418,6 +418,9 @@ export const SkillBuilder = ({
                                        <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest min-w-[30px]">Fonte</span>
                                        <select value={block.fontFamily || ''} onChange={(e) => updateBlockFields(block.id, { fontFamily: e.target.value })} className="bg-[#1A1A1A] border-[#333] border p-1 rounded text-white text-xs flex-1">
                                           <option value="">Padrão</option>
+                                          <option value="font-rpg">RPG (Blur)</option>
+                                          <option value="font-cinzel">Cinzel (Épico)</option>
+                                          <option value="font-special">Máquina de Escrever</option>
                                           <option value="font-sans">Inter</option>
                                           <option value="font-mono">Mono</option>
                                           <option value="font-archivo">Archivo</option>
