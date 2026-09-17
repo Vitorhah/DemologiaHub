@@ -59,18 +59,18 @@ export function DossierInventorySection({
   return (
     <div className="section !p-0 !border-none">
       {/* CABEÇALHO DO DOSSIÊ DE INVENTÁRIO */}
-      <div className="relative overflow-hidden rounded-t-xl bg-gradient-to-r from-[#170c0e] via-[#14141a] to-[#0c0c10] border border-[var(--op-border)] p-3.5 sm:p-4 mb-3 shadow-lg">
+      <div className="relative overflow-hidden rounded-none bg-gradient-to-r from-[#170c0e] via-[#14141a] to-[#0c0c10] border border-[var(--op-border)] p-3.5 sm:p-4 mb-3 shadow-lg">
         {/* Linha de acento de carga */}
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-[#b81d24] via-[#8f171c]/50 to-transparent" />
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#24080a] border border-[#7a181e] flex items-center justify-center text-[var(--op-red-bright)] shadow-[0_0_10px_rgba(184,29,36,0.35)] shrink-0">
+            <div className="w-8 h-8 rounded-none bg-[#24080a] border border-[#7a181e] flex items-center justify-center text-[var(--op-red-bright)] shadow-[0_0_10px_rgba(184,29,36,0.35)] shrink-0">
               <Package size={17} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-[#ff8085] bg-[#380b0f] px-2 py-0.5 rounded border border-[#691419]">
+                <span className="text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-[#ff8085] bg-[#380b0f] px-2 py-0.5 rounded-none border border-[#691419]">
                   REGISTRO DE CARGA // DOSSIÊ-INV
                 </span>
                 <span className="text-[10px] font-mono text-[var(--op-text-muted)] hidden sm:inline">
@@ -85,7 +85,7 @@ export function DossierInventorySection({
 
           {/* MEDIDOR DE CAPACIDADE / SLOTS OCUPADOS */}
           <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2 sm:pt-0 border-t sm:border-t-0 border-[var(--op-border)]/50">
-            <div className="flex items-center gap-2 bg-[#0d0d12] px-3 py-1.5 rounded-lg border border-[var(--op-border)]">
+            <div className="flex items-center gap-2 bg-[#0d0d12] px-3 py-1.5 rounded-none border border-[var(--op-border)]">
               <Layers size={13} className="text-[var(--op-red-bright)]" />
               <div className="text-right">
                 <div className="text-[10px] font-mono uppercase tracking-wider text-[var(--op-text-muted)] leading-none">
@@ -104,7 +104,7 @@ export function DossierInventorySection({
               <button
                 type="button"
                 onClick={onAddSlot}
-                className="px-3 py-1.5 rounded-lg text-xs font-mono font-bold uppercase tracking-wider text-white bg-[#1a1a24] hover:bg-[#252533] border border-[var(--op-border)] hover:border-[var(--op-red-bright)] active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 min-h-[36px] touch-manipulation select-none"
+                className="px-3 py-1.5 rounded-none text-xs font-mono font-bold uppercase tracking-wider text-white bg-[#1a1a24] hover:bg-[#252533] border border-[var(--op-border)] hover:border-[var(--op-red-bright)] active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 min-h-[36px] touch-manipulation select-none"
                 title="Adicionar mais um slot de inventário"
               >
                 <Plus size={14} className="text-[var(--op-red-bright)]" />
@@ -116,7 +116,7 @@ export function DossierInventorySection({
               <button
                 type="button"
                 onClick={handleClearAll}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 min-h-[36px] touch-manipulation select-none ${
+                className={`px-2.5 py-1.5 rounded-none text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 min-h-[36px] touch-manipulation select-none ${
                   confirmClearAll
                     ? "bg-red-950 text-red-200 border border-red-500 animate-pulse"
                     : "text-[var(--op-text-muted)] hover:text-white bg-transparent hover:bg-white/5"
@@ -158,7 +158,7 @@ export function DossierInventorySection({
           return (
             <div
               key={i}
-              className={`group relative rounded-xl border transition-all duration-200 shadow-md flex flex-col justify-between overflow-hidden ${
+              className={`group relative rounded-none border transition-all duration-200 shadow-md flex flex-col justify-between overflow-hidden ${
                 isOccupied
                   ? "bg-gradient-to-b from-[#171720] via-[#121217] to-[#0d0d12] border-[#383844] hover:border-[#8f171c]"
                   : "bg-gradient-to-b from-[#111116]/80 via-[#0d0d11]/70 to-[#09090c] border-[var(--op-border)]/70 hover:border-[#40404a]"
@@ -176,7 +176,7 @@ export function DossierInventorySection({
               {/* CABEÇALHO DO SLOT: ÍNDICE DO DOSSIÊ + STATUS */}
               <div className="p-2.5 pb-1.5 flex items-center justify-between gap-2 border-b border-white/5">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono font-bold tracking-widest text-[#888] bg-[#09090d] px-2 py-0.5 rounded border border-[#222]">
+                  <span className="text-[10px] font-mono font-bold tracking-widest text-[#888] bg-[#09090d] px-2 py-0.5 rounded-none border border-[#222]">
                     SLOT // {slotNum}
                   </span>
                   <span
@@ -200,7 +200,7 @@ export function DossierInventorySection({
                       type="button"
                       onClick={() => updateInventory(i, "")}
                       title="Esvaziar este slot"
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--op-text-muted)] hover:text-rose-400 hover:bg-rose-950/40 transition-colors touch-manipulation cursor-pointer"
+                      className="w-7 h-7 flex items-center justify-center rounded-none text-[var(--op-text-muted)] hover:text-rose-400 hover:bg-rose-950/40 transition-colors touch-manipulation cursor-pointer"
                     >
                       <Trash2 size={13} />
                     </button>
@@ -210,7 +210,7 @@ export function DossierInventorySection({
                       type="button"
                       onClick={() => onRemoveSlot(i)}
                       title="Excluir slot adicional"
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--op-text-muted)] hover:text-red-400 hover:bg-white/5 transition-colors touch-manipulation cursor-pointer"
+                      className="w-7 h-7 flex items-center justify-center rounded-none text-[var(--op-text-muted)] hover:text-red-400 hover:bg-white/5 transition-colors touch-manipulation cursor-pointer"
                     >
                       <span className="font-mono text-xs">×</span>
                     </button>
@@ -222,7 +222,7 @@ export function DossierInventorySection({
               <div className="p-2.5">
                 <input
                   type="text"
-                  className="w-full bg-[#09090d] border border-[var(--op-border)] focus:border-[var(--op-red-bright)] focus:ring-1 focus:ring-[var(--op-red-bright)] rounded-lg px-3 py-2.5 text-sm font-mono text-white placeholder:text-[#555] outline-none transition-all min-h-[44px]"
+                  className="w-full bg-[#09090d] border border-[var(--op-border)] focus:border-[var(--op-red-bright)] focus:ring-1 focus:ring-[var(--op-red-bright)] rounded-none px-3 py-2.5 text-sm font-mono text-white placeholder:text-[#555] outline-none transition-all min-h-[44px]"
                   placeholder={`Vazio // Item, arma ou evidência #${slotNum}...`}
                   value={item}
                   onChange={(e) => updateInventory(i, e.target.value)}
@@ -230,7 +230,7 @@ export function DossierInventorySection({
 
                 {/* BOTÃO DE ROLAGEM SE O ITEM CONTER FÓRMULA DE DADO (ex: 2d6+2 ou 1d8+FOR) */}
                 {detectedFormula && onRollFormula && (
-                  <div className="mt-2 flex items-center justify-between gap-2 p-1.5 px-2 rounded-lg bg-[#20070a] border border-[#5c1015]">
+                  <div className="mt-2 flex items-center justify-between gap-2 p-1.5 px-2 rounded-none bg-[#20070a] border border-[#5c1015]">
                     <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#ff8085]">
                       <Sparkles size={13} className="text-[var(--op-red-bright)]" />
                       <span>Fórmula detectada:</span>
@@ -239,7 +239,7 @@ export function DossierInventorySection({
                     <button
                       type="button"
                       onClick={() => onRollFormula(detectedFormula)}
-                      className="px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider text-white bg-gradient-to-r from-[#99151b] to-[#6e0f14] hover:from-[#b81d24] hover:to-[#851218] border border-[#b81d24]/60 shadow-sm active:scale-95 transition-all flex items-center gap-1 cursor-pointer touch-manipulation"
+                      className="px-2.5 py-1 rounded-none text-[10px] font-mono font-bold uppercase tracking-wider text-white bg-gradient-to-r from-[#99151b] to-[#6e0f14] hover:from-[#b81d24] hover:to-[#851218] border border-[#b81d24]/60 shadow-sm active:scale-95 transition-all flex items-center gap-1 cursor-pointer touch-manipulation"
                       title={`Rolar ${detectedFormula}`}
                     >
                       <Dices size={12} />

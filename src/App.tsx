@@ -22,6 +22,11 @@ import {
   Radio,
 } from "lucide-react";
 import { supabase, supabaseUrl, supabaseAnonKey } from "./lib/supabase";
+import { PasswordAuthModal } from "./components/PasswordAuthModal";
+import { MasterHeaderBar } from "./components/MasterHeaderBar";
+import { MasterOstPanel } from "./components/MasterOstPanel";
+import { MasterPlayersView } from "./components/MasterPlayersView";
+import { MasterExtrasView } from "./components/MasterExtrasView";
 
 const TypewriterText = ({ text, className, style, speed = 50 }: { text: string, className?: string, style?: any, speed?: number }) => {
   const [displayedText, setDisplayedText] = useState("");
@@ -132,6 +137,7 @@ import { RollingTerminal } from "./components/RollingTerminal";
 import { FormulaShortcutsSection } from "./components/FormulaShortcutsSection";
 import { DossierVariablesSection } from "./components/DossierVariablesSection";
 import { DossierInventorySection } from "./components/DossierInventorySection";
+import { NavigationSidebar } from "./components/NavigationSidebar";
 
 export default function App() {
   const [mainState, setMainState] = useState(() => {
@@ -249,6 +255,7 @@ export default function App() {
   const [mestreTab, setMestreTab] = useState<
     "fichas" | "ost" | "eventos" | "extras"
   >("fichas");
+  const [mestreViewMode, setMestreViewMode] = useState<"grid" | "list">("grid");
   const [globalGridState, setGlobalGridState] = useState<any>({ objects: [] });
   const [deletingFichaId, setDeletingFichaId] = useState<string | null>(null);
 
@@ -1759,15 +1766,6 @@ export default function App() {
 
   const hpPercent =
     Math.max(0, Math.min(100, (state.hp.current / state.hp.max) * 100)) || 0;
-  useEffect(() => {
-    const handleFirstInteraction = () => {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-    };
-    document.addEventListener("click", handleFirstInteraction, { once: true });
-    return () => document.removeEventListener("click", handleFirstInteraction);
-  }, []);
 
   const pePercent =
     Math.max(0, Math.min(100, (state.pe.current / state.pe.max) * 100)) || 0;
@@ -1858,6 +1856,244 @@ export default function App() {
     </div>
   );
 
+  const handleRollAllInitiatives = () => {
+    const syncedExtras = extraFichas
+      .filter((f) => f.synchronized)
+      .map((f) => ({
+        id: `EXTRA_FICHA_${f.id}`,
+        variables: f.variables || {},
+      }));
+    const combined = [...players, ...syncedExtras];
+    const newInits: Record<string, number> = {};
+    combined.forEach((p) => {
+      const agl = p.variables?.["AGL"] || 0;
+      const roll = Math.floor(Math.random() * 20) + 1;
+      newInits[p.id] = roll + agl;
+    });
+    setInitiatives((prev) => ({ ...prev, ...newInits }));
+  };
+
+  const handleCreateExtraFicha = () => {
+    setExtraFichas([
+      {
+        ...defaultState,
+        id: Date.now().toString(),
+        name: "Novo Extra",
+        notes: "",
+      },
+      ...extraFichas,
+    ]);
+  };
+
+  const handleUploadOst = (file: File) => {
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Arquivo muito grande, limite de 2MB. Comprima o MP3.");
+      return;
+    }
+    setIsUploadingOst(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      let base64 = reader.result as string;
+      if (base64.startsWith("data:;base64,")) {
+        base64 = base64.replace("data:;base64,", "data:audio/mpeg;base64,");
+      } else if (base64.startsWith("data:application/octet-stream;base64,")) {
+        base64 = base64.replace(
+          "data:application/octet-stream;base64,",
+          "data:audio/mpeg;base64,",
+        );
+      }
+      const ostId = `OST_FILE_${Date.now()}_${encodeURIComponent(file.name)}`;
+      await supabase.from("players").upsert({
+        id: ostId,
+        data: { base64, name: file.name },
+        updated_at: new Date().toISOString(),
+      });
+      fetchOsts();
+      setIsUploadingOst(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePlayOst = (ostId: string) => {
+    const rawName = ostId.split("_").slice(3).join("_");
+    const ostName = decodeURIComponent(rawName);
+
+    if (globalOstState?.ostId === ostId) {
+      const newIsPlaying = !globalOstState?.isPlaying;
+      const stateData = {
+        ...globalOstState,
+        isPlaying: newIsPlaying,
+      };
+      setGlobalOstState(stateData);
+      supabase
+        .from("players")
+        .upsert({
+          id: "MASTER_STATE",
+          data: { ost: stateData },
+          updated_at: new Date().toISOString(),
+        })
+        .then(({ error }) => {
+          if (error) console.error("MASTER_STATE upsert error:", error.message);
+        });
+      globalChannelRef.current
+        ?.send({
+          type: "broadcast",
+          event: "ost_update",
+          payload: stateData,
+        })
+        .catch(console.error);
+    } else {
+      const stateData = {
+        ostId,
+        name: ostName,
+        isPlaying: true,
+        volume: globalOstState?.volume ?? 1,
+        fadeIn: globalOstState?.fadeIn ?? true,
+        loop: globalOstState?.loop ?? true,
+        resetTimestamp: Date.now(),
+      };
+      setGlobalOstState(stateData);
+      supabase
+        .from("players")
+        .upsert({
+          id: "MASTER_STATE",
+          data: { ost: stateData },
+          updated_at: new Date().toISOString(),
+        })
+        .then(({ error }) => {
+          if (error) console.error("MASTER_STATE upsert error:", error.message);
+        });
+      globalChannelRef.current
+        ?.send({
+          type: "broadcast",
+          event: "ost_update",
+          payload: stateData,
+        })
+        .catch(console.error);
+    }
+  };
+
+  const handleStopOst = () => {
+    const stateData = {
+      ...globalOstState,
+      isPlaying: false,
+    };
+    setGlobalOstState(stateData);
+    supabase
+      .from("players")
+      .upsert({
+        id: "MASTER_STATE",
+        data: { ost: stateData },
+        updated_at: new Date().toISOString(),
+      })
+      .then(({ error }) => {
+        if (error) console.error("MASTER_STATE stop error:", error.message);
+      });
+    globalChannelRef.current
+      ?.send({
+        type: "broadcast",
+        event: "ost_update",
+        payload: stateData,
+      })
+      .catch(console.error);
+  };
+
+  const handleDeleteOst = async (ostId: string) => {
+    await supabase.from("players").delete().eq("id", ostId);
+    if (globalOstState?.ostId === ostId) {
+      await supabase.from("players").delete().eq("id", "MASTER_STATE");
+      const emptyState = {
+        ostId: null,
+        isPlaying: false,
+        volume: 1,
+      };
+      setGlobalOstState(emptyState);
+      globalChannelRef.current
+        ?.send({
+          type: "broadcast",
+          event: "ost_update",
+          payload: emptyState,
+        })
+        .catch(console.error);
+    }
+    fetchOsts();
+  };
+
+  const handleVolumeChange = (newVol: number) => {
+    const stateData = {
+      ...globalOstState,
+      volume: newVol,
+    };
+    setGlobalOstState(stateData);
+    supabase
+      .from("players")
+      .upsert({
+        id: "MASTER_STATE",
+        data: { ost: stateData },
+        updated_at: new Date().toISOString(),
+      })
+      .then(({ error }) => {
+        if (error) console.error("MASTER_STATE volume error:", error.message);
+      });
+    globalChannelRef.current
+      ?.send({
+        type: "broadcast",
+        event: "ost_update",
+        payload: stateData,
+      })
+      .catch(console.error);
+  };
+
+  const handleFadeToggle = (fadeIn: boolean) => {
+    const stateData = {
+      ...globalOstState,
+      fadeIn,
+    };
+    setGlobalOstState(stateData);
+    supabase
+      .from("players")
+      .upsert({
+        id: "MASTER_STATE",
+        data: { ost: stateData },
+        updated_at: new Date().toISOString(),
+      })
+      .then(({ error }) => {
+        if (error) console.error("MASTER_STATE fade error:", error.message);
+      });
+    globalChannelRef.current
+      ?.send({
+        type: "broadcast",
+        event: "ost_update",
+        payload: stateData,
+      })
+      .catch(console.error);
+  };
+
+  const handleLoopToggle = (loop: boolean) => {
+    const stateData = {
+      ...globalOstState,
+      loop,
+    };
+    setGlobalOstState(stateData);
+    supabase
+      .from("players")
+      .upsert({
+        id: "MASTER_STATE",
+        data: { ost: stateData },
+        updated_at: new Date().toISOString(),
+      })
+      .then(({ error }) => {
+        if (error) console.error("MASTER_STATE loop error:", error.message);
+      });
+    globalChannelRef.current
+      ?.send({
+        type: "broadcast",
+        event: "ost_update",
+        payload: stateData,
+      })
+      .catch(console.error);
+  };
+
   return (
     <div id="app" className="relative min-h-screen">
       <div 
@@ -1884,7 +2120,7 @@ export default function App() {
       />
       {supabaseConfigError && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[9999] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#111] border-2 border-blood-red/60 rounded-2xl max-w-2xl w-full p-6 md:p-8 shadow-[0_0_50px_rgba(255,0,0,0.3)] relative my-8">
+          <div className="bg-[#111] border-2 border-blood-red/60 rounded-none max-w-2xl w-full p-6 md:p-8 shadow-[0_0_50px_rgba(255,0,0,0.3)] relative my-8">
             <button
               onClick={() => setSupabaseConfigError(null)}
               className="absolute top-4 right-4 text-gray-500 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-all cursor-pointer"
@@ -1894,7 +2130,7 @@ export default function App() {
             </button>
             
             <div className="flex items-center gap-4 border-b border-blood-red/20 pb-4 mb-6">
-              <div className="p-3 bg-blood-red/10 border border-blood-red/30 rounded-xl text-blood-red animate-pulse">
+              <div className="p-3 bg-blood-red/10 border border-blood-red/30 rounded-none text-blood-red animate-pulse">
                 <Cloud size={32} />
               </div>
               <div>
@@ -1912,7 +2148,7 @@ export default function App() {
                 O aplicativo detectou que a conexão com o banco de dados do Supabase falhou (por exemplo: erro <strong>Invalid API key</strong>, chaves expiradas ou permissões do PostgreSQL pendentes). Para que a sincronização funcione em tempo real com o mestre, os jogadores, as músicas e eventos em múltiplos dispositivos, realize o passo a passo a seguir:
               </p>
 
-              <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-xl">
+              <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-none">
                 <h3 className="font-bold text-yellow-400 uppercase tracking-wider text-xs mb-2 flex items-center gap-2">
                   <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
                   🚨 CRÍTICO: Criar Tabela e Configurar SQL no Supabase
@@ -1926,7 +2162,7 @@ export default function App() {
                   <li>Copie e cole todo o código SQL abaixo no painel:</li>
                 </ol>
                 <div className="relative group mt-2 mb-3">
-                  <pre className="text-[10px] text-gray-300 font-mono bg-black/60 p-3 rounded-lg border border-[#222] overflow-x-auto max-h-[180px] whitespace-pre select-all">
+                  <pre className="text-[10px] text-gray-300 font-mono bg-black/60 p-3 rounded-none border border-[#222] overflow-x-auto max-h-[180px] whitespace-pre select-all">
 {`-- 1. Criar a tabela de jogadores/dados do RPG
 CREATE TABLE IF NOT EXISTS public.players (
     id TEXT PRIMARY KEY,
@@ -1960,7 +2196,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 </ol>
               </div>
 
-              <div className="bg-black/40 border border-[#333] p-4 rounded-xl">
+              <div className="bg-black/40 border border-[#333] p-4 rounded-none">
                 <h3 className="font-bold text-white uppercase tracking-wider text-xs mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 bg-blood-red rounded-full"></span>
                   Como Obter as Chaves no Supabase (Passo a Passo)
@@ -1976,21 +2212,21 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                     Na parte superior, você encontrará a seção <strong>Project API keys</strong> e <strong>Project URL</strong>.
                   </li>
                   <li>
-                    Copie o valor de <strong>Project URL</strong> (ex: <code className="text-gray-300 font-mono bg-[#222] px-1 py-0.5 rounded">https://xxxx.supabase.co</code>) e adicione no painel lateral do AI Studio nos segredos (Secrets) com o nome:
-                    <div className="mt-1 font-mono text-white bg-black/60 p-2 rounded border border-[#222] break-all select-all">
+                    Copie o valor de <strong>Project URL</strong> (ex: <code className="text-gray-300 font-mono bg-[#222] px-1 py-0.5 rounded-none">https://xxxx.supabase.co</code>) e adicione no painel lateral do AI Studio nos segredos (Secrets) com o nome:
+                    <div className="mt-1 font-mono text-white bg-black/60 p-2 rounded-none border border-[#222] break-all select-all">
                       VITE_SUPABASE_URL
                     </div>
                   </li>
                   <li>
-                    Copie a chave <strong>anon / public key</strong> (ex: <code className="text-gray-300 font-mono bg-[#222] px-1.5 py-0.5 rounded">eyJhbGciOi...</code>) e adicione no painel de segredos do AI Studio com o nome:
-                    <div className="mt-1 font-mono text-white bg-black/60 p-2 rounded border border-[#222] break-all select-all">
+                    Copie a chave <strong>anon / public key</strong> (ex: <code className="text-gray-300 font-mono bg-[#222] px-1.5 py-0.5 rounded-none">eyJhbGciOi...</code>) e adicione no painel de segredos do AI Studio com o nome:
+                    <div className="mt-1 font-mono text-white bg-black/60 p-2 rounded-none border border-[#222] break-all select-all">
                       VITE_SUPABASE_PUBLIC_ANON_KEY
                     </div>
                   </li>
                 </ol>
               </div>
 
-              <div className="bg-blood-red/5 border border-blood-red/20 p-4 rounded-xl">
+              <div className="bg-blood-red/5 border border-blood-red/20 p-4 rounded-none">
                 <h3 className="font-bold text-white uppercase tracking-wider text-xs mb-2 flex items-center gap-2">
                   <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
                   Como Criar/Mudar para um Servidor mais Perto (São Paulo)
@@ -2006,7 +2242,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 </ol>
               </div>
 
-              <div className="bg-[#1A1A1A] p-4 rounded-xl border border-[#333]">
+              <div className="bg-[#1A1A1A] p-4 rounded-none border border-[#333]">
                 <h3 className="font-bold text-white uppercase tracking-wider text-xs mb-2">
                   Onde Configuro as Chaves no Vercel ou AI Studio?
                 </h3>
@@ -2022,7 +2258,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               </span>
               <button
                 onClick={() => setSupabaseConfigError(null)}
-                className="w-full sm:w-auto bg-blood-red hover:bg-red-700 text-white font-bold uppercase tracking-widest text-[10px] px-6 py-2.5 rounded-lg transition-colors cursor-pointer"
+                className="w-full sm:w-auto bg-blood-red hover:bg-red-700 text-white font-bold uppercase tracking-widest text-[10px] px-6 py-2.5 rounded-none transition-colors cursor-pointer"
               >
                 Entendi, Usar Offline
               </button>
@@ -2105,430 +2341,183 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
       <div className={`w-full min-h-screen transition-opacity duration-700 ${cutsceneState?.active ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         {requiresInteraction && (
-        <div className="fixed inset-0 bg-black/90 z-[300] flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm">
-          <ShieldAlert
-            size={64}
-            className="text-blood-red mb-4 animate-pulse"
-          />
-          <h2 className="text-2xl font-bold text-white uppercase tracking-widest mb-2">
-            Conexão de Áudio Pendente
-          </h2>
-          <p className="text-gray-400 text-sm mb-8 max-w-sm">
-            O Mestre iniciou a trilha sonora, mas o navegador requer que você
-            interaja com a página para liberar o som.
-          </p>
-          <button
-            onClick={() => {
-              setRequiresInteraction(false);
-              audioRef.current
-                ?.play()
-                .catch(() => setRequiresInteraction(true));
-            }}
-            className="bg-blood-red hover:bg-red-800 text-white font-bold py-4 px-8 rounded uppercase tracking-wider transition-all shadow-[0_0_20px_rgba(211,0,0,0.5)] cursor-pointer"
-          >
-            Permitir Áudio
-          </button>
+        <div className="fixed inset-0 bg-black/85 z-[300] flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm">
+          <div className="bg-[#0e0e12] border border-[#26262e] rounded-none p-6 sm:p-8 max-w-md w-full shadow-2xl relative overflow-hidden text-left">
+            <div className="h-[3px] w-full bg-[var(--op-red)] absolute top-0 left-0" />
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-950/30 border border-red-800/40 flex items-center justify-center text-[var(--op-red-bright)] rounded-none shrink-0">
+                <ShieldAlert size={20} className="animate-pulse" />
+              </div>
+              <div>
+                <span className="text-[10px] font-mono uppercase font-bold tracking-widest text-[#72727e] block">
+                  Permissão do Navegador
+                </span>
+                <h2 className="text-base font-bold text-white uppercase tracking-wider font-mono">
+                  Conexão de Áudio Pendente
+                </h2>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#8c8c96] font-mono leading-relaxed mb-6 border-b border-[#1c1c24] pb-4">
+              O Mestre sincronizou uma trilha sonora. O navegador requer interação manual inicial para autorizar a reprodução contínua do áudio.
+            </p>
+
+            <button
+              onClick={() => {
+                setRequiresInteraction(false);
+                audioRef.current?.play().catch(() => setRequiresInteraction(true));
+              }}
+              className="w-full bg-[var(--op-red)] hover:bg-[#a81d23] active:bg-[#781418] text-white font-mono font-bold text-xs uppercase tracking-widest py-3 px-6 rounded-none transition-colors cursor-pointer"
+            >
+              Autorizar e Sincronizar Áudio
+            </button>
+          </div>
         </div>
       )}
 
       {showUpdateLog && (
-        <div className="fixed inset-0 bg-black/90 z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-[#0a0a0a] border border-[#1A1A1A] p-8 rounded shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-xl w-full relative">
+        <div className="fixed inset-0 bg-black/85 z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-[#0e0e12] border border-[#26262e] rounded-none p-6 sm:p-8 shadow-2xl max-w-xl w-full relative overflow-hidden">
+            <div className="h-[3px] w-full bg-[var(--op-red)] absolute top-0 left-0" />
             <button
               onClick={() => setShowUpdateLog(false)}
-              className="absolute top-4 right-4 text-gray-500 hover:text-white"
+              className="absolute top-4 right-4 p-1.5 text-[#686872] hover:text-white hover:bg-white/[0.06] rounded-none transition-colors cursor-pointer"
+              aria-label="Fechar changelog"
             >
-              <X size={20} />
+              <X size={18} />
             </button>
-            <h2 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-4">
-              Creative Update
+
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-mono uppercase font-bold tracking-widest text-[var(--op-red-bright)]">
+                Histórico de Atualizações
+              </span>
+            </div>
+            <h2 className="text-base sm:text-lg font-bold text-[#dedede] uppercase tracking-wider font-mono mb-4">
+              Registro de Versão // Sistema
             </h2>
-            <ul className="text-gray-400 text-sm list-none space-y-2">
-              <li>
-                <span className="text-emerald-500 font-bold mr-2">+</span>{" "}
-                <b>Blocos de Áudio (OST):</b> O SkillBuilder agora permite usar
-                blocos para Tocar OST e Parar OST com suporte a Fade In / Out,
-                Volume.
+
+            <ul className="text-xs font-mono text-[#9a9aa4] list-none space-y-3 border-t border-[#1c1c24] pt-4">
+              <li className="flex items-start gap-2">
+                <span className="text-emerald-400 font-bold shrink-0">[+]</span>
+                <span>
+                  <strong className="text-white">Design System Quadrado & Moderno:</strong> Interface reestruturada com bordas sólidas, navegação YouTube drawer fluida e paleta oficial.
+                </span>
               </li>
-              <li>
-                <span className="text-purple-500 font-bold mr-2">+</span>{" "}
-                <b>Bloco de Fundo:</b> Novo bloco adicionado para aplicar Imagem
-                com efeito de Fade no SkillBuilder.
+              <li className="flex items-start gap-2">
+                <span className="text-blue-400 font-bold shrink-0">[+]</span>
+                <span>
+                  <strong className="text-white">Painel Linear de OSTs:</strong> Lista organizada de trilhas sonoras com fader preciso, status em tempo real e controle de upload seguro.
+                </span>
               </li>
-              <li>
-                <span className="text-blue-500 font-bold mr-2">✓</span>{" "}
-                <b>Sincronização:</b> Sistema de OST do Mestre e SkillBuilder
-                agora sincronizam a música entre si perfeitamente.
-              </li>
-              <li>
-                <span className="text-yellow-500 font-bold mr-2">🛠</span>{" "}
-                <b>Correções:</b> Ajustes na transição suave de Fade das
-                Músicas, no controle do Slider de Volume da Dashboard do Mestre
-                para refletir corretamente o volume e fixes para as OSTs
-                reiniciarem de forma inconsistente.
+              <li className="flex items-start gap-2">
+                <span className="text-purple-400 font-bold shrink-0">[+]</span>
+                <span>
+                  <strong className="text-white">Fichas Extras & Nuvem:</strong> Gerenciamento tático de NPCs e ameaças paranormais integrado ao combate e iniciativas.
+                </span>
               </li>
             </ul>
-          </div>
-        </div>
-      )}
 
-      {showPasswordModal && (
-        <div className="fixed inset-0 bg-black/90 z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-[#0a0a0a] border border-[#1A1A1A] p-8 rounded shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-sm w-full relative">
-            <button
-              onClick={() => {
-                setShowPasswordModal(false);
-                setPasswordInput("");
-                setPasswordError(false);
-              }}
-              className="absolute top-4 right-4 text-gray-500 hover:text-white"
-            >
-              <X size={20} />
-            </button>
-            <h2 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-2">
-              Acesso Restrito
-            </h2>
-            <p className="text-gray-500 text-xs mb-6 uppercase tracking-wider">
-              Digite a senha do Mestre
-            </p>
-
-            <input
-              type="password"
-              name="mestre_senha_aleatoria_123"
-              autoComplete="off"
-              spellCheck={false}
-              autoFocus
-              className={`w-full bg-[#1A1A1A] text-white border ${passwordError ? "border-red-500 text-red-500" : "border-[#333]"} p-3 rounded outline-none mb-4 focus:border-blood-red transition-colors font-mono text-center tracking-widest`}
-              value={passwordInput}
-              onChange={(e) => {
-                setPasswordInput(e.target.value);
-                setPasswordError(false);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  if (passwordInput === import.meta.env.VITE_MESTRE_PASSWORD) {
-                    setIsMestreAuth(true);
-                    setShowPasswordModal(false);
-                    setCurrentPage("mestre");
-                    setPasswordInput("");
-                  } else {
-                    setPasswordError(true);
-                  }
-                }
-              }}
-            />
-            {passwordError && (
-              <p className="text-red-500 text-[10px] text-center mb-4 uppercase font-bold tracking-wider">
-                Senha Incorreta
-              </p>
-            )}
-            <button
-              onClick={() => {
-                if (passwordInput === import.meta.env.VITE_MESTRE_PASSWORD) {
-                  setIsMestreAuth(true);
-                  setShowPasswordModal(false);
-                  setCurrentPage("mestre");
-                  setPasswordInput("");
-                } else {
-                  setPasswordError(true);
-                }
-              }}
-              className="w-full bg-blood-red hover:bg-red-800 text-white font-bold py-3 rounded uppercase tracking-wider transition-colors cursor-pointer"
-            >
-              Desbloquear
-            </button>
-          </div>
-        </div>
-      )}
-
-      {playerToKick && (
-        <div className="fixed inset-0 bg-black/90 z-[300] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-[#0a0a0a] border border-[#333] p-8 rounded-xl shadow-[0_0_30px_rgba(255,0,0,0.15)] max-w-sm w-full relative">
-            <h2 className="text-xl font-bold text-blood-red uppercase tracking-widest mb-2">
-              Atenção!
-            </h2>
-            <p className="text-gray-400 text-sm mb-6">
-              Tem certeza que deseja desconectar a ficha{" "}
-              <strong className="text-white uppercase tracking-wider">
-                {playerToKick.name}
-              </strong>
-              ?
-            </p>
-
-            <div className="flex gap-4">
+            <div className="mt-6 pt-4 border-t border-[#181820] flex justify-end">
               <button
-                onClick={() => setPlayerToKick(null)}
-                className="flex-1 bg-[#1A1A1A] hover:bg-[#2a2a2a] border border-[#333] text-gray-300 hover:text-white font-bold py-3 px-4 rounded-lg uppercase tracking-wider text-xs transition-colors cursor-pointer"
+                type="button"
+                onClick={() => setShowUpdateLog(false)}
+                className="bg-[#16161c] hover:bg-[#202028] border border-[#2b2b34] hover:border-[#40404e] text-white font-mono text-xs uppercase tracking-wider py-2 px-5 rounded-none transition-colors cursor-pointer"
               >
-                Cancelar
-              </button>
-              <button
-                onClick={async () => {
-                  const id = playerToKick.id;
-                  setPlayerToKick(null);
-                  await supabase.from("players").delete().eq("id", id);
-                }}
-                className="flex-1 bg-red-900/50 hover:bg-red-800 border border-red-500/50 text-white font-bold py-3 px-4 rounded-lg uppercase tracking-wider text-xs transition-colors cursor-pointer"
-              >
-                Confirmar
+                Fechar
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {menuOpen && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex">
-          <div className="w-64 bg-[#0a0a0a] border-r border-[#1A1A1A] h-full p-4 flex flex-col gap-4">
-            <button
-              onClick={() => setMenuOpen(false)}
-              className="self-end text-gray-500 hover:text-white"
-            >
-              <X size={24} />
-            </button>
-            <h2 className="text-xl font-bold text-blood-red mb-4 uppercase tracking-widest border-b border-[#1A1A1A] pb-2">
-              Menu
+      <PasswordAuthModal
+        isOpen={showPasswordModal}
+        onClose={() => {
+          setShowPasswordModal(false);
+          setPasswordInput("");
+          setPasswordError(false);
+        }}
+        onSuccess={() => {
+          setIsMestreAuth(true);
+          setShowPasswordModal(false);
+          setCurrentPage("mestre");
+          setPasswordInput("");
+        }}
+      />
+
+      {playerToKick && (
+        <div className="fixed inset-0 bg-black/85 z-[300] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-[#0e0e12] border border-[#26262e] rounded-none p-6 sm:p-8 max-w-sm w-full relative overflow-hidden shadow-2xl">
+            <div className="h-[3px] w-full bg-red-600 absolute top-0 left-0" />
+            <h2 className="text-base font-bold text-white uppercase tracking-wider font-mono mb-2">
+              Confirmar Desconexão
             </h2>
-            <button
-              onClick={() => {
-                setActiveFichaId("main");
-                setCurrentPage("ficha");
-                setMenuOpen(false);
-              }}
-              className={`text-left text-lg font-bold uppercase p-2 rounded ${currentPage === "ficha" ? "bg-[#1A1A1A] text-white" : "text-gray-500 hover:bg-[#1A1A1A]"}`}
-            >
-              Ficha
-            </button>
+            <p className="text-xs text-[#8c8c96] font-mono leading-relaxed mb-6 border-b border-[#1c1c24] pb-4">
+              Deseja desconectar a ficha de{" "}
+              <strong className="text-white uppercase font-bold">
+                {playerToKick.name}
+              </strong>{" "}
+              da sessão atual? A ficha poderá se reconectar caso o jogador clique em Conectar.
+            </p>
 
-            <button
-              onClick={() => {
-                setCurrentPage("oraculo");
-                setMenuOpen(false);
-              }}
-              className={`text-left text-lg font-bold uppercase p-2 rounded ${currentPage === "oraculo" ? "bg-[#1A1A1A] text-white" : "text-gray-500 hover:bg-[#1A1A1A]"}`}
-            >
-              Oráculo
-            </button>
-
-            <button
-              onClick={() => {
-                setCurrentPage("conexao");
-                setMenuOpen(false);
-              }}
-              className={`text-left text-lg font-bold uppercase p-2 rounded ${currentPage === "conexao" ? "bg-[#1A1A1A] text-white" : "text-gray-500 hover:bg-[#1A1A1A]"}`}
-            >
-              Conexão
-            </button>
-            <button
-              onClick={() => {
-                if (!isMestreAuth) {
-                  setShowPasswordModal(true);
-                  setMenuOpen(false);
-                } else {
-                  setCurrentPage("mestre");
-                  setMenuOpen(false);
-                }
-              }}
-              className={`text-left text-lg font-bold uppercase p-2 rounded ${currentPage === "mestre" ? "bg-[#1A1A1A] text-white" : "text-gray-500 hover:bg-[#1A1A1A]"}`}
-            >
-              Mestre
-            </button>
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setPlayerToKick(null)}
+                className="flex-1 bg-transparent hover:bg-white/[0.05] border border-[#2c2c36] text-[#8e8e98] hover:text-white font-mono text-xs uppercase tracking-wider py-2.5 px-3 rounded-none transition-colors cursor-pointer text-center"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = playerToKick.id;
+                  setPlayerToKick(null);
+                  await supabase.from("players").delete().eq("id", id);
+                }}
+                className="flex-1 bg-red-950/60 hover:bg-red-900 border border-red-700/60 text-white font-mono text-xs uppercase tracking-wider font-bold py-2.5 px-3 rounded-none transition-colors cursor-pointer text-center"
+              >
+                Desconectar
+              </button>
+            </div>
           </div>
-          <div className="flex-1" onClick={() => setMenuOpen(false)} />
         </div>
       )}
 
-      {currentPage !== "mestre" && currentPage !== "null" ? (
-        <div className="fixed bottom-0 left-0 w-full h-14 bg-[#0b0b0d]/95 backdrop-blur-md border-t border-[#303036] flex flex-row items-center z-[100] shadow-[0_-4px_20px_rgba(0,0,0,0.85)] overflow-x-auto overflow-y-hidden no-scrollbar">
-          <button
-            onClick={() => {
-              setActiveFichaId("main");
-              setCurrentPage("ficha");
-            }}
-            className={`flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full transition-all relative ${currentPage === "ficha" ? "text-white bg-[#8f171c]/15" : "text-[#99999f] hover:text-white hover:bg-white/5"}`}
-          >
-            {currentPage === "ficha" && (
-              <div className="absolute top-0 left-0 w-full h-[2px] bg-[var(--op-red)] shadow-[0_0_8px_#8f171c]" />
-            )}
-            <User size={15} className={currentPage === "ficha" ? "text-[var(--op-red-bright)]" : "text-[#68686e]"} />
-            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
-              Ficha
-            </span>
-          </button>
+      <NavigationSidebar
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+        menuOpen={menuOpen}
+        setMenuOpen={setMenuOpen}
+        isMestreAuth={isMestreAuth}
+        setShowPasswordModal={setShowPasswordModal}
+        setActiveFichaId={setActiveFichaId}
+        setShowUpdateLog={setShowUpdateLog}
+      />
 
-          <div className="w-[1px] h-6 shrink-0 bg-[#303036]"></div>
+      {/* Botão de menu hambúrguer estilo YouTube no canto superior esquerdo */}
+      <button
+        type="button"
+        onClick={() => setMenuOpen(!menuOpen)}
+        className="fixed top-3 left-4 z-40 w-9 h-9 flex items-center justify-center bg-[#111114]/95 hover:bg-[#1c1c20] text-[#dedede] hover:text-white border border-[#2a2a30] rounded-none transition-colors cursor-pointer shadow-md focus-visible:outline-none focus-visible:border-[var(--op-red)]"
+        aria-label="Abrir menu de navegação"
+        title="Menu de navegação"
+      >
+        <Menu size={18} />
+      </button>
 
-          <button
-            onClick={() => {
-              setCurrentPage("oraculo");
-            }}
-            className={`flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full transition-all relative ${currentPage === "oraculo" ? "text-white bg-[#8f171c]/15" : "text-[#99999f] hover:text-white hover:bg-white/5"}`}
-          >
-            {currentPage === "oraculo" && (
-              <div className="absolute top-0 left-0 w-full h-[2px] bg-[var(--op-red)] shadow-[0_0_8px_#8f171c]" />
-            )}
-            <Dices size={15} className={currentPage === "oraculo" ? "text-[var(--op-red-bright)]" : "text-[#68686e]"} />
-            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
-              Oráculo
-            </span>
-          </button>
+      <main className="w-full transition-all min-h-screen">
+        {(currentPage === "ficha" || currentPage === "ficha_extra") && (
+        <div className="max-w-7xl mx-auto w-full pb-20 lg:px-4 lg:py-6 flex flex-col lg:flex-row lg:gap-8 items-start">
+          
+          {/* Left Column: HUD, Variables, Skills */}
+          <div className="flex-1 w-full flex flex-col gap-0 lg:gap-6">
+            <div className="lg:border lg:border-[var(--op-border)] lg:bg-[#111115] lg:shadow-xl">
+              {renderHud()}
+            </div>
 
-          <div className="w-[1px] h-6 shrink-0 bg-[#303036]"></div>
-
-          <button
-            onClick={() => setCurrentPage("conexao")}
-            className={`flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full transition-all relative ${currentPage === "conexao" ? "text-white bg-[#8f171c]/15" : "text-[#99999f] hover:text-white hover:bg-white/5"}`}
-          >
-            {currentPage === "conexao" && (
-              <div className="absolute top-0 left-0 w-full h-[2px] bg-[var(--op-red)] shadow-[0_0_8px_#8f171c]" />
-            )}
-            <Radio size={15} className={currentPage === "conexao" ? "text-[var(--op-red-bright)]" : "text-[#68686e]"} />
-            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
-              Conexão
-            </span>
-          </button>
-
-          <div className="w-[1px] h-6 shrink-0 bg-[#303036]"></div>
-
-          <button
-            onClick={() => {
-              window.scrollTo(0, 0);
-              if (!isMestreAuth) {
-                setShowPasswordModal(true);
-              } else {
-                setCurrentPage("mestre");
-              }
-            }}
-            className={`flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full transition-all relative ${currentPage === "mestre" ? "text-white bg-[#8f171c]/15" : "text-[#99999f] hover:text-white hover:bg-white/5"}`}
-          >
-            {currentPage === "mestre" && (
-              <div className="absolute top-0 left-0 w-full h-[2px] bg-[var(--op-red)] shadow-[0_0_8px_#8f171c]" />
-            )}
-            <ShieldAlert size={15} className={currentPage === "mestre" ? "text-[var(--op-red-bright)]" : "text-[#68686e]"} />
-            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
-              Mestre
-            </span>
-          </button>
-
-          <div className="w-[1px] h-6 shrink-0 bg-[#303036]"></div>
-
-          <button
-            onClick={() => {
-              if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(() => {});
-              } else {
-                if (document.exitFullscreen) {
-                  document.exitFullscreen().catch(() => {});
-                }
-              }
-            }}
-            className="flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full text-[#99999f] hover:text-white hover:bg-white/5 transition-all"
-          >
-            <Maximize size={15} className="text-[#68686e]" />
-            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
-              Tela
-            </span>
-          </button>
-
-          <div className="w-[1px] h-6 shrink-0 bg-[#303036]"></div>
-
-          <button
-            onClick={() => setShowUpdateLog(true)}
-            className="flex flex-col items-center justify-center shrink-0 min-w-[65px] flex-1 h-full text-[#99999f] hover:text-white hover:bg-white/5 transition-all"
-          >
-            <FileText size={15} className="text-[#68686e]" />
-            <span className="text-[10px] uppercase font-bold tracking-wider font-mono leading-none mt-1">
-              Logs
-            </span>
-          </button>
-        </div>
-      ) : currentPage === "mestre" ? (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-lg h-15 bg-black/95 backdrop-blur-md border border-blood-red/30 rounded-2xl flex flex-row items-center justify-around z-[130] shadow-[0_8px_32px_rgba(0,0,0,0.8)] px-2">
-          <button
-            onClick={() => {
-              setActiveFichaId("main");
-              setCurrentPage("ficha");
-            }}
-            className="flex flex-col items-center justify-center flex-1 h-full py-1 text-gray-500 hover:text-white hover:bg-white/5 rounded-xl transition-all duration-200 cursor-pointer"
-          >
-            <FileText size={16} className="text-gray-500 group-hover:text-white" />
-            <span className="text-[9px] uppercase font-bold tracking-wider mt-0.5">
-              Player
-            </span>
-          </button>
-
-          <div className="w-[1px] h-6 bg-blood-red/10 shrink-0"></div>
-
-          <button
-            onClick={() => setMestreTab("fichas")}
-            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-all duration-200 rounded-xl cursor-pointer ${
-              mestreTab === "fichas"
-                ? "text-blood-red bg-blood-red/10 font-black scale-105"
-                : "text-gray-500 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <Users size={16} className={mestreTab === "fichas" ? "text-blood-red" : "text-gray-500"} />
-            <span className="text-[9px] uppercase font-bold tracking-wider mt-0.5">
-              Players
-            </span>
-          </button>
-
-          <div className="w-[1px] h-6 bg-blood-red/10 shrink-0"></div>
-
-          <button
-            onClick={() => setMestreTab("ost")}
-            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-all duration-200 rounded-xl cursor-pointer ${
-              mestreTab === "ost"
-                ? "text-blood-red bg-blood-red/10 font-black scale-105"
-                : "text-gray-500 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <Music size={16} className={mestreTab === "ost" ? "text-blood-red" : "text-gray-500"} />
-            <span className="text-[9px] uppercase font-bold tracking-wider mt-0.5">
-              OST
-            </span>
-          </button>
-
-          <div className="w-[1px] h-6 bg-blood-red/10 shrink-0"></div>
-
-          <button
-            onClick={() => setMestreTab("eventos")}
-            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-all duration-200 rounded-xl cursor-pointer ${
-              mestreTab === "eventos"
-                ? "text-blood-red bg-blood-red/10 font-black scale-105"
-                : "text-gray-500 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <Zap size={16} className={mestreTab === "eventos" ? "text-blood-red" : "text-gray-500"} />
-            <span className="text-[9px] uppercase font-bold tracking-wider mt-0.5">
-              Eventos
-            </span>
-          </button>
-
-          <div className="w-[1px] h-6 bg-blood-red/10 shrink-0"></div>
-
-          <button
-            onClick={() => setMestreTab("extras")}
-            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-all duration-200 rounded-xl cursor-pointer ${
-              mestreTab === "extras"
-                ? "text-blood-red bg-blood-red/10 font-black scale-105"
-                : "text-gray-500 hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <Ghost size={16} className={mestreTab === "extras" ? "text-blood-red" : "text-gray-500"} />
-            <span className="text-[9px] uppercase font-bold tracking-wider mt-0.5">
-              Extras
-            </span>
-          </button>
-        </div>
-      ) : null}
-
-      {(currentPage === "ficha" || currentPage === "ficha_extra") && (
-        <>
-          {renderHud()}
-
-          <div className="section">
-            <div className="section-title">Variáveis de Status</div>
+            <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115] lg:shadow-xl">
+              <div className="section-title">Variáveis de Status</div>
             <div className="var-grid">
               {Object.entries(state.variables).map(([key, value]) => (
                 <div className="var-box" key={key}>
@@ -2559,7 +2548,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             </button>
           </div>
 
-          <div className="section">
+            <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115] lg:shadow-xl">
             <div className="section-title">Habilidades (Skills)</div>
             <div className="skill-list">
               {state.skills.map((skill, index) => {
@@ -2616,7 +2605,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                       }}
                     >
                       <button
-                        className="bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-400 hover:text-white uppercase font-bold text-xs tracking-wider rounded py-2 px-1 transition-all"
+                        className="bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-400 hover:text-white uppercase font-bold text-xs tracking-wider rounded-none py-2 px-1 transition-all"
                         style={{ flex: 1 }}
                         onClick={() => {
                           setUseSkillModalId(skill.id);
@@ -2626,7 +2615,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                         USAR
                       </button>
                       <button
-                        className="bg-transparent hover:bg-[#1A1A1A] text-gray-600 hover:text-white p-2 rounded transition-colors border-none cursor-pointer"
+                        className="bg-transparent hover:bg-[#1A1A1A] text-gray-600 hover:text-white p-2 rounded-none transition-colors border-none cursor-pointer"
                         onClick={() => setEditingSkill(skill.id)}
                       >
                         <Edit2 size={18} />
@@ -2961,8 +2950,12 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               />
             </div>
           </div>
+          </div> {/* End Left Column */}
 
-          <div className="section">
+          {/* Right Column: Inventory, System/Menu */}
+          <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col gap-0 lg:gap-6 shrink-0">
+
+          <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115] lg:shadow-xl">
             <div className="section-title">Inventário</div>
             <div className="inv-grid">
               {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -2978,7 +2971,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             </div>
           </div>
 
-          <div className="section">
+          <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115] lg:shadow-xl">
             <div className="section-title">Sistema Demologia</div>
             <div className="menu-grid">
               <button className="btn-menu" onClick={exportData}>
@@ -3003,7 +2996,9 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               </button>
             </div>
           </div>
-        </>
+          </div> {/* End Right Column */}
+
+        </div>
       )}
 
       {currentPage === "oraculo" && (
@@ -3089,7 +3084,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   }
                 }
               }}
-              className={`w-full py-4 px-8 text-lg font-bold uppercase tracking-wider rounded transition-all cursor-pointer border ${isOnline ? "bg-green-900 border-green-500 hover:bg-green-800 text-white shadow-[0_0_15px_rgba(34,197,94,0.3)]" : "bg-[#1a0505] border-blood-red hover:bg-[#300505] text-blood-red shadow-[0_0_15px_rgba(211,0,0,0.3)]"}`}
+              className={`w-full py-4 px-8 text-lg font-bold uppercase tracking-wider rounded-none transition-all cursor-pointer border ${isOnline ? "bg-green-900 border-green-500 hover:bg-green-800 text-white shadow-[0_0_15px_rgba(34,197,94,0.3)]" : "bg-[#1a0505] border-blood-red hover:bg-[#300505] text-blood-red shadow-[0_0_15px_rgba(211,0,0,0.3)]"}`}
             >
               {isOnline ? "CONECTADO A SESSÃO" : "DESCONECTADO DA SESSÃO"}
             </button>
@@ -3101,940 +3096,98 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       )}
 
       {currentPage === "mestre" && (
-        <>
-          <div className="min-h-screen pb-20 font-sans">
-            <div className="flex flex-col items-center justify-center text-center mb-10 pt-12 relative z-10">
-              <div className="relative">
-                <div className="absolute inset-0 blur-3xl bg-blood-red/20 rounded-full scale-150"></div>
-                <img
-                  className="w-24 h-24 object-contain opacity-80"
-                  src="https://i.ibb.co/xq2KhP1v/3-Sem-T-tulo.png"
-                  alt="Símbolo Demologia"
-                />
-              </div>
-              <h2 className="text-3xl font-black text-white mt-4 uppercase tracking-[0.3em] drop-shadow-[0_0_10px_rgba(255,0,0,0.5)]">
-                Modo Mestre
-              </h2>
-              <p className="text-blood-red/70 text-[10px] font-mono tracking-[0.3em] mt-2 uppercase border border-blood-red/30 bg-blood-red/10 px-3 py-1 rounded-full">
-                Acesso Restrito
-              </p>
-            </div>
+        <div className="min-h-screen pb-20 font-sans">
+          <MasterHeaderBar
+            activeTab={mestreTab}
+            setActiveTab={setMestreTab}
+            playersCount={players.length}
+            extrasCount={extraFichas.length}
+            eventsCount={savedEvents.length}
+            isOstPlaying={Boolean(globalOstState?.isPlaying)}
+            onRollInitiative={handleRollAllInitiatives}
+            onAddExtraFicha={handleCreateExtraFicha}
+            onReturnToMainSheet={() => {
+              setActiveFichaId("main");
+              setCurrentPage("ficha");
+            }}
+            viewMode={mestreViewMode}
+            setViewMode={setMestreViewMode}
+          />
 
-            {mestreTab === "fichas" ? (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto px-4">
-                  {(() => {
-                    const syncedExtrasAsPlayers = extraFichas
-                      .filter((f) => f.synchronized)
-                      .map((f) => ({
-                        id: `EXTRA_FICHA_${f.id}`,
-                        name: f.name || "Ficha Extra",
-                        hp: f.hp || { current: 0, max: 100 },
-                        pe: f.pe || { current: 0, max: 100 },
-                        variables: f.variables || {},
-                        history: f.history || (f.notes ? [`<span style="color: #666;">Nota: ${f.notes}</span>`] : []),
-                        isExtraSheet: true,
-                        rawExtraSheetId: f.id,
-                      }));
-                    const combined = [...players, ...syncedExtrasAsPlayers];
-                    return combined
-                      .sort(
-                        (a, b) =>
-                          (initiatives[b.id] ?? -1) - (initiatives[a.id] ?? -1),
-                      )
-                      .map((p) => (
-                        <div
-                          key={p.id}
-                          className={`bg-black/80 backdrop-blur-md border ${
-                            p.isExtraSheet ? "border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.1)]" : "border-[#333]"
-                          } hover:border-[#444] rounded-xl p-5 relative overflow-hidden transition-all shadow-lg`}
-                        >
-                          <div className={`absolute top-0 left-0 w-full h-1 ${p.isExtraSheet ? "bg-gradient-to-r from-blue-500 to-transparent" : "bg-gradient-to-r from-blood-red to-transparent"} opacity-50`}></div>
-                          <div className="flex justify-between items-start mb-4 relative z-10">
-                            <div>
-                              <div className="text-white font-bold text-xl uppercase tracking-widest leading-tight">
-                                {p.name}
-                              </div>
-                              <div className="flex items-center gap-1.5 mt-1.5">
-                                {p.isExtraSheet ? (
-                                  <>
-                                    <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></span>
-                                    <span className="text-blue-400 font-mono text-[9px] uppercase tracking-wider">
-                                      Ficha Extra Sincronizada
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                                    <span className="text-gray-400 font-mono text-[9px] uppercase tracking-wider">
-                                      Jogador Conectado
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {initiatives[p.id] !== undefined && (
-                                <div
-                                  className={`border px-3 py-1 flex flex-col items-center justify-center rounded-lg min-w-[48px] ${
-                                    p.isExtraSheet
-                                      ? "bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.1)]"
-                                      : "bg-blood-red/10 border-blood-red/30 text-blood-red shadow-[0_0_10px_rgba(255,0,0,0.1)]"
-                                  }`}
-                                  title="Iniciativa"
-                                >
-                                  <span className="text-[9px] uppercase opacity-75 font-semibold tracking-wider mb-0.5">
-                                    Inic
-                                  </span>
-                                  <span className="font-black text-lg leading-none">
-                                    {initiatives[p.id]}
-                                  </span>
-                                </div>
-                              )}
-                              {p.isExtraSheet ? (
-                                <button
-                                  onClick={() => {
-                                    setActiveFichaId(p.rawExtraSheetId);
-                                    setCurrentPage("ficha_extra");
-                                  }}
-                                  className="text-blue-400 hover:text-white bg-blue-500/10 hover:bg-blue-500/30 p-2 rounded-lg transition-all flex items-center justify-center cursor-pointer"
-                                  title="Abrir Ficha Interativa"
-                                >
-                                  <Maximize size={16} />
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => setPlayerToKick(p)}
-                                  className="text-[#555] hover:text-red-500 bg-transparent hover:bg-red-500/10 p-2 rounded-full transition-all flex items-center justify-center relative z-20 cursor-pointer"
-                                  title="Desconectar Jogador"
-                                >
-                                  <Trash2 size={18} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
+          {mestreTab === "fichas" && (
+            <MasterPlayersView
+              players={players}
+              extraFichas={extraFichas}
+              initiatives={initiatives}
+              viewMode={mestreViewMode}
+              onKickPlayer={(player) => setPlayerToKick(player)}
+              onOpenInteractiveSheet={(sheetId) => {
+                setActiveFichaId(sheetId);
+                setCurrentPage("ficha_extra");
+              }}
+              onUpdateStat={(player, stat, val, isExtraSheet, rawExtraSheetId) => {
+                if (isExtraSheet && rawExtraSheetId) {
+                  setExtraFichas((prev) =>
+                    prev.map((f) =>
+                      f.id === rawExtraSheetId
+                        ? { ...f, [stat]: { ...f[stat], current: val }, last_local_edit: Date.now() }
+                        : f
+                    )
+                  );
+                } else {
+                  setPlayers((current) =>
+                    current.map((pl) =>
+                      pl.id === player.id ? { ...pl, [stat]: { ...pl[stat], current: val } } : pl
+                    )
+                  );
+                }
+                editPlayerStatExact(player, stat, val);
+              }}
+            />
+          )}
 
-                          <div className="flex gap-4 bg-[#1A1A1A]/80 border border-[#1A1A1A] rounded-lg p-4 relative z-10">
-                            <div className="flex-1">
-                              <div className="text-[10px] text-gray-500 mb-1 max-w-fit uppercase tracking-widest border-b border-[#333] pb-1">
-                                HP
-                              </div>
-                              <div className="flex items-baseline gap-1 mt-2">
-                                <MestreStatInput
-                                  value={p.hp?.current ?? 0}
-                                  onSave={(val) => {
-                                    if (p.isExtraSheet) {
-                                      setExtraFichas((prev) =>
-                                        prev.map((f) =>
-                                          f.id === p.rawExtraSheetId
-                                            ? {
-                                                ...f,
-                                                hp: { ...f.hp, current: val },
-                                                last_local_edit: Date.now(),
-                                              }
-                                            : f
-                                        )
-                                      );
-                                    } else {
-                                      setPlayers((current) =>
-                                        current.map((pl) =>
-                                          pl.id === p.id
-                                            ? {
-                                                ...pl,
-                                                hp: { ...pl.hp, current: val },
-                                              }
-                                            : pl,
-                                        ),
-                                      );
-                                    }
-                                    editPlayerStatExact(p, "hp", val);
-                                  }}
-                                  className="w-10 bg-transparent outline-none border-b border-[#333] focus:border-green-500 text-green-500 font-bold text-2xl font-mono text-left"
-                                />
-                                <span className="text-gray-600 text-xs font-mono">
-                                  / {p.hp?.max}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="w-[1px] bg-[#1A1A1A]"></div>
-                            <div className="flex-1">
-                              <div className="text-[10px] text-gray-500 mb-1 max-w-fit uppercase tracking-widest border-b border-[#333] pb-1">
-                                PE
-                              </div>
-                              <div className="flex items-baseline gap-1 mt-2">
-                                <MestreStatInput
-                                  value={p.pe?.current ?? 0}
-                                  onSave={(val) => {
-                                    if (p.isExtraSheet) {
-                                      setExtraFichas((prev) =>
-                                        prev.map((f) =>
-                                          f.id === p.rawExtraSheetId
-                                            ? {
-                                                ...f,
-                                                pe: { ...f.pe, current: val },
-                                                last_local_edit: Date.now(),
-                                              }
-                                            : f
-                                        )
-                                      );
-                                    } else {
-                                      setPlayers((current) =>
-                                        current.map((pl) =>
-                                          pl.id === p.id
-                                            ? {
-                                                ...pl,
-                                                pe: { ...pl.pe, current: val },
-                                              }
-                                            : pl,
-                                        ),
-                                      );
-                                    }
-                                    editPlayerStatExact(p, "pe", val);
-                                  }}
-                                  className="w-10 bg-transparent outline-none border-b border-[#333] focus:border-blue-500 text-blue-500 font-bold text-2xl font-mono text-left"
-                                />
-                                <span className="text-gray-600 text-xs font-mono">
-                                  / {p.pe?.max}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
+          {mestreTab === "ost" && (
+            <MasterOstPanel
+              ostList={ostList}
+              globalOstState={globalOstState}
+              setGlobalOstState={setGlobalOstState}
+              audioRef={audioRef}
+              requiresInteraction={requiresInteraction}
+              setRequiresInteraction={setRequiresInteraction}
+              fetchOsts={fetchOsts}
+              supabase={supabase}
+              globalChannelRef={globalChannelRef}
+            />
+          )}
 
-                          {p.history && p.history.length > 0 && (
-                            <div className="mt-4 pt-3 border-t border-[#1A1A1A] relative z-10">
-                              <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1 font-mono">
-                                Último Status/Ação
-                              </div>
-                              <div
-                                className="text-xs text-gray-400 line-clamp-2 leading-relaxed"
-                                dangerouslySetInnerHTML={{ __html: p.history[0] }}
-                              ></div>
-                            </div>
-                          )}
-                        </div>
-                      ));
-                  })()}
-                  {players.length === 0 && !extraFichas.some(f => f.synchronized) && (
-                    <div className="col-span-full flex flex-col items-center justify-center py-20 text-[#555]">
-                      <Dices size={48} className="mb-4 opacity-50" />
-                      <p className="font-bold uppercase tracking-widest text-lg">
-                        Nenhum Jogador ou Ficha Sincronizada
-                      </p>
-                      <p className="text-xs mt-2 max-w-xs text-center leading-relaxed">
-                        Aguardando conexão das fichas dos jogadores ou de fichas extras da Nuvem de Personagens.
-                      </p>
-                    </div>
-                  )}
-                </div>
+          {mestreTab === "eventos" && (
+            <SkillBuilder
+              savedEvents={savedEvents}
+              setSavedEvents={setSavedEvents}
+              userUid={userUid}
+              globalChannelRef={globalChannelRef}
+              players={players}
+              activeToggles={activeEventToggles}
+              ostList={ostList}
+            />
+          )}
 
-                {(() => {
-                  const syncedExtras = extraFichas.filter((f) => f.synchronized).map((f) => ({
-                    id: `EXTRA_FICHA_${f.id}`,
-                    variables: f.variables || {},
-                  }));
-                  const combined = [...players, ...syncedExtras];
-                  
-                  return combined.length > 0 ? (
-                    <button
-                      onClick={() => {
-                        const newInits: Record<string, number> = {};
-                        combined.forEach((p) => {
-                          const agl = p.variables?.["AGL"] || 0;
-                          const roll = Math.floor(Math.random() * 20) + 1;
-                          newInits[p.id] = roll + agl;
-                        });
-                        setInitiatives({ ...initiatives, ...newInits });
-                      }}
-                      className="fixed bottom-24 right-6 w-16 h-16 bg-blood-red hover:bg-red-700 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(255,0,0,0.5)] border border-red-400/30 hover:scale-110 active:scale-95 transition-all z-[150] cursor-pointer group"
-                      title="Rolar Iniciativas"
-                    >
-                      <Dices
-                        size={28}
-                        className="text-white group-hover:rotate-12 transition-transform"
-                        strokeWidth={1.5}
-                      />
-                    </button>
-                  ) : null;
-                })()}
-              </>
-            ) : mestreTab === "ost" ? (
-              <div className="max-w-2xl mx-auto flex flex-col gap-6 px-4">
-                <div className="bg-black/80 backdrop-blur-md border border-[#333] rounded-xl p-6 shadow-lg relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blood-red to-transparent opacity-50"></div>
-                  <div className="flex items-center gap-3 mb-4 mt-2">
-                    <Music size={24} className="text-blood-red" />
-                    <h3 className="text-xl font-bold text-white uppercase tracking-widest">
-                      Painel Trilha Sonora
-                    </h3>
-                  </div>
-                  <p className="text-gray-400 text-xs mb-6 max-w-sm leading-relaxed">
-                    Importe arquivos .mp3 para sincronizar e reproduzir nas
-                    fichas de todos os jogadores simultaneamente.
-                  </p>
-
-                  <div className="flex gap-4 items-center mb-8 border-b border-[#1A1A1A] pb-8">
-                    <label
-                      className={`w-full border border-dashed hover:border-blood-red transition-all cursor-pointer rounded-xl py-8 flex flex-col items-center justify-center gap-2 ${isUploadingOst ? "bg-[#1A1A1A] border-blood-red opacity-50" : "bg-black/40 border-[#333] hover:bg-[#1A1A1A]"}`}
-                    >
-                      <span className="text-gray-300 text-sm font-bold uppercase tracking-wider text-center flex gap-2 items-center">
-                        {isUploadingOst ? (
-                          <span className="animate-pulse">Importando...</span>
-                        ) : (
-                          <>
-                            Selecionar{" "}
-                            <Music size={16} className="text-blood-red" />
-                          </>
-                        )}
-                      </span>
-                      <span className="text-[#555] text-[10px] font-mono">
-                        .MP3 (Max 2MB) Recomendado p/ não travar
-                      </span>
-                      <input
-                        type="file"
-                        accept=".mp3"
-                        className="hidden"
-                        disabled={isUploadingOst}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          if (file.size > 2 * 1024 * 1024) {
-                            alert(
-                              "Arquivo muito grande, limite de 2MB. Comprima o MP3.",
-                            );
-                            return;
-                          }
-                          setIsUploadingOst(true);
-                          const reader = new FileReader();
-                          reader.onload = async () => {
-                            let base64 = reader.result as string;
-                            if (base64.startsWith("data:;base64,")) {
-                              base64 = base64.replace(
-                                "data:;base64,",
-                                "data:audio/mpeg;base64,",
-                              );
-                            } else if (
-                              base64.startsWith(
-                                "data:application/octet-stream;base64,",
-                              )
-                            ) {
-                              base64 = base64.replace(
-                                "data:application/octet-stream;base64,",
-                                "data:audio/mpeg;base64,",
-                              );
-                            }
-                            const ostId = `OST_FILE_${Date.now()}_${encodeURIComponent(file.name)}`;
-                            await supabase
-                              .from("players")
-                              .upsert({
-                                id: ostId,
-                                data: { base64, name: file.name },
-                                updated_at: new Date().toISOString(),
-                              });
-                            fetchOsts();
-                            setIsUploadingOst(false);
-                          };
-                          reader.readAsDataURL(file);
-                        }}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="flex flex-col gap-4">
-                    <h4 className="text-gray-500 uppercase tracking-widest text-[10px] font-bold">
-                      Faixas Disponíveis ({ostList.length})
-                    </h4>
-                    <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2 no-scrollbar">
-                      {ostList.length === 0 && (
-                        <div className="text-center flex flex-col items-center py-8 text-[#444]">
-                          <Music size={32} className="mb-2 opacity-50" />
-                          <span className="text-xs uppercase font-bold tracking-widest">
-                            Vault Vazio
-                          </span>
-                        </div>
-                      )}
-                      {ostList.map((ost) => {
-                        const rawName = ost.id.split("_").slice(3).join("_");
-                        const ostName = decodeURIComponent(rawName);
-                        const isCurrent = globalOstState?.ostId === ost.id;
-
-                        return (
-                          <div
-                            key={ost.id}
-                            className={`flex flex-col sm:flex-row items-center justify-between p-4 border rounded-xl transition-all gap-4 ${isCurrent ? "bg-blood-red/10 border-blood-red/50 shadow-[0_0_10px_rgba(255,0,0,0.1)]" : "bg-black/50 border-[#1A1A1A] hover:bg-[#1A1A1A] hover:border-[#333]"}`}
-                          >
-                            <div className="flex flex-col w-full sm:w-auto overflow-hidden">
-                              <span
-                                className={`truncate text-sm font-bold tracking-wider uppercase ${isCurrent ? "text-white" : "text-gray-400"}`}
-                              >
-                                {ostName || "Desconhecida"}
-                              </span>
-                              {isCurrent && (
-                                <span className="text-[9px] text-blood-red uppercase tracking-widest mt-1 font-bold">
-                                  ● Faixa Ativa
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                              {isCurrent ? (
-                                <>
-                                  <button
-                                    onClick={() => {
-                                      const newIsPlaying =
-                                        !globalOstState?.isPlaying;
-                                      const stateData = {
-                                        ...globalOstState,
-                                        isPlaying: newIsPlaying,
-                                      };
-                                      setGlobalOstState(stateData);
-                                      supabase
-                                        .from("players")
-                                        .upsert({
-                                          id: "MASTER_STATE",
-                                          data: { ost: stateData },
-                                          updated_at: new Date().toISOString(),
-                                        })
-                                        .then(({ error }) => {
-                                          if (error)
-                                            console.error(
-                                              "MASTER_STATE upsert error:",
-                                              error.message,
-                                            );
-                                        });
-                                      globalChannelRef.current
-                                        ?.send({
-                                          type: "broadcast",
-                                          event: "ost_update",
-                                          payload: stateData,
-                                        })
-                                        .catch(console.error);
-                                    }}
-                                    className={`flex-1 sm:flex-none px-6 py-3 sm:py-2.5 uppercase font-black tracking-widest text-[10px] rounded-lg transition-all shadow-md ${globalOstState?.isPlaying ? "bg-white text-black hover:bg-gray-200" : "bg-blood-red text-white hover:bg-red-700 shadow-[0_0_10px_rgba(255,0,0,0.3)]"}`}
-                                  >
-                                    {globalOstState?.isPlaying
-                                      ? "PAUSAR"
-                                      : "TOCAR"}
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      const stateData = {
-                                        ...globalOstState,
-                                        resetTimestamp: Date.now(),
-                                      };
-                                      setGlobalOstState(stateData);
-                                      supabase
-                                        .from("players")
-                                        .upsert({
-                                          id: "MASTER_STATE",
-                                          data: { ost: stateData },
-                                          updated_at: new Date().toISOString(),
-                                        })
-                                        .then(({ error }) => {
-                                          if (error)
-                                            console.error(
-                                              "MASTER_STATE reset error:",
-                                              error.message,
-                                            );
-                                        });
-                                      globalChannelRef.current
-                                        ?.send({
-                                          type: "broadcast",
-                                          event: "ost_update",
-                                          payload: stateData,
-                                        })
-                                        .catch(console.error);
-                                    }}
-                                    className="ml-2 px-3 py-2.5 bg-[#1A1A1A] hover:bg-[#2a2a2a] border border-[#444] hover:border-gray-500 text-gray-400 hover:text-white rounded-lg transition-all flex items-center justify-center shadow-md active:scale-95"
-                                    title="Resetar"
-                                  >
-                                    <RotateCcw size={16} />
-                                  </button>
-                                  {globalOstState?.isPlaying &&
-                                    audioRef.current?.paused &&
-                                    !requiresInteraction && (
-                                      <button
-                                        onClick={() => {
-                                          if (audioRef.current)
-                                            audioRef.current
-                                              .play()
-                                              .catch(console.error);
-                                        }}
-                                        className="ml-2 px-3 py-2.5 bg-yellow-600 text-white text-[10px] uppercase font-bold rounded-lg animate-pulse"
-                                      >
-                                        Tentar Forçar (Play)
-                                      </button>
-                                    )}
-                                </>
-                              ) : (
-                                <button
-                                  onClick={() => {
-                                    const stateData = {
-                                      ostId: ost.id,
-                                      name: ostName,
-                                      isPlaying: false,
-                                      volume: 1,
-                                    };
-                                    setGlobalOstState(stateData);
-                                    supabase
-                                      .from("players")
-                                      .upsert({
-                                        id: "MASTER_STATE",
-                                        data: { ost: stateData },
-                                        updated_at: new Date().toISOString(),
-                                      })
-                                      .then(({ error }) => {
-                                        if (error)
-                                          console.error(
-                                            "MASTER_STATE select error:",
-                                            error.message,
-                                          );
-                                      });
-                                    globalChannelRef.current
-                                      ?.send({
-                                        type: "broadcast",
-                                        event: "ost_update",
-                                        payload: stateData,
-                                      })
-                                      .catch(console.error);
-                                  }}
-                                  className="flex-1 sm:flex-none px-5 py-3 sm:py-2.5 bg-transparent border border-[#444] text-[#888] hover:text-white hover:bg-[#1A1A1A] hover:border-gray-500 uppercase font-bold tracking-widest text-[10px] rounded-lg transition-all"
-                                >
-                                  Selecionar
-                                </button>
-                              )}
-                              <button
-                                onClick={async () => {
-                                  if (
-                                    confirm(
-                                      "Deletar essa música permanentemente?",
-                                    )
-                                  ) {
-                                    await supabase
-                                      .from("players")
-                                      .delete()
-                                      .eq("id", ost.id);
-                                    if (isCurrent) {
-                                      await supabase
-                                        .from("players")
-                                        .delete()
-                                        .eq("id", "MASTER_STATE");
-                                      const emptyState = {
-                                        ostId: null,
-                                        isPlaying: false,
-                                        volume: 1,
-                                      };
-                                      setGlobalOstState(emptyState);
-                                      globalChannelRef.current
-                                        ?.send({
-                                          type: "broadcast",
-                                          event: "ost_update",
-                                          payload: emptyState,
-                                        })
-                                        .catch(console.error);
-                                    }
-                                    fetchOsts();
-                                  }
-                                }}
-                                className="p-3 sm:p-2.5 text-[#555] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {globalOstState?.ostId && (
-                    <div className="mt-8 p-4 bg-[#1A1A1A] border border-blood-red/30 rounded">
-                      <div className="flex justify-between items-center mb-4">
-                        <div className="text-gray-400 text-xs uppercase tracking-widest">
-                          Faixa em Destaque
-                        </div>
-                        <div className="text-blood-red font-bold text-sm truncate max-w-[200px]">
-                          {globalOstState?.name}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <div className="flex justify-between text-gray-500 text-[10px] uppercase">
-                          <span>Volume Base (Fade To)</span>
-                          <span>
-                            {Math.round((globalOstState?.volume ?? 1) * 100)}%
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.05"
-                          value={globalOstState?.volume ?? 1}
-                          onChange={(e) => {
-                            const newVol = Number(e.target.value);
-                            setGlobalOstState((prev: any) => ({
-                              ...prev,
-                              volume: newVol,
-                            }));
-                          }}
-                          onPointerUp={(e) => {
-                            const newVol = Number(
-                              (e.target as HTMLInputElement).value,
-                            );
-                            const stateData = {
-                              ...globalOstState,
-                              volume: newVol,
-                            };
-                            supabase
-                              .from("players")
-                              .upsert({
-                                id: "MASTER_STATE",
-                                data: { ost: stateData },
-                                updated_at: new Date().toISOString(),
-                              })
-                              .then(({ error }) => {
-                                if (error)
-                                  console.error(
-                                    "MASTER_STATE volume error:",
-                                    error.message,
-                                  );
-                              });
-                            globalChannelRef.current
-                              ?.send({
-                                type: "broadcast",
-                                event: "ost_update",
-                                payload: stateData,
-                              })
-                              .catch(console.error);
-                          }}
-                          className="w-full accent-blood-red"
-                        />
-                        <div className="text-[#555] text-[10px] mt-1 italic text-center">
-                          Ajuste de volume (sincroniza ao soltar).
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : mestreTab === "eventos" ? (
-              <SkillBuilder
-                savedEvents={savedEvents}
-                setSavedEvents={setSavedEvents}
-                userUid={userUid}
-                globalChannelRef={globalChannelRef}
-                players={players}
-                activeToggles={activeEventToggles}
-                ostList={ostList}
-              />
-            ) : mestreTab === "extras" ? (
-              <div className="max-w-6xl mx-auto flex flex-col gap-6 px-4">
-                <div className="bg-[#050505]/95 backdrop-blur-md border border-blood-red/15 rounded-2xl p-6 shadow-[0_4px_30px_rgba(255,0,0,0.05)] relative overflow-hidden mb-2">
-                  <div className="absolute inset-0 bg-gradient-to-r from-blood-red/5 to-transparent"></div>
-                  <div className="flex items-center gap-4 relative z-10 w-full">
-                    <div className="p-3 bg-blood-red/10 border border-blood-red/20 rounded-xl text-blood-red">
-                      <Ghost size={26} />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-black text-white uppercase tracking-wider">
-                        Nuvem & Fichas Extras
-                      </h3>
-                      <p className="text-[#a0a0a0] text-xs mt-1 leading-relaxed">
-                        Crie e gerencie NPCs, monstros e chefes instantaneamente. Sincronize com a nuvem para os jogadores acompanharem em tempo real.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {extraFichas.map((ficha) => {
-                    const hpCurrent = ficha.hp?.current ?? ficha.hpCurrent ?? 100;
-                    const hpMax = ficha.hp?.max ?? ficha.hpMax ?? 100;
-                    const hpPct = Math.max(0, Math.min(100, (hpCurrent / hpMax) * 100)) || 0;
-
-                    const peCurrent = ficha.pe?.current ?? 60;
-                    const peMax = ficha.pe?.max ?? 60;
-                    const pePct = Math.max(0, Math.min(100, (peCurrent / peMax) * 100)) || 0;
-
-                    const skillsCount = ficha.skills?.length ?? 0;
-                    const variablesCount = Object.keys(ficha.variables || {}).length;
-
-                    return (
-                      <div
-                        key={ficha.id}
-                        className={`bg-black/80 backdrop-blur-md border ${
-                          ficha.synchronized ? "border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.1)]" : "border-[#333]"
-                        } hover:border-blood-red/50 rounded-xl p-5 relative overflow-hidden transition-all shadow-lg flex flex-col justify-between group`}
-                      >
-                        <div>
-                          <div className="flex justify-between items-start mb-4 relative z-10 w-full gap-2">
-                            <div className="flex-1 min-w-0 flex flex-col justify-center">
-                              {ficha.synchronized && (
-                                <div className="inline-flex items-center gap-1.5 bg-blue-500/10 text-blue-400 text-[8px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded border border-blue-500/20 mb-1 w-max">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
-                                  Sincronizado
-                                </div>
-                              )}
-                              <input
-                                type="text"
-                                value={ficha.name}
-                                onChange={(e) => {
-                                  setExtraFichas(
-                                    extraFichas.map((f) =>
-                                      f.id === ficha.id
-                                        ? { ...f, name: e.target.value, last_local_edit: f.synchronized ? Date.now() : undefined }
-                                        : f,
-                                    ),
-                                  );
-                                }}
-                                className="bg-transparent text-white font-bold text-lg uppercase tracking-widest border-b border-transparent focus:border-blood-red outline-none w-full min-w-0 pb-1"
-                              />
-                            </div>
-                            <div className="flex gap-1 items-center shrink-0">
-                              <button
-                                onClick={() => toggleFichaSync(ficha)}
-                                title={ficha.synchronized ? "Parar Sincronização (Nuvem)" : "Sincronizar com Nuvem"}
-                                className={`p-1.5 rounded-lg transition-all ${
-                                  ficha.synchronized
-                                    ? "text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20"
-                                    : "text-gray-500 hover:text-white bg-transparent hover:bg-white/5"
-                                }`}
-                              >
-                                {ficha.synchronized ? <Cloud size={14} /> : <CloudOff size={14} />}
-                              </button>
-                              <button
-                                onClick={() => {
-                                  const cloned = {
-                                    ...defaultState,
-                                    ...ficha,
-                                    id: Date.now().toString() + Math.random().toString(),
-                                    name: `${ficha.name || "Extra"} (Cópia)`,
-                                    synchronized: false,
-                                    last_local_edit: undefined,
-                                  };
-                                  setExtraFichas([cloned, ...extraFichas]);
-                                }}
-                                title="Duplicar esta Ficha"
-                                className="text-gray-500 hover:text-white bg-transparent hover:bg-white/5 p-1.5 rounded-lg transition-all"
-                              >
-                                <Copy size={14} />
-                              </button>
-                              {deletingFichaId === ficha.id ? (
-                                <div className="flex items-center gap-1 bg-blood-red/10 border border-blood-red/25 px-1.5 py-0.5 rounded-lg z-20">
-                                  <span className="text-[10px] text-red-500 font-bold uppercase tracking-wider">Deletar?</span>
-                                  <button
-                                    onClick={() => {
-                                      if (ficha.synchronized) {
-                                        supabase
-                                          .from("players")
-                                          .delete()
-                                          .eq("id", `EXTRA_FICHA_${ficha.id}`)
-                                          .then(({ error }) => {
-                                            if (error) console.error("Error deleting synced sheet:", error.message);
-                                          });
-                                      }
-                                      setExtraFichas(
-                                        extraFichas.filter((f) => f.id !== ficha.id),
-                                      );
-                                      if (activeFichaId === ficha.id) {
-                                        setActiveFichaId("main");
-                                        setCurrentPage("mestre");
-                                      }
-                                      setDeletingFichaId(null);
-                                    }}
-                                    className="text-white hover:text-green-400 bg-green-500/20 hover:bg-green-500/30 px-1 py-0.5 rounded text-[10px] font-black cursor-pointer"
-                                  >
-                                    Sim
-                                  </button>
-                                  <button
-                                    onClick={() => setDeletingFichaId(null)}
-                                    className="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 px-1 py-0.5 rounded text-[10px] font-black cursor-pointer"
-                                  >
-                                    Não
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => setDeletingFichaId(ficha.id)}
-                                  className="text-[#555] hover:text-red-500 bg-transparent hover:bg-red-500/10 p-1.5 rounded-full transition-all shrink-0 cursor-pointer"
-                                  title="Excluir ficha"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="space-y-4 mb-4 bg-[#1A1A1A]/80 border border-[#1A1A1A] p-3 rounded-lg relative z-10">
-                            {/* HP Tracker */}
-                            <div>
-                              <div className="flex justify-between items-center mb-1 text-[9px] uppercase tracking-widest text-gray-500 font-bold">
-                                <span className="text-red-500">Vida (HP)</span>
-                                <span className="font-mono">{hpCurrent} / {hpMax}</span>
-                              </div>
-                              <div className="h-1.5 bg-[#111] rounded overflow-hidden flex relative border border-[#222]">
-                                <div
-                                  className="bg-blood-red h-full transition-all duration-300"
-                                  style={{ width: `${hpPct}%` }}
-                                ></div>
-                              </div>
-                              <div className="flex gap-2 mt-1.5">
-                                <MestreStatInput
-                                  value={hpCurrent}
-                                  onSave={(val) => {
-                                    setExtraFichas(
-                                      extraFichas.map((f) =>
-                                        f.id === ficha.id
-                                          ? { ...f, hp: { ...f.hp, current: val }, last_local_edit: f.synchronized ? Date.now() : undefined }
-                                          : f,
-                                      ),
-                                    );
-                                  }}
-                                  className="w-1/2 bg-transparent text-center text-xs text-white font-bold font-mono border-b border-[#333] py-0.5"
-                                  placeholder="Atual"
-                                />
-                                <MestreStatInput
-                                  value={hpMax}
-                                  onSave={(val) => {
-                                    setExtraFichas(
-                                      extraFichas.map((f) =>
-                                        f.id === ficha.id
-                                          ? { ...f, hp: { ...f.hp, max: val }, last_local_edit: f.synchronized ? Date.now() : undefined }
-                                          : f,
-                                      ),
-                                    );
-                                  }}
-                                  className="w-1/2 bg-transparent text-center text-xs text-white font-bold font-mono border-b border-[#333] py-0.5"
-                                  placeholder="Max"
-                                />
-                              </div>
-                            </div>
-
-                            {/* PE Tracker */}
-                            <div>
-                              <div className="flex justify-between items-center mb-1 text-[9px] uppercase tracking-widest text-gray-500 font-bold">
-                                <span className="text-blue-400">Esforço (PE)</span>
-                                <span className="font-mono">{peCurrent} / {peMax}</span>
-                              </div>
-                              <div className="h-1.5 bg-[#111] rounded overflow-hidden flex relative border border-[#222]">
-                                <div
-                                  className="bg-blue-600 h-full transition-all duration-300"
-                                  style={{ width: `${pePct}%` }}
-                                ></div>
-                              </div>
-                              <div className="flex gap-2 mt-1.5">
-                                <MestreStatInput
-                                  value={peCurrent}
-                                  onSave={(val) => {
-                                    setExtraFichas(
-                                      extraFichas.map((f) =>
-                                        f.id === ficha.id
-                                          ? { ...f, pe: { ...f.pe, current: val }, last_local_edit: f.synchronized ? Date.now() : undefined }
-                                          : f,
-                                      ),
-                                    );
-                                  }}
-                                  className="w-1/2 bg-transparent text-center text-xs text-gray-400 font-bold font-mono border-b border-[#333] py-0.5"
-                                  placeholder="PE"
-                                />
-                                <MestreStatInput
-                                  value={peMax}
-                                  onSave={(val) => {
-                                    setExtraFichas(
-                                      extraFichas.map((f) =>
-                                        f.id === ficha.id
-                                          ? { ...f, pe: { ...f.pe, max: val }, last_local_edit: f.synchronized ? Date.now() : undefined }
-                                          : f,
-                                      ),
-                                    );
-                                  }}
-                                  className="w-1/2 bg-transparent text-center text-xs text-gray-400 font-bold font-mono border-b border-[#333] py-0.5"
-                                  placeholder="MAX PE"
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 mb-4 text-[9px] uppercase tracking-wider relative z-10">
-                            <div className="bg-[#1A1A1A]/40 border border-[#1A1A1A] p-2 rounded text-center">
-                              <span className="text-xs font-mono font-bold text-white block">{skillsCount}</span>
-                              <span className="text-gray-500 text-[8px]">Habilidades</span>
-                            </div>
-                            <div className="bg-[#1A1A1A]/40 border border-[#1A1A1A] p-2 rounded text-center">
-                              <span className="text-xs font-mono font-bold text-white block">{variablesCount}</span>
-                              <span className="text-gray-500 text-[8px]">Variáveis</span>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 pt-3 border-t border-[#1A1A1A] relative z-10 w-full">
-                            <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-2">
-                              Anotações / Notas Rápidas
-                            </div>
-                            <textarea
-                              value={ficha.notes}
-                              onChange={(e) => {
-                                setExtraFichas(
-                                  extraFichas.map((f) =>
-                                    f.id === ficha.id
-                                      ? { ...f, notes: e.target.value, last_local_edit: f.synchronized ? Date.now() : undefined }
-                                      : f,
-                                  ),
-                                );
-                              }}
-                              placeholder="..."
-                              className="w-full bg-[#1A1A1A] border border-[#333] focus:border-blood-red/50 rounded-lg p-3 text-xs text-gray-300 outline-none resize-none h-24 font-mono shadow-[inset_0_0_10px_#000]"
-                            />
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => {
-                            setActiveFichaId(ficha.id);
-                            setCurrentPage("ficha_extra");
-                            setMestreTab("fichas");
-                          }}
-                          className={`w-full mt-4 py-2.5 bg-blood-red/10 border border-blood-red/30 text-blood-red hover:text-white hover:bg-blood-red hover:border-transparent rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all text-center flex items-center justify-center gap-1`}
-                        >
-                          <Maximize size={12} /> Abrir Ficha Interativa
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-                {extraFichas.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-20 text-[#555] opacity-50 bg-black/50 border border-dashed border-[#333] rounded-xl mt-4">
-                    <Ghost size={48} className="mb-4" />
-                    <p className="font-bold uppercase tracking-widest text-lg">
-                      Sem Fichas Extras
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : null}
-
-            {mestreTab === "extras" && (
-              <div className="fixed bottom-24 right-6 z-[160] flex flex-col items-end gap-2">
-                <button
-                  onClick={() => {
-                    setExtraFichas([
-                      {
-                        ...defaultState,
-                        id: Date.now().toString(),
-                        name: "Novo Extra",
-                        notes: "",
-                      },
-                      ...extraFichas,
-                    ]);
-                  }}
-                  className="w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_25px_rgba(0,0,0,0.9)] border transition-all z-[150] cursor-pointer bg-blood-red hover:bg-red-700 border-red-500/40 hover:scale-110 active:scale-95 group"
-                  title="Adicionar Ficha Extra"
-                >
-                  <Plus size={32} className="text-white" strokeWidth={2.5} />
-                </button>
-              </div>
-            )}
-          </div>
-        </>
+          {mestreTab === "extras" && (
+            <MasterExtrasView
+              extraFichas={extraFichas}
+              setExtraFichas={setExtraFichas}
+              defaultState={defaultState}
+              activeFichaId={activeFichaId}
+              setActiveFichaId={setActiveFichaId}
+              setCurrentPage={setCurrentPage}
+              setMestreTab={setMestreTab}
+              toggleFichaSync={toggleFichaSync}
+              supabase={supabase}
+            />
+          )}
+        </div>
       )}
+      </main>
 
       {useSkillModalId !== null &&
         (() => {
@@ -4044,7 +3197,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           if (!modalSkill) return null;
           return (
             <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-              <div className="bg-[#0a0a0a] border border-[#333] rounded-lg w-full max-w-sm flex flex-col p-4 gap-4 shadow-[0_0_20px_rgba(0,0,0,0.8)]">
+              <div className="bg-[#0a0a0a] border border-[#333] rounded-none w-full max-w-sm flex flex-col p-4 gap-4 shadow-[0_0_20px_rgba(0,0,0,0.8)]">
                 <div className="flex justify-between items-center border-b border-[#1A1A1A] pb-2">
                   <h3 className="font-bold text-blood-red uppercase tracking-widest">
                     {modalSkill.name || "Nova Skill"}
@@ -4057,7 +3210,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   </button>
                 </div>
 
-                <div className="h-48 overflow-y-auto bg-[#1A1A1A] p-3 border border-[#1A1A1A] rounded text-[13px] text-[#aaa] flex flex-col shadow-[inset_0_0_10px_#000]">
+                <div className="h-48 overflow-y-auto bg-[#1A1A1A] p-3 border border-[#1A1A1A] rounded-none text-[13px] text-[#aaa] flex flex-col shadow-[inset_0_0_10px_#000]">
                   {state.history.length > 0 ? (
                     state.history
                       .slice(0, 10)
@@ -4078,7 +3231,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 <div className="flex gap-2">
                   {modalSkill.test?.trim() !== "" && (
                     <button
-                      className="flex-1 bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-400 hover:text-white uppercase font-bold text-[10px] tracking-wider rounded py-3 transition-all cursor-pointer"
+                      className="flex-1 bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-400 hover:text-white uppercase font-bold text-[10px] tracking-wider rounded-none py-3 transition-all cursor-pointer"
                       onClick={() => {
                         useSkill(modalSkill, "test");
                         setSkillModalTested(true);
@@ -4089,7 +3242,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   )}
                   {modalSkill.damage?.trim() !== "" && (
                     <button
-                      className="flex-1 bg-gradient-to-r from-[#900] to-[var(--blood-red)] text-white hover:brightness-125 uppercase font-bold text-[10px] tracking-wider rounded py-3 transition-all border-none cursor-pointer"
+                      className="flex-1 bg-gradient-to-r from-[#900] to-[var(--blood-red)] text-white hover:brightness-125 uppercase font-bold text-[10px] tracking-wider rounded-none py-3 transition-all border-none cursor-pointer"
                       onClick={() => {
                         if (modalSkill.needsTest && !skillModalTested) {
                           addToHistory(

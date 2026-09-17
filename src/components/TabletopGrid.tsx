@@ -864,7 +864,7 @@ export function TabletopGrid({
     >
       
       {/* 1. MAP HEADER OVERLAYS */}
-      <div className="absolute top-4 left-4 z-40 bg-black/90 backdrop-blur-md border border-[#1A1A1A] p-4 rounded-xl shadow-[0_4px_30px_rgba(0,0,0,0.8)] flex flex-wrap gap-4 items-center max-w-[calc(150px+40vw)] sm:max-w-xl hud-ui animate-in fade-in zoom-in-95">
+      <div className="absolute top-4 left-4 z-40 bg-black/90 backdrop-blur-md border border-[#1A1A1A] p-4 rounded-none shadow-[0_4px_30px_rgba(0,0,0,0.8)] flex flex-wrap gap-4 items-center max-w-[calc(150px+40vw)] sm:max-w-xl hud-ui animate-in fade-in zoom-in-95">
         <div>
           <h3 className="font-black text-blood-red uppercase tracking-widest text-xs flex items-center gap-1.5"><Sparkles size={14} className="text-yellow-500 animate-pulse"/> Canva Tabletop</h3>
           <p className="text-[9px] text-gray-500 uppercase tracking-widest mt-0.5">Sincronização em tempo real</p>
@@ -876,7 +876,7 @@ export function TabletopGrid({
           {/* Zoom In & Out */}
           <button 
             onClick={() => handleZoomChangeFixedCenter(-0.25)}
-            className="p-1.5 bg-[#121212] hover:bg-[#1A1A1A] border border-[#222] rounded transition-all text-gray-300 hover:text-white"
+            className="p-1.5 bg-[#121212] hover:bg-[#1A1A1A] border border-[#222] rounded-none transition-all text-gray-300 hover:text-white"
             title="Afastar"
           >
             <ZoomOut size={16} />
@@ -886,7 +886,7 @@ export function TabletopGrid({
           </span>
           <button 
             onClick={() => handleZoomChangeFixedCenter(0.25)}
-            className="p-1.5 bg-[#121212] hover:bg-[#1A1A1A] border border-[#222] rounded transition-all text-gray-300 hover:text-white"
+            className="p-1.5 bg-[#121212] hover:bg-[#1A1A1A] border border-[#222] rounded-none transition-all text-gray-300 hover:text-white"
             title="Aproximar"
           >
             <ZoomIn size={16} />
@@ -895,7 +895,7 @@ export function TabletopGrid({
           {/* Reset position & Center view */}
           <button 
             onClick={recenterCamera}
-            className="p-1.5 bg-[#150202] hover:bg-blood-red/20 border border-blood-red/40 rounded transition-all text-blood-red hover:text-white flex items-center justify-center animate-pulse"
+            className="p-1.5 bg-[#150202] hover:bg-blood-red/20 border border-blood-red/40 rounded-none transition-all text-blood-red hover:text-white flex items-center justify-center animate-pulse"
             title="Recentralizar Visão"
           >
             <RotateCcw size={16} />
@@ -904,7 +904,7 @@ export function TabletopGrid({
           {/* Magnetic grid align option toggler */}
           <button 
             onClick={() => setSnapToGrid(!snapToGrid)}
-            className={`p-1.5 border rounded transition-all flex items-center justify-center ${snapToGrid ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500' : 'bg-[#121212] border-[#222] text-gray-600'}`}
+            className={`p-1.5 border rounded-none transition-all flex items-center justify-center ${snapToGrid ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500' : 'bg-[#121212] border-[#222] text-gray-600'}`}
             title={snapToGrid ? "Magnetismo Grid: Ativado" : "Magnetismo Grid: Desativado"}
           >
             <Grid size={16} />
@@ -913,7 +913,7 @@ export function TabletopGrid({
           {isMestreAuth && (
             <button 
               onClick={() => setShowScenarioModal(true)}
-              className="py-1.5 px-2.5 bg-blue-950 hover:bg-blue-900 border border-blue-500/30 rounded text-[10px] uppercase font-bold tracking-widest text-blue-400 flex items-center gap-1 shadow transition-all"
+              className="py-1.5 px-2.5 bg-blue-950 hover:bg-blue-900 border border-blue-500/30 rounded-none text-[10px] uppercase font-bold tracking-widest text-blue-400 flex items-center gap-1 shadow transition-all"
             >
               <FolderOpen size={13} /> Mapas
             </button>
@@ -1129,7 +1129,7 @@ export function TabletopGrid({
 
                     {/* Simple Overhead Health Bar Indicator */}
                     {obj.hp !== undefined && (
-                      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-[80%] h-1.5 bg-black border border-[#222] rounded overflow-hidden select-none pointer-events-none">
+                      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-[80%] h-1.5 bg-black border border-[#222] rounded-none overflow-hidden select-none pointer-events-none">
                         <div 
                           className="h-full bg-emerald-500"
                           style={{ width: `${Math.max(0, Math.min(100, (obj.hp.current / obj.hp.max) * 100))}%` }}
@@ -1211,7 +1211,7 @@ export function TabletopGrid({
 
       {/* MAP PAINT CONFIGURATION */}
       {isMestreAuth && (activeTool === 'create_floor' || activeTool === 'create_wall' || activeTool === 'erase') && (
-        <div className="absolute bottom-6 left-4 z-40 bg-black/95 backdrop-blur-md border border-neutral-800 p-4 rounded-2xl shadow-2xl max-w-sm hud-ui animate-in slide-in-from-left-5">
+        <div className="absolute bottom-6 left-4 z-40 bg-black/95 backdrop-blur-md border border-neutral-800 p-4 rounded-none shadow-2xl max-w-sm hud-ui animate-in slide-in-from-left-5">
           <div className="flex justify-between items-center border-b border-white/10 pb-1.5 mb-2.5">
             <div className="flex items-center gap-1.5 text-gray-300 font-extrabold uppercase text-[10px] tracking-wider">
               {activeTool === 'create_floor' && <PaintBucket size={12} className="text-purple-400" />}
@@ -1226,25 +1226,25 @@ export function TabletopGrid({
           <div className="flex gap-2 w-full mb-1">
             <button 
               onClick={() => setBrushSize({w: 1, h: 1})}
-              className={`flex-1 py-1.5 px-2 rounded font-bold text-[10px] border transition-all ${brushSize.w === 1 && brushSize.h === 1 ? 'bg-white/20 border-white/40 text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}
+              className={`flex-1 py-1.5 px-2 rounded-none font-bold text-[10px] border transition-all ${brushSize.w === 1 && brushSize.h === 1 ? 'bg-white/20 border-white/40 text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}
             >
               1x1
             </button>
             <button 
               onClick={() => setBrushSize({w: 2, h: 2})}
-              className={`flex-1 py-1.5 px-2 rounded font-bold text-[10px] border transition-all ${brushSize.w === 2 && brushSize.h === 2 ? 'bg-white/20 border-white/40 text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}
+              className={`flex-1 py-1.5 px-2 rounded-none font-bold text-[10px] border transition-all ${brushSize.w === 2 && brushSize.h === 2 ? 'bg-white/20 border-white/40 text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}
             >
               2x2
             </button>
             <button 
               onClick={() => setBrushSize({w: 3, h: 3})}
-              className={`flex-1 py-1.5 px-2 rounded font-bold text-[10px] border transition-all ${brushSize.w === 3 && brushSize.h === 3 ? 'bg-white/20 border-white/40 text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}
+              className={`flex-1 py-1.5 px-2 rounded-none font-bold text-[10px] border transition-all ${brushSize.w === 3 && brushSize.h === 3 ? 'bg-white/20 border-white/40 text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}
             >
               3x3
             </button>
             <button 
               onClick={() => setBrushSize({w: 4, h: 4})}
-              className={`flex-1 py-1.5 px-2 rounded font-bold text-[10px] border transition-all ${brushSize.w === 4 && brushSize.h === 4 ? 'bg-white/20 border-white/40 text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}
+              className={`flex-1 py-1.5 px-2 rounded-none font-bold text-[10px] border transition-all ${brushSize.w === 4 && brushSize.h === 4 ? 'bg-white/20 border-white/40 text-white' : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10'}`}
             >
               4x4
             </button>
@@ -1253,13 +1253,13 @@ export function TabletopGrid({
       )}
 
       {/* 3. FIXED LATERAL CANVA HOTBAR MENU (Direita) */}
-      <div className="absolute bottom-24 left-1/2 -translate-x-1/2 sm:left-auto sm:transform-none sm:right-4 sm:top-1/2 sm:-translate-y-1/2 z-40 bg-black/95 backdrop-blur-md border border-[#1A1A1A] p-2 sm:p-3 rounded-2xl flex flex-row sm:flex-col gap-2 sm:gap-3.5 shadow-2xl items-center hud-ui animate-in fade-in zoom-in-95">
+      <div className="absolute bottom-24 left-1/2 -translate-x-1/2 sm:left-auto sm:transform-none sm:right-4 sm:top-1/2 sm:-translate-y-1/2 z-40 bg-black/95 backdrop-blur-md border border-[#1A1A1A] p-2 sm:p-3 rounded-none flex flex-row sm:flex-col gap-2 sm:gap-3.5 shadow-2xl items-center hud-ui animate-in fade-in zoom-in-95">
         <span className="hidden sm:block text-[8px] font-black uppercase text-gray-500 tracking-widest border-b border-white/5 pb-1 w-full text-center">Menu</span>
 
         {/* 1. SELECT TOOL BUTTON */}
         <button 
           onClick={() => { setActiveTool('select'); }}
-          className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
+          className={`w-11 h-11 rounded-none flex items-center justify-center transition-all ${
             activeTool === 'select' 
             ? 'bg-blood-red text-white shadow-[0_0_15px_rgba(180,0,0,0.6)] border border-red-500/20' 
             : 'bg-[#121212]/70 text-gray-400 hover:text-white hover:bg-[#1A1A1A]'
@@ -1272,7 +1272,7 @@ export function TabletopGrid({
         {/* 1.1 MOVE CAMERA (HAND/PAN) TOOL BUTTON */}
         <button 
           onClick={() => { setActiveTool('pan'); }}
-          className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
+          className={`w-11 h-11 rounded-none flex items-center justify-center transition-all ${
             activeTool === 'pan' 
             ? 'bg-amber-600 text-white shadow-[0_0_15px_rgba(217,119,6,0.6)] border border-amber-500/20' 
             : 'bg-[#121212]/70 text-gray-400 hover:text-white hover:bg-[#1A1A1A]'
@@ -1290,7 +1290,7 @@ export function TabletopGrid({
             {/* 2. SPATIAL FLOORS DESIGNER DRAG & DRAW */}
             <button 
               onClick={() => { setActiveTool('create_floor'); }}
-              className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
+              className={`w-11 h-11 rounded-none flex items-center justify-center transition-all ${
                 activeTool === 'create_floor' 
                 ? 'bg-purple-900 border border-purple-500 text-purple-200 shadow-[0_0_15px_rgba(139,92,246,0.4)]' 
                 : 'bg-[#121212]/70 text-purple-400/80 hover:text-white hover:bg-[#1A1A1A]'
@@ -1303,7 +1303,7 @@ export function TabletopGrid({
             {/* 3. SPATIAL WALLS BUILDER DRAG & DRAW */}
             <button 
               onClick={() => { setActiveTool('create_wall'); }}
-              className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
+              className={`w-11 h-11 rounded-none flex items-center justify-center transition-all ${
                 activeTool === 'create_wall' 
                 ? 'bg-blue-900 border border-blue-500 text-blue-200 shadow-[0_0_15px_rgba(59,130,246,0.4)]' 
                 : 'bg-[#121212]/70 text-blue-400/80 hover:text-white hover:bg-[#1A1A1A]'
@@ -1316,7 +1316,7 @@ export function TabletopGrid({
             {/* 4. ERASER */}
             <button 
               onClick={() => { setActiveTool('erase'); }}
-              className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
+              className={`w-11 h-11 rounded-none flex items-center justify-center transition-all ${
                 activeTool === 'erase' 
                 ? 'bg-red-900 border border-red-500 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.4)]' 
                 : 'bg-[#121212]/70 text-red-400/80 hover:text-white hover:bg-[#1A1A1A]'
@@ -1334,7 +1334,7 @@ export function TabletopGrid({
         {isMestreAuth && (
           <button 
             onClick={() => setShowAddTokenModal(true)}
-            className="w-11 h-11 rounded-xl bg-emerald-950 hover:bg-emerald-900 border border-emerald-500/30 text-emerald-400 hover:text-white flex items-center justify-center transition-all shadow-md"
+            className="w-11 h-11 rounded-none bg-emerald-950 hover:bg-emerald-900 border border-emerald-500/30 text-emerald-400 hover:text-white flex items-center justify-center transition-all shadow-md"
             title="Adicionar Token ou NPC"
           >
             <Plus size={20} />
@@ -1344,7 +1344,7 @@ export function TabletopGrid({
 
       {/* 4. OBJECT CONFIGURATIONS PANEL & TRANSFORMATION ACTIONS BAR */}
       {selectedObjectId && selectedObject && (
-        <div className="absolute bottom-20 left-4 right-4 sm:left-auto sm:w-80 z-40 bg-black/95 backdrop-blur-md border border-[#1A1A1A] p-4 rounded-xl shadow-2xl hud-ui animate-in slide-in-from-bottom-5">
+        <div className="absolute bottom-20 left-4 right-4 sm:left-auto sm:w-80 z-40 bg-black/95 backdrop-blur-md border border-[#1A1A1A] p-4 rounded-none shadow-2xl hud-ui animate-in slide-in-from-bottom-5">
           <div className="flex justify-between items-center border-b border-white/15 pb-2 mb-3">
             <div>
               <h4 className="font-extrabold text-white text-xs uppercase tracking-wider">{selectedObject.name}</h4>
@@ -1364,7 +1364,7 @@ export function TabletopGrid({
               {isMestreAuth && (
                 <button 
                   onClick={duplicateSelected}
-                  className="flex-1 py-1.5 px-3 bg-[#111] hover:bg-[#1C1C1C] border border-[#222] rounded text-[10px] uppercase font-bold tracking-widest text-gray-300 transition-colors flex items-center justify-center gap-1.5"
+                  className="flex-1 py-1.5 px-3 bg-[#111] hover:bg-[#1C1C1C] border border-[#222] rounded-none text-[10px] uppercase font-bold tracking-widest text-gray-300 transition-colors flex items-center justify-center gap-1.5"
                   title="Duplicar Objeto"
                 >
                   <Copy size={12} /> Clonar
@@ -1373,7 +1373,7 @@ export function TabletopGrid({
 
               <button 
                 onClick={deleteSelected}
-                className="flex-1 py-1.5 px-3 bg-red-950/80 hover:bg-red-900 border border-red-500/40 rounded text-[10px] uppercase font-bold tracking-widest text-white transition-colors flex items-center justify-center gap-1.5"
+                className="flex-1 py-1.5 px-3 bg-red-950/80 hover:bg-red-900 border border-red-500/40 rounded-none text-[10px] uppercase font-bold tracking-widest text-white transition-colors flex items-center justify-center gap-1.5"
                 title="Apagar Objeto"
               >
                 <Trash2 size={12} /> Remover
@@ -1400,7 +1400,7 @@ export function TabletopGrid({
                   onBlur={() => saveAndSyncGrid({ objects: sanitizedGridState.objects })}
                   placeholder="Nome/Rótulo"
                   maxLength={24}
-                  className="w-full bg-black/85 border border-[#222] text-white py-1 px-2 rounded font-mono text-[10px] uppercase focus:border-yellow-500 outline-none"
+                  className="w-full bg-black/85 border border-[#222] text-white py-1 px-2 rounded-none font-mono text-[10px] uppercase focus:border-yellow-500 outline-none"
                 />
 
                 {/* Color blocks palette selection for walls or pavimentos */}
@@ -1415,7 +1415,7 @@ export function TabletopGrid({
                         });
                         saveAndSyncGrid({ objects: updated });
                       }}
-                      className={`h-5 rounded border text-[8px] ${c.class} ${selectedObject.color === c.id ? 'border-yellow-500 ring-1 ring-yellow-500' : 'border-[#222]'}`}
+                      className={`h-5 rounded-none border text-[8px] ${c.class} ${selectedObject.color === c.id ? 'border-yellow-500 ring-1 ring-yellow-500' : 'border-[#222]'}`}
                     />
                   ))}
                 </div>
@@ -1430,7 +1430,7 @@ export function TabletopGrid({
                       });
                       saveAndSyncGrid({ objects: updated });
                     }}
-                    className={`w-full py-1.5 px-3 rounded text-[9px] font-bold uppercase border flex items-center justify-center gap-1 transition-all ${selectedObject.isLocked ? 'bg-amber-950/40 border-amber-500/40 text-amber-500' : 'bg-transparent border-[#222] text-gray-400 hover:text-white hover:border-[#333]'}`}
+                    className={`w-full py-1.5 px-3 rounded-none text-[9px] font-bold uppercase border flex items-center justify-center gap-1 transition-all ${selectedObject.isLocked ? 'bg-amber-950/40 border-amber-500/40 text-amber-500' : 'bg-transparent border-[#222] text-gray-400 hover:text-white hover:border-[#333]'}`}
                   >
                     {selectedObject.isLocked ? <><Lock size={11} /> Pinado (Bloqueado)</> : <><Unlock size={11} /> Livre (Movível)</>}
                   </button>
@@ -1452,7 +1452,7 @@ export function TabletopGrid({
                           });
                           saveAndSyncGrid({ objects: updated });
                         }}
-                        className="py-1 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded flex items-center justify-center font-bold text-gray-300"
+                        className="py-1 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded-none flex items-center justify-center font-bold text-gray-300"
                         title="Mover Esquerda"
                       >
                         <ChevronLeft size={14} />
@@ -1465,7 +1465,7 @@ export function TabletopGrid({
                           });
                           saveAndSyncGrid({ objects: updated });
                         }}
-                        className="py-1 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded flex items-center justify-center font-bold text-gray-300"
+                        className="py-1 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded-none flex items-center justify-center font-bold text-gray-300"
                         title="Mover Direita"
                       >
                         <ChevronRight size={14} />
@@ -1478,7 +1478,7 @@ export function TabletopGrid({
                           });
                           saveAndSyncGrid({ objects: updated });
                         }}
-                        className="py-1 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded flex items-center justify-center font-bold text-gray-300"
+                        className="py-1 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded-none flex items-center justify-center font-bold text-gray-300"
                         title="Mover Cima"
                       >
                         <ChevronUp size={14} />
@@ -1491,7 +1491,7 @@ export function TabletopGrid({
                           });
                           saveAndSyncGrid({ objects: updated });
                         }}
-                        className="py-1 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded flex items-center justify-center font-bold text-gray-300"
+                        className="py-1 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded-none flex items-center justify-center font-bold text-gray-300"
                         title="Mover Baixo"
                       >
                         <ChevronDown size={14} />
@@ -1511,7 +1511,7 @@ export function TabletopGrid({
                           });
                           saveAndSyncGrid({ objects: updated });
                         }}
-                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded text-[9px] font-bold text-gray-300"
+                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded-none text-[9px] font-bold text-gray-300"
                       >
                         -1C
                       </button>
@@ -1523,7 +1523,7 @@ export function TabletopGrid({
                           });
                           saveAndSyncGrid({ objects: updated });
                         }}
-                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded text-[9px] font-bold text-emerald-400"
+                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded-none text-[9px] font-bold text-emerald-400"
                       >
                         +1C
                       </button>
@@ -1542,7 +1542,7 @@ export function TabletopGrid({
                           });
                           saveAndSyncGrid({ objects: updated });
                         }}
-                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded text-[9px] font-bold text-gray-300"
+                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded-none text-[9px] font-bold text-gray-300"
                       >
                         -1C
                       </button>
@@ -1554,7 +1554,7 @@ export function TabletopGrid({
                           });
                           saveAndSyncGrid({ objects: updated });
                         }}
-                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded text-[9px] font-bold text-emerald-400"
+                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded-none text-[9px] font-bold text-emerald-400"
                       >
                         +1C
                       </button>
@@ -1573,7 +1573,7 @@ export function TabletopGrid({
                           });
                           saveAndSyncGrid({ objects: updated });
                         }}
-                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded text-[9px] font-bold text-gray-300"
+                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded-none text-[9px] font-bold text-gray-300"
                       >
                         -90°
                       </button>
@@ -1585,7 +1585,7 @@ export function TabletopGrid({
                           });
                           saveAndSyncGrid({ objects: updated });
                         }}
-                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded text-[9px] font-bold text-amber-400"
+                        className="py-0.5 px-2 bg-[#121212] hover:bg-neutral-800 border border-[#222] rounded-none text-[9px] font-bold text-amber-400"
                       >
                         +90°
                       </button>
@@ -1622,7 +1622,7 @@ export function TabletopGrid({
       {/* POPUP: ADicionar novo TOKEN / NPC */}
       {isMestreAuth && showAddTokenModal && (
         <div className="fixed inset-0 bg-black/95 z-[250] flex items-center justify-center p-4 backdrop-blur-sm hud-ui">
-          <div className="bg-[#0a0a0a] border border-[#1A1A1A] max-w-sm w-full rounded-2xl p-6 flex flex-col gap-5 shadow-2xl animate-in fade-in zoom-in-95">
+          <div className="bg-[#0a0a0a] border border-[#1A1A1A] max-w-sm w-full rounded-none p-6 flex flex-col gap-5 shadow-2xl animate-in fade-in zoom-in-95">
             <div className="flex justify-between items-center border-b border-white/10 pb-3">
               <h3 className="font-extrabold text-blood-red uppercase tracking-widest text-sm flex items-center gap-1.5"><User size={16}/> Inserir Token</h3>
               <button 
@@ -1641,7 +1641,7 @@ export function TabletopGrid({
                   value={newTokenName}
                   onChange={(e) => setNewTokenName(e.target.value)}
                   placeholder="Ex: Dragão Vermelho, Zumbi, etc"
-                  className="w-full bg-[#121212] border border-[#222] p-2.5 rounded text-xs text-white focus:border-blood-red outline-none uppercase font-bold"
+                  className="w-full bg-[#121212] border border-[#222] p-2.5 rounded-none text-xs text-white focus:border-blood-red outline-none uppercase font-bold"
                 />
               </div>
 
@@ -1650,7 +1650,7 @@ export function TabletopGrid({
                 <select 
                   value={newTokenOwner}
                   onChange={(e) => setNewTokenOwner(e.target.value)}
-                  className="w-full bg-[#121212] border border-[#222] p-2.5 rounded text-xs text-white focus:border-blood-red outline-none uppercase font-bold"
+                  className="w-full bg-[#121212] border border-[#222] p-2.5 rounded-none text-xs text-white focus:border-blood-red outline-none uppercase font-bold"
                 >
                   <option value="">Nenhum (Mestre / NPC)</option>
                   {players.map(p => (
@@ -1671,7 +1671,7 @@ export function TabletopGrid({
                   />
                   
                   {/* Local image uploader button */}
-                  <label className="bg-[#1a1a1a] border border-[#222] hover:border-[#333] hover:text-white px-3 py-2 text-gray-400 rounded cursor-pointer flex items-center justify-center transition-colors">
+                  <label className="bg-[#1a1a1a] border border-[#222] hover:border-[#333] hover:text-white px-3 py-2 text-gray-400 rounded-none cursor-pointer flex items-center justify-center transition-colors">
                     <Upload size={14} />
                     <input 
                       type="file" 
@@ -1711,7 +1711,7 @@ export function TabletopGrid({
 
             <button 
               onClick={handleAddTokenSubmit}
-              className="w-full py-3 bg-blood-red hover:bg-red-700 text-white font-black rounded-lg uppercase tracking-wider text-xs transition-colors mt-2"
+              className="w-full py-3 bg-blood-red hover:bg-red-700 text-white font-black rounded-none uppercase tracking-wider text-xs transition-colors mt-2"
             >
               Criar Token na Grid
             </button>
@@ -1722,7 +1722,7 @@ export function TabletopGrid({
       {/* POPUP: GERENCIADOR DE MAPAS / CENÁRIOS SALVOS EM SLOTS */}
       {isMestreAuth && showScenarioModal && (
         <div className="fixed inset-0 bg-black/95 z-[250] flex items-center justify-center p-4 backdrop-blur-sm hud-ui">
-          <div className="bg-[#0a0a0a] border border-[#1A1A1A] max-w-md w-full rounded-2xl p-6 sm:p-8 flex flex-col gap-5 shadow-2xl animate-in fade-in zoom-in-95">
+          <div className="bg-[#0a0a0a] border border-[#1A1A1A] max-w-md w-full rounded-none p-6 sm:p-8 flex flex-col gap-5 shadow-2xl animate-in fade-in zoom-in-95">
             <div className="flex justify-between items-center border-b border-white/10 pb-3">
               <div>
                 <h3 className="font-extrabold text-[#a259ff] uppercase tracking-widest text-sm flex items-center gap-1.5"><Grid size={16}/> Slots de Cenários</h3>
@@ -1743,7 +1743,7 @@ export function TabletopGrid({
                 return (
                   <div 
                     key={slot.id}
-                    className="bg-[#121212]/85 border border-[#222] p-4 rounded-xl flex items-center justify-between gap-4 transition-all hover:bg-[#161616]"
+                    className="bg-[#121212]/85 border border-[#222] p-4 rounded-none flex items-center justify-between gap-4 transition-all hover:bg-[#161616]"
                   >
                     <div className="flex-1 overflow-hidden">
                       {isEditingThisSlot ? (
@@ -1755,17 +1755,17 @@ export function TabletopGrid({
                             placeholder="Nome do Esboço"
                             maxLength={32}
                             autoFocus
-                            className="bg-black border border-purple-500 p-2 text-xs rounded text-white outline-none flex-1 font-semibold uppercase tracking-wider focus:border-purple-400"
+                            className="bg-black border border-purple-500 p-2 text-xs rounded-none text-white outline-none flex-1 font-semibold uppercase tracking-wider focus:border-purple-400"
                           />
                           <button 
                             onClick={() => handleSaveScenario(slot.id)}
-                            className="p-2 bg-purple-900 border border-purple-500 text-purple-200 rounded hover:bg-purple-800 transition-colors"
+                            className="p-2 bg-purple-900 border border-purple-500 text-purple-200 rounded-none hover:bg-purple-800 transition-colors"
                           >
                             <Check size={14} />
                           </button>
                           <button 
                             onClick={() => setEditingSlotId(null)}
-                            className="p-2 bg-transparent border border-gray-600 text-gray-400 rounded hover:text-white"
+                            className="p-2 bg-transparent border border-gray-600 text-gray-400 rounded-none hover:text-white"
                           >
                             <X size={14} />
                           </button>
@@ -1789,7 +1789,7 @@ export function TabletopGrid({
                           setEditingSlotId(slot.id);
                           setEditingSlotName(slot.name);
                         }}
-                        className="py-1 px-2.5 bg-purple-950/60 hover:bg-purple-900 border border-purple-500/30 rounded-lg text-[9px] uppercase font-bold tracking-widest text-purple-400"
+                        className="py-1 px-2.5 bg-purple-950/60 hover:bg-purple-900 border border-purple-500/30 rounded-none text-[9px] uppercase font-bold tracking-widest text-purple-400"
                       >
                         Salvar
                       </button>
@@ -1798,7 +1798,7 @@ export function TabletopGrid({
                       {slot.timestamp && (
                         <button 
                           onClick={() => handleLoadScenario(slot.id)}
-                          className="py-1 px-2.5 bg-blue-950/60 hover:bg-blue-900 border border-blue-500/30 rounded-lg text-[9px] uppercase font-bold tracking-widest text-blue-400"
+                          className="py-1 px-2.5 bg-blue-950/60 hover:bg-blue-900 border border-blue-500/30 rounded-none text-[9px] uppercase font-bold tracking-widest text-blue-400"
                         >
                           Carregar
                         </button>
@@ -1812,13 +1812,13 @@ export function TabletopGrid({
             <div className="border-t border-white/10 pt-4 flex gap-3">
               <button 
                 onClick={clearSceneryOnly}
-                className="flex-1 py-3 px-4 bg-red-950 hover:bg-red-900 text-red-300 font-bold rounded-lg border border-red-500/30 uppercase tracking-wider text-xs transition-colors"
+                className="flex-1 py-3 px-4 bg-red-950 hover:bg-red-900 text-red-300 font-bold rounded-none border border-red-500/30 uppercase tracking-wider text-xs transition-colors"
               >
                 Limpar Cenário
               </button>
               <button 
                 onClick={() => setShowScenarioModal(false)}
-                className="flex-1 py-3 px-4 bg-transparent hover:bg-[#121212] text-gray-400 font-bold rounded-lg border border-[#222] uppercase tracking-wider text-xs transition-colors"
+                className="flex-1 py-3 px-4 bg-transparent hover:bg-[#121212] text-gray-400 font-bold rounded-none border border-[#222] uppercase tracking-wider text-xs transition-colors"
               >
                 Cancelar
               </button>

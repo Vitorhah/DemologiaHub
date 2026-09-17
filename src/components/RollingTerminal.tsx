@@ -29,7 +29,7 @@ export function RollingTerminal({
         <button
           type="button"
           onClick={() => setShowHistory((prev) => !prev)}
-          className="text-[11px] font-mono text-[var(--op-text-muted)] hover:text-white px-2.5 py-1.5 min-h-[36px] rounded bg-[#131318] hover:bg-[#1c1c24] border border-[var(--op-border)] cursor-pointer transition-colors flex items-center gap-1.5 font-normal touch-manipulation select-none"
+          className="text-[11px] font-mono text-[var(--op-text-muted)] hover:text-white px-2.5 py-1.5 min-h-[36px] rounded-none bg-[#131318] hover:bg-[#1c1c24] border border-[var(--op-border)] cursor-pointer transition-colors flex items-center gap-1.5 font-normal touch-manipulation select-none"
           style={{ textTransform: "none", letterSpacing: "normal" }}
           title={showHistory ? "Ocultar histórico" : "Mostrar histórico"}
         >
@@ -92,7 +92,7 @@ export function RollingTerminal({
         ) : (
           <div
             onClick={() => setShowHistory(true)}
-            className="mt-2 py-2.5 px-3 rounded-lg border border-dashed border-[var(--op-border)] text-center text-[11px] font-mono text-[var(--op-text-muted)] hover:text-white hover:border-[var(--op-red)] cursor-pointer transition-all bg-[#0e0e12]/60 touch-manipulation select-none"
+            className="mt-2 py-2.5 px-3 rounded-none border border-dashed border-[var(--op-border)] text-center text-[11px] font-mono text-[var(--op-text-muted)] hover:text-white hover:border-[var(--op-red)] cursor-pointer transition-all bg-[#0e0e12]/60 touch-manipulation select-none"
           >
             Histórico ocultado ({history.length} registro{history.length === 1 ? "" : "s"}). Toque para expandir.
           </div>

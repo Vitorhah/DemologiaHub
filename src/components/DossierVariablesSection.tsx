@@ -131,18 +131,18 @@ export function DossierVariablesSection({
   return (
     <div className="section !p-0 !border-none">
       {/* CABEÇALHO ESTILO DOSSIÊ CONFIDENCIAL */}
-      <div className="relative overflow-hidden rounded-t-xl bg-gradient-to-r from-[#17090b] via-[#14141a] to-[#0e0e13] border border-[var(--op-border)] p-3.5 sm:p-4 mb-3 shadow-lg">
+      <div className="relative overflow-hidden rounded-none bg-gradient-to-r from-[#17090b] via-[#14141a] to-[#0e0e13] border border-[var(--op-border)] p-3.5 sm:p-4 mb-3 shadow-lg">
         {/* Linha superior de classificação */}
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-[var(--op-red-bright)] via-[#b81d24]/50 to-transparent" />
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#24080a] border border-[#7a181e] flex items-center justify-center text-[var(--op-red-bright)] shadow-[0_0_10px_rgba(184,29,36,0.35)] shrink-0">
+            <div className="w-8 h-8 rounded-none bg-[#24080a] border border-[#7a181e] flex items-center justify-center text-[var(--op-red-bright)] shadow-[0_0_10px_rgba(184,29,36,0.35)] shrink-0">
               <FileText size={17} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-[#ff8085] bg-[#380b0f] px-2 py-0.5 rounded border border-[#691419]">
+                <span className="text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-[#ff8085] bg-[#380b0f] px-2 py-0.5 rounded-none border border-[#691419]">
                   ARQUIVO CLASSIFICADO // DOC-06
                 </span>
                 <span className="text-[10px] font-mono text-[var(--op-text-muted)] hidden sm:inline">
@@ -156,13 +156,13 @@ export function DossierVariablesSection({
           </div>
 
           <div className="flex items-center justify-between sm:justify-end gap-2 pt-1 sm:pt-0 border-t sm:border-t-0 border-[var(--op-border)]/50">
-            <span className="text-[11px] font-mono text-[var(--op-text-muted)] bg-[#111116] px-2.5 py-1 rounded-md border border-[var(--op-border)]">
+            <span className="text-[11px] font-mono text-[var(--op-text-muted)] bg-[#111116] px-2.5 py-1 rounded-none border border-[var(--op-border)]">
               {varEntries.length} PARÂMETRO{varEntries.length === 1 ? "" : "S"} REGISTRADOS
             </span>
             <button
               type="button"
               onClick={addVariable}
-              className="px-3 py-1.5 rounded-lg text-xs font-mono font-bold uppercase tracking-wider text-white bg-gradient-to-r from-[#8f171c] to-[#5c0e12] hover:from-[#b81d24] hover:to-[#7a1015] border border-[#b81d24]/60 shadow-[0_0_10px_rgba(184,29,36,0.3)] active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 min-h-[36px] touch-manipulation select-none"
+              className="px-3 py-1.5 rounded-none text-xs font-mono font-bold uppercase tracking-wider text-white bg-gradient-to-r from-[#8f171c] to-[#5c0e12] hover:from-[#b81d24] hover:to-[#7a1015] border border-[#b81d24]/60 shadow-[0_0_10px_rgba(184,29,36,0.3)] active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 min-h-[36px] touch-manipulation select-none"
             >
               <Plus size={14} />
               <span>Adicionar</span>
@@ -188,7 +188,7 @@ export function DossierVariablesSection({
           return (
             <div
               key={key}
-              className={`group relative rounded-xl border transition-all duration-200 shadow-lg flex flex-col justify-between overflow-hidden bg-gradient-to-b ${meta.bgGradient} hover:shadow-[0_4px_20px_rgba(0,0,0,0.7)]`}
+              className={`group relative rounded-none border transition-all duration-200 shadow-lg flex flex-col justify-between overflow-hidden bg-gradient-to-b ${meta.bgGradient} hover:shadow-[0_4px_20px_rgba(0,0,0,0.7)]`}
               style={{ borderColor: `${meta.borderColor}70` }}
             >
               {/* Marcador de canto estilo pasta dossiê */}
@@ -213,13 +213,13 @@ export function DossierVariablesSection({
                       onChange={(e) => setRenameDraft(e.target.value.toUpperCase())}
                       onBlur={() => handleFinishRename(key)}
                       onKeyDown={(e) => e.key === "Enter" && handleFinishRename(key)}
-                      className="w-full bg-[#07070a] border border-[var(--op-red-bright)] rounded px-1.5 py-0.5 text-xs font-mono font-bold text-white outline-none"
+                      className="w-full bg-[#07070a] border border-[var(--op-red-bright)] rounded-none px-1.5 py-0.5 text-xs font-mono font-bold text-white outline-none"
                       autoFocus
                     />
                     <button
                       type="button"
                       onClick={() => handleFinishRename(key)}
-                      className="p-1 text-emerald-400 hover:bg-emerald-950/50 rounded"
+                      className="p-1 text-emerald-400 hover:bg-emerald-950/50 rounded-none"
                     >
                       <Check size={13} />
                     </button>
@@ -227,7 +227,7 @@ export function DossierVariablesSection({
                 ) : (
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span
-                      className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-black tracking-wider uppercase border shadow-sm ${meta.badgeBg}`}
+                      className={`px-2 py-0.5 rounded-none text-[11px] font-mono font-black tracking-wider uppercase border shadow-sm ${meta.badgeBg}`}
                     >
                       {key}
                     </span>
@@ -249,7 +249,7 @@ export function DossierVariablesSection({
                   type="button"
                   onClick={() => removeVariable(key)}
                   title={`Remover parâmetro ${key}`}
-                  className="w-6 h-6 flex items-center justify-center rounded text-[var(--op-text-muted)] hover:text-rose-400 hover:bg-rose-950/40 transition-colors opacity-70 hover:opacity-100 touch-manipulation cursor-pointer shrink-0"
+                  className="w-6 h-6 flex items-center justify-center rounded-none text-[var(--op-text-muted)] hover:text-rose-400 hover:bg-rose-950/40 transition-colors opacity-70 hover:opacity-100 touch-manipulation cursor-pointer shrink-0"
                 >
                   <Trash2 size={12} />
                 </button>
@@ -271,7 +271,7 @@ export function DossierVariablesSection({
                 <button
                   type="button"
                   onClick={() => updateVariable(key, value - 1)}
-                  className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-[#14141a] hover:bg-[#20202a] active:bg-[#282834] border border-[var(--op-border)] text-[var(--op-text-secondary)] hover:text-white flex items-center justify-center font-mono font-bold transition-all active:scale-95 cursor-pointer touch-manipulation select-none"
+                  className="w-9 h-9 sm:w-8 sm:h-8 rounded-none bg-[#14141a] hover:bg-[#20202a] active:bg-[#282834] border border-[var(--op-border)] text-[var(--op-text-secondary)] hover:text-white flex items-center justify-center font-mono font-bold transition-all active:scale-95 cursor-pointer touch-manipulation select-none"
                   title="Diminuir valor (-1)"
                 >
                   <Minus size={13} />
@@ -293,7 +293,7 @@ export function DossierVariablesSection({
                 <button
                   type="button"
                   onClick={() => updateVariable(key, value + 1)}
-                  className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-[#14141a] hover:bg-[#20202a] active:bg-[#282834] border border-[var(--op-border)] text-[var(--op-text-secondary)] hover:text-white flex items-center justify-center font-mono font-bold transition-all active:scale-95 cursor-pointer touch-manipulation select-none"
+                  className="w-9 h-9 sm:w-8 sm:h-8 rounded-none bg-[#14141a] hover:bg-[#20202a] active:bg-[#282834] border border-[var(--op-border)] text-[var(--op-text-secondary)] hover:text-white flex items-center justify-center font-mono font-bold transition-all active:scale-95 cursor-pointer touch-manipulation select-none"
                   title="Aumentar valor (+1)"
                 >
                   <Plus size={13} />
@@ -305,7 +305,7 @@ export function DossierVariablesSection({
                 <button
                   type="button"
                   onClick={() => onRollTest?.(key)}
-                  className="w-full py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--op-text-secondary)] hover:text-white bg-[#131318] hover:bg-[#220a0d] border border-[var(--op-border)] hover:border-[var(--op-red-bright)] active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation shadow-sm"
+                  className="w-full py-1.5 px-2 rounded-none text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--op-text-secondary)] hover:text-white bg-[#131318] hover:bg-[#220a0d] border border-[var(--op-border)] hover:border-[var(--op-red-bright)] active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation shadow-sm"
                   title={`Rolar teste com 1d20+${key}`}
                 >
                   <Dices size={13} style={{ color: meta.color }} />

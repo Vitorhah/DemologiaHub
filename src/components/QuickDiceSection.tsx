@@ -125,7 +125,7 @@ export function QuickDiceSection({
     <div className="w-full max-w-xl mx-auto">
       {/* VISOR DE RESULTADO DO DADO (SE HOUVER ROLAGEM RECENTE) */}
       {lastRoll && (
-        <div className="mb-4 sm:mb-5 bg-gradient-to-b from-[#18181f] to-[#0f0f13] border border-[var(--op-border)] rounded-xl p-3.5 sm:p-4 shadow-[0_6px_25px_rgba(0,0,0,0.8)] relative overflow-hidden transition-all">
+        <div className="mb-4 sm:mb-5 bg-gradient-to-b from-[#18181f] to-[#0f0f13] border border-[var(--op-border)] rounded-none p-3.5 sm:p-4 shadow-[0_6px_25px_rgba(0,0,0,0.8)] relative overflow-hidden transition-all">
           <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-[var(--op-text-muted)] border-b border-[var(--op-border)] pb-2 mb-2">
             <span className="flex items-center gap-1.5 text-[var(--op-white)] font-bold">
               <span className="w-2 h-2 rounded-full bg-[var(--op-red-bright)] shadow-[0_0_8px_#b81d24]" />
@@ -150,7 +150,7 @@ export function QuickDiceSection({
                 ☠ DESASTRE CRÍTICO (1) ☠
               </div>
             )}
-            <div className="text-xs font-mono text-[var(--op-text-secondary)] mt-1.5 bg-[#0a0a0d] py-1.5 px-3 rounded border border-[#24242c] inline-block max-w-full break-words">
+            <div className="text-xs font-mono text-[var(--op-text-secondary)] mt-1.5 bg-[#0a0a0d] py-1.5 px-3 rounded-none border border-[#24242c] inline-block max-w-full break-words">
               {lastRoll.details}
             </div>
           </div>
@@ -158,11 +158,11 @@ export function QuickDiceSection({
       )}
 
       {/* CONTAINER DOS DADOS RÁPIDOS */}
-      <div className="bg-[var(--op-panel)] border border-[var(--op-border)] rounded-xl p-3.5 sm:p-5 shadow-lg">
+      <div className="bg-[var(--op-panel)] border border-[var(--op-border)] rounded-none p-3.5 sm:p-5 shadow-lg">
         {/* CABEÇALHO */}
         <div className="pb-3 mb-3 sm:pb-3.5 sm:mb-3.5 border-b border-[var(--op-border)]">
           <h2 className="text-xs sm:text-sm font-mono font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em] text-[var(--op-white)] flex items-center gap-2">
-            <span className="w-2 h-2 bg-[var(--op-red)] rounded-sm shadow-[0_0_6px_#8f171c]" />
+            <span className="w-2 h-2 bg-[var(--op-red)] rounded-none shadow-[0_0_6px_#8f171c]" />
             DADOS RÁPIDOS
           </h2>
           <p className="text-[10px] sm:text-[11px] font-mono text-[var(--op-text-muted)] mt-0.5">
@@ -183,7 +183,7 @@ export function QuickDiceSection({
                 key={die.sides}
                 type="button"
                 onClick={() => onRoll(formula)}
-                className={`group relative flex flex-col items-center justify-between p-2 sm:p-3 md:p-3.5 rounded-xl bg-gradient-to-b from-[#1d1d25] to-[#121217] border border-[var(--op-border)] hover:border-[var(--op-red-bright)] hover:shadow-[0_0_16px_rgba(184,29,36,0.35)] transition-all duration-200 active:scale-95 cursor-pointer overflow-hidden touch-manipulation min-h-[78px] sm:min-h-[88px] ${
+                className={`group relative flex flex-col items-center justify-between p-2 sm:p-3 md:p-3.5 rounded-none bg-gradient-to-b from-[#1d1d25] to-[#121217] border border-[var(--op-border)] hover:border-[var(--op-red-bright)] hover:shadow-[0_0_16px_rgba(184,29,36,0.35)] transition-all duration-200 active:scale-95 cursor-pointer overflow-hidden touch-manipulation min-h-[78px] sm:min-h-[88px] ${
                   isPercentile ? "col-span-2 sm:col-span-1 md:col-span-1" : "col-span-1"
                 }`}
               >
@@ -211,7 +211,7 @@ export function QuickDiceSection({
 
         {/* PAINEL VERMELHO DE MULTIPLICADOR / QUANTIDADE DE DADOS */}
         <div className="mt-3.5 sm:mt-4 pt-3 sm:pt-3.5 border-t border-[var(--op-border)]">
-          <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-[#24080a] via-[#380e12] to-[#24080a] border border-[#7a181e] p-3 sm:p-4 shadow-[0_4px_20px_rgba(143,23,28,0.3),inset_0_1px_1px_rgba(255,255,255,0.1)]">
+          <div className="relative overflow-hidden rounded-none bg-gradient-to-r from-[#24080a] via-[#380e12] to-[#24080a] border border-[#7a181e] p-3 sm:p-4 shadow-[0_4px_20px_rgba(143,23,28,0.3),inset_0_1px_1px_rgba(255,255,255,0.1)]">
             {/* Brilho de ambientação carmesim */}
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-48 h-16 bg-[#b81d24]/20 blur-2xl pointer-events-none" />
 
@@ -229,12 +229,12 @@ export function QuickDiceSection({
                 </div>
 
                 {/* Controles de incremento / decremento rápido - ergonomia de toque mobile */}
-                <div className="flex items-center gap-1 bg-[#170507] border border-[#6b1419] rounded-lg p-1 shadow-inner shrink-0">
+                <div className="flex items-center gap-1 bg-[#170507] border border-[#6b1419] rounded-none p-1 shadow-inner shrink-0">
                   <button
                     type="button"
                     onClick={() => setQuickDiceQty(Math.max(1, quickDiceQty - 1))}
                     disabled={quickDiceQty <= 1}
-                    className="w-10 h-10 sm:w-8 sm:h-8 rounded flex items-center justify-center font-mono font-black text-base sm:text-sm text-white bg-[#300a0d] hover:bg-[#521016] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer touch-manipulation select-none"
+                    className="w-10 h-10 sm:w-8 sm:h-8 rounded-none flex items-center justify-center font-mono font-black text-base sm:text-sm text-white bg-[#300a0d] hover:bg-[#521016] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer touch-manipulation select-none"
                     title="Diminuir quantidade (-1)"
                   >
                     -
@@ -246,7 +246,7 @@ export function QuickDiceSection({
                     type="button"
                     onClick={() => setQuickDiceQty(Math.min(20, quickDiceQty + 1))}
                     disabled={quickDiceQty >= 20}
-                    className="w-10 h-10 sm:w-8 sm:h-8 rounded flex items-center justify-center font-mono font-black text-base sm:text-sm text-white bg-[#521016] hover:bg-[#7a181e] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer shadow-[0_0_8px_rgba(184,29,36,0.5)] touch-manipulation select-none"
+                    className="w-10 h-10 sm:w-8 sm:h-8 rounded-none flex items-center justify-center font-mono font-black text-base sm:text-sm text-white bg-[#521016] hover:bg-[#7a181e] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer shadow-[0_0_8px_rgba(184,29,36,0.5)] touch-manipulation select-none"
                     title="Aumentar quantidade (+1)"
                   >
                     +
@@ -263,7 +263,7 @@ export function QuickDiceSection({
                       key={qty}
                       type="button"
                       onClick={() => setQuickDiceQty(qty)}
-                      className={`h-9 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-mono font-bold transition-all duration-150 cursor-pointer flex items-center justify-center touch-manipulation select-none ${
+                      className={`h-9 sm:h-8 px-2 sm:px-2.5 rounded-none text-xs font-mono font-bold transition-all duration-150 cursor-pointer flex items-center justify-center touch-manipulation select-none ${
                         isActive
                           ? "bg-gradient-to-b from-[#ff3b45] to-[#b81d24] text-white shadow-[0_0_12px_rgba(255,59,69,0.8)] border border-[#ff8085] scale-105"
                           : "bg-[#1f0709]/80 hover:bg-[#3d0e13] text-[#f2c2c5] hover:text-white border border-[#521016]"
