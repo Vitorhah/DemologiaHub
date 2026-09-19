@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   Home,
   User,
@@ -10,7 +10,6 @@ import {
   Maximize,
   FileText,
   X,
-  Menu,
 } from "lucide-react";
 
 export interface NavigationSidebarProps {
@@ -34,6 +33,17 @@ export function NavigationSidebar({
   setActiveFichaId,
   setShowUpdateLog,
 }: NavigationSidebarProps) {
+  // Fecha com a tecla Esc
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && menuOpen) {
+        setMenuOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [menuOpen, setMenuOpen]);
+
   // Rola suavemente até uma seção específica dentro da ficha se já estiver na página
   const scrollToSection = (sectionSelector?: string) => {
     if (sectionSelector) {
@@ -50,11 +60,12 @@ export function NavigationSidebar({
 
   const handleNavClick = (action: () => void) => {
     action();
-    // Fecha o menu gaveta ao selecionar um item (padrão YouTube)
+    // Fecha o menu gaveta ao selecionar um item
     setMenuOpen(false);
   };
 
-  const navItems = [
+  // Grupo 1: Ficha do Agente
+  const agentNavItems = [
     {
       id: "inicio",
       label: "Início",
@@ -89,15 +100,6 @@ export function NavigationSidebar({
       },
     },
     {
-      id: "dados",
-      label: "Rolar dados",
-      icon: Dices,
-      isActive: currentPage === "oraculo",
-      onClick: () => {
-        setCurrentPage("oraculo");
-      },
-    },
-    {
       id: "inventario",
       label: "Inventário",
       icon: Package,
@@ -106,6 +108,19 @@ export function NavigationSidebar({
         setActiveFichaId("main");
         setCurrentPage("ficha");
         scrollToSection(".inv-grid");
+      },
+    },
+  ];
+
+  // Grupo 2: Sistema e Operações
+  const systemNavItems = [
+    {
+      id: "dados",
+      label: "Rolar dados",
+      icon: Dices,
+      isActive: currentPage === "oraculo",
+      onClick: () => {
+        setCurrentPage("oraculo");
       },
     },
     {
@@ -142,115 +157,136 @@ export function NavigationSidebar({
     }
   };
 
+  const renderNavButton = (item: {
+    id: string;
+    label: string;
+    icon: React.ElementType;
+    isActive: boolean;
+    onClick: () => void;
+  }) => {
+    const Icon = item.icon;
+    const active = item.isActive;
+
+    return (
+      <button
+        key={item.id}
+        type="button"
+        onClick={() => handleNavClick(item.onClick)}
+        aria-current={active ? "page" : undefined}
+        className={`group relative w-full flex items-center justify-between px-3.5 py-2.5 rounded-none text-xs font-mono tracking-wider uppercase transition-all duration-150 cursor-pointer text-left min-h-[46px] select-none ${
+          active
+            ? "bg-[rgba(181,42,48,0.2)] text-white border border-[var(--op-red)] outline outline-1 outline-[var(--op-red-bright)]/50 font-bold shadow-sm"
+            : "bg-[#101015] hover:bg-[#15151c] text-[#9ca3af] hover:text-white border border-[#202028] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a]"
+        } focus-visible:outline-none focus-visible:outline-[var(--op-red-bright)]`}
+      >
+        {/* Ícone e Rótulo */}
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className={`w-7 h-7 rounded-none flex items-center justify-center shrink-0 transition-colors duration-150 ${
+              active
+                ? "bg-[var(--op-red-bright)]/25 text-[var(--op-red-bright)] outline outline-1 outline-[var(--op-red-bright)]/40"
+                : "bg-white/[0.03] text-[#828392] group-hover:text-white group-hover:bg-white/[0.06] outline outline-1 outline-white/[0.06]"
+            }`}
+          >
+            <Icon size={15} />
+          </div>
+          <span className="truncate text-xs tracking-wider">
+            {item.label}
+          </span>
+        </div>
+
+        {/* Indicador sutil de item ativo */}
+        {active && (
+          <div className="flex items-center shrink-0 pl-2">
+            <span
+              className="w-1.5 h-1.5 bg-[var(--op-red-bright)] rounded-none outline outline-1 outline-[var(--op-red)]/60 shadow-[0_0_6px_rgba(181,42,48,0.85)]"
+              aria-hidden="true"
+            />
+          </div>
+        )}
+      </button>
+    );
+  };
+
   return (
     <aside aria-label="Menu de Navegação Principal">
-      {/* 1. Backdrop escuro e suave ao abrir o menu (padrão YouTube) */}
+      {/* 1. Backdrop escuro com blur moderno */}
       <div
-        className={`fixed inset-0 z-50 bg-black/65 backdrop-blur-[2px] transition-opacity duration-200 ${
+        className={`fixed inset-0 z-50 bg-black/65 backdrop-blur-sm transition-opacity duration-200 ${
           menuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
         onClick={() => setMenuOpen(false)}
         aria-hidden="true"
       />
 
-      {/* 2. Gaveta lateral deslizante estruturada e quadrada (padrão YouTube) */}
+      {/* 2. Gaveta lateral deslizante otimizada para Mobile (WebView) e Desktop */}
       <div
-        className={`fixed top-0 left-0 bottom-0 z-50 w-64 sm:w-72 bg-[#0e0e11] border-r border-[#26262c] flex flex-col justify-between p-4 shadow-2xl transition-transform duration-200 ease-out select-none ${
+        className={`fixed top-0 left-0 bottom-0 z-50 w-72 sm:w-80 max-w-[85vw] bg-[#0c0c10] border-r border-[#1f1f26] outline outline-1 outline-[#16161d] flex flex-col justify-between p-4 sm:p-5 shadow-2xl transition-transform duration-200 ease-out select-none ${
           menuOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"
         }`}
+        style={{
+          paddingTop: "max(1.25rem, env(safe-area-inset-top, 1.25rem))",
+          paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))",
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="Painel de Navegação"
       >
-        {/* PARTE SUPERIOR: CABEÇALHO E LISTA DE ITENS */}
-        <div className="flex flex-col space-y-4">
-          {/* CABEÇALHO DO MENU: BOTÃO HAMBÚRGUER + LOGO + BOTÃO FECHAR */}
-          <div className="flex items-center justify-between pb-3 border-b border-[#222227]">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setMenuOpen(false)}
-                className="w-8 h-8 flex items-center justify-center bg-transparent hover:bg-white/[0.06] text-[#99999f] hover:text-white rounded-none border border-[#26262c] transition-colors cursor-pointer"
-                aria-label="Fechar menu"
-                title="Fechar menu"
-              >
-                <Menu size={16} />
-              </button>
-              <div className="flex flex-col">
-                <span className="font-mono text-xs font-bold tracking-widest text-[#dedede] uppercase">
-                  Dossiê
-                </span>
-                <span className="font-mono text-[9px] tracking-wider text-[var(--op-red-bright)] uppercase font-semibold">
-                  Ordem Paranormal
-                </span>
-              </div>
+        {/* PARTE SUPERIOR: CABEÇALHO & LISTA DE NAVEGAÇÃO */}
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {/* CABEÇALHO DO MENU */}
+          <div className="flex items-center justify-between pb-3.5 mb-2 border-b border-[#1c1c24] shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-2 h-2 bg-[var(--op-red-bright)] rounded-none outline outline-1 outline-[var(--op-red)]/60 shadow-[0_0_6px_rgba(181,42,48,0.7)]"
+                aria-hidden="true"
+              />
+              <span className="font-mono text-xs font-bold tracking-[0.2em] text-[#eeeeee] uppercase">
+                Menu
+              </span>
             </div>
 
             <button
               type="button"
               onClick={() => setMenuOpen(false)}
-              className="p-1.5 text-[#68686e] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer rounded-none"
-              aria-label="Fechar navegação"
+              className="w-8 h-8 rounded-none flex items-center justify-center text-[#9ca3af] hover:text-white bg-[#121217] hover:bg-[#181820] border border-[#22222a] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] transition-all cursor-pointer"
+              aria-label="Fechar menu"
+              title="Fechar (Esc)"
             >
               <X size={16} />
             </button>
           </div>
 
-          {/* RÓTULO DA SEÇÃO */}
-          <span className="text-[10px] font-mono font-bold tracking-[0.2em] text-[#68686e] uppercase px-1">
-            // Navegação
-          </span>
+          {/* ITENS DE NAVEGAÇÃO COM ROLAGEM SUAVE TOUCH-FRIENDLY */}
+          <div className="flex-1 overflow-y-auto overscroll-contain pr-1 py-2 space-y-4">
+            {/* SEÇÃO: AGENTE */}
+            <div>
+              <span className="text-[10px] font-mono font-bold tracking-[0.2em] text-[#636471] uppercase px-1 block mb-2">
+                Agente
+              </span>
+              <nav className="flex flex-col space-y-1.5" aria-label="Rotas do Agente">
+                {agentNavItems.map(renderNavButton)}
+              </nav>
+            </div>
 
-          {/* LISTA ESTRUTURADA DE NAVEGAÇÃO - DESIGN QUADRADO */}
-          <nav className="flex flex-col space-y-1" aria-label="Rotas">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = item.isActive;
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleNavClick(item.onClick)}
-                  aria-current={active ? "page" : undefined}
-                  className={`group relative flex items-center gap-3.5 px-3 py-2.5 rounded-none text-xs font-mono tracking-wider uppercase transition-colors duration-150 cursor-pointer text-left min-h-[42px] border-l-[3px] focus-visible:outline-none focus-visible:bg-white/[0.06] ${
-                    active
-                      ? "bg-[rgba(143,23,28,0.18)] text-white border-[var(--op-red)] font-bold shadow-none"
-                      : "bg-transparent text-[#99999f] hover:text-white hover:bg-white/[0.04] border-transparent"
-                  }`}
-                >
-                  {/* Ícone */}
-                  <Icon
-                    size={16}
-                    className={`shrink-0 transition-colors duration-150 ${
-                      active
-                        ? "text-[var(--op-red-bright)]"
-                        : "text-[#68686e] group-hover:text-[#dedede]"
-                    }`}
-                  />
-
-                  {/* Rótulo */}
-                  <span className="truncate">
-                    {item.label}
-                  </span>
-                </button>
-              );
-            })}
-          </nav>
+            {/* SEÇÃO: SISTEMA */}
+            <div>
+              <span className="text-[10px] font-mono font-bold tracking-[0.2em] text-[#636471] uppercase px-1 block mb-2">
+                Sistema
+              </span>
+              <nav className="flex flex-col space-y-1.5" aria-label="Rotas do Sistema">
+                {systemNavItems.map(renderNavButton)}
+              </nav>
+            </div>
+          </div>
         </div>
 
-        {/* PARTE INFERIOR: CITAÇÃO EM CAIXA QUADRADA & UTILITÁRIOS */}
-        <div className="pt-4 space-y-3 border-t border-[#222227]">
-          {/* Citação estruturada no estilo dossiê */}
-          <div className="border-l-2 border-[var(--op-red)] bg-[#131316] p-2.5 text-[11px] font-mono text-[#99999f] leading-relaxed">
-            <p className="text-[10px] text-[#dedede]/90">
-              &ldquo;O mundo é cruel,
-            </p>
-            <p className="text-[10px] text-[#dedede]/90">
-              mas ainda há pessoas
-            </p>
-            <p className="text-[10px] text-[#dedede]/90">
-              que sorriem.&rdquo;
+        {/* PARTE INFERIOR: CITAÇÃO SUTIL & UTILITÁRIOS */}
+        <div className="pt-3.5 space-y-3 border-t border-[#1c1c24] shrink-0">
+          {/* Citação reflexiva */}
+          <div className="px-3 py-2.5 rounded-none bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820]">
+            <p className="text-[10px] font-mono text-[#828392] italic leading-relaxed text-center">
+              &ldquo;O mundo é cruel, mas ainda há pessoas que sorriem.&rdquo;
             </p>
           </div>
 
@@ -259,11 +295,11 @@ export function NavigationSidebar({
             <button
               type="button"
               onClick={toggleFullscreen}
-              className="flex items-center justify-center gap-1.5 px-2 py-2 rounded-none bg-[#131316] hover:bg-[#1c1c20] text-[#99999f] hover:text-white border border-[#26262c] transition-colors cursor-pointer text-[10px] font-mono uppercase"
+              className="flex items-center justify-center gap-2 h-9 px-3 rounded-none bg-[#111116] hover:bg-[#16161d] text-[#9ca3af] hover:text-white border border-[#202028] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] transition-all cursor-pointer text-[11px] font-mono uppercase"
               title="Alternar Tela Cheia"
             >
-              <Maximize size={13} />
-              <span>Tela</span>
+              <Maximize size={14} className="text-[#767786]" />
+              <span>Tela cheia</span>
             </button>
 
             <button
@@ -272,10 +308,10 @@ export function NavigationSidebar({
                 setShowUpdateLog(true);
                 setMenuOpen(false);
               }}
-              className="flex items-center justify-center gap-1.5 px-2 py-2 rounded-none bg-[#131316] hover:bg-[#1c1c20] text-[#99999f] hover:text-white border border-[#26262c] transition-colors cursor-pointer text-[10px] font-mono uppercase"
+              className="flex items-center justify-center gap-2 h-9 px-3 rounded-none bg-[#111116] hover:bg-[#16161d] text-[#9ca3af] hover:text-white border border-[#202028] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] transition-all cursor-pointer text-[11px] font-mono uppercase"
               title="Ver Histórico de Atualizações"
             >
-              <FileText size={13} />
+              <FileText size={14} className="text-[#767786]" />
               <span>Logs</span>
             </button>
           </div>

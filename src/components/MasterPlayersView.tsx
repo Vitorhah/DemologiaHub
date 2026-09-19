@@ -5,6 +5,8 @@ import {
   Maximize2,
   Heart,
   Zap,
+  Plus,
+  Minus,
 } from "lucide-react";
 
 export interface MasterPlayersViewProps {
@@ -49,15 +51,22 @@ export function MasterPlayersView({
     (a, b) => (initiatives[b.id] ?? -1) - (initiatives[a.id] ?? -1),
   );
 
+  const handleStepStat = (player: any, stat: "hp" | "pe", delta: number) => {
+    const current = (player[stat]?.current ?? 0) + delta;
+    const max = player[stat]?.max ?? 100;
+    const clamped = Math.max(0, Math.min(max * 2, current));
+    onUpdateStat(player, stat, clamped, player.isExtraSheet, player.rawExtraSheetId);
+  };
+
   if (combined.length === 0) {
     return (
-      <div className="max-w-2xl mx-auto my-12 p-10 text-center flex flex-col items-center justify-center border border-[#272935] bg-[#14151c] rounded-none font-sans">
-        <Users size={36} className="text-[#626475] mb-3" />
-        <h3 className="text-sm font-semibold text-white">
+      <div className="max-w-2xl mx-auto my-12 p-8 text-center flex flex-col items-center justify-center bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] rounded-none font-mono">
+        <Users size={32} className="text-[#626475] mb-3" />
+        <h3 className="text-sm font-bold text-white uppercase tracking-wider">
           Nenhum participante conectado
         </h3>
-        <p className="text-xs text-[#8f909d] max-w-sm mt-1 leading-relaxed">
-          Os jogadores conectados ou fichas extras sincronizadas aparecerão aqui.
+        <p className="text-xs text-[#828392] max-w-sm mt-1 leading-relaxed">
+          Jogadores conectados ou fichas extras sincronizadas serão listados aqui.
         </p>
       </div>
     );
@@ -66,20 +75,20 @@ export function MasterPlayersView({
   // MODO LISTA
   if (viewMode === "list") {
     return (
-      <div className="max-w-6xl mx-auto px-4 font-mono">
-        <div className="bg-[#0a0a0a] border border-[var(--op-border)] rounded-none overflow-x-auto shadow-sm">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 font-mono my-4">
+        <div className="bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] rounded-none overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-[var(--op-border)] bg-[#111] text-[10px] uppercase font-bold tracking-wider text-gray-500">
-                <th className="py-3 px-4 w-16 text-center">Inic.</th>
-                <th className="py-3 px-4">Nome</th>
-                <th className="py-3 px-4 w-48">Vida (HP)</th>
-                <th className="py-3 px-4 w-48">Esforço (PE)</th>
-                <th className="py-3 px-4">Última ação</th>
-                <th className="py-3 px-4 text-right w-24">Ações</th>
+              <tr className="border-b border-[#202028] bg-[#101015] text-[11px] uppercase font-bold tracking-wider text-[#828392]">
+                <th className="py-3 px-3 sm:px-4 w-16 text-center">Inic</th>
+                <th className="py-3 px-3 sm:px-4">Nome</th>
+                <th className="py-3 px-3 sm:px-4 w-52">HP</th>
+                <th className="py-3 px-3 sm:px-4 w-52">PE</th>
+                <th className="py-3 px-3 sm:px-4 hidden md:table-cell">Ação recente</th>
+                <th className="py-3 px-3 sm:px-4 text-right w-20"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#1c1c1c] text-xs">
+            <tbody className="divide-y divide-[#181820] text-xs">
               {combined.map((p) => {
                 const initVal = initiatives[p.id];
                 const hpCurrent = p.hp?.current ?? 0;
@@ -91,10 +100,10 @@ export function MasterPlayersView({
                 const pePct = Math.max(0, Math.min(100, (peCurrent / peMax) * 100)) || 0;
 
                 return (
-                  <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3 px-4 text-center">
+                  <tr key={p.id} className="hover:bg-[#121217] transition-colors">
+                    <td className="py-3 px-3 sm:px-4 text-center">
                       {initVal !== undefined ? (
-                        <span className="inline-block px-2 py-0.5 bg-[#1f212c] text-white font-semibold rounded-none text-xs">
+                        <span className="inline-block px-2 py-0.5 bg-[#121217] border border-[#202028] outline outline-1 outline-[#181820] text-white font-bold text-xs">
                           {initVal}
                         </span>
                       ) : (
@@ -102,31 +111,39 @@ export function MasterPlayersView({
                       )}
                     </td>
 
-                    <td className="py-3 px-4">
-                      <div className="font-semibold text-white truncate max-w-[180px]">
+                    <td className="py-3 px-3 sm:px-4">
+                      <div className="font-bold text-white truncate max-w-[180px] uppercase">
                         {p.name}
                       </div>
-                      <div className="text-[11px] mt-0.5">
+                      <div className="text-[10px] mt-0.5">
                         {p.isExtraSheet ? (
-                          <span className="text-blue-400 font-medium">NPC</span>
+                          <span className="text-[#60a5fa]">NPC</span>
                         ) : (
-                          <span className="text-emerald-400 font-medium">Jogador</span>
+                          <span className="text-[#4ade80]">Jogador</span>
                         )}
                       </div>
                     </td>
 
-                    <td className="py-3 px-4">
-                      <div className="flex items-center justify-between text-[11px] text-[#9a9ba8] mb-1">
-                        <span className="text-red-400 font-medium">HP</span>
-                        <span>{hpCurrent} / {hpMax}</span>
+                    <td className="py-3 px-3 sm:px-4">
+                      <div className="flex items-center justify-between text-[11px] text-[#9ca3af] mb-1">
+                        <span className="text-[var(--op-red-bright)] font-bold">HP</span>
+                        <span>{hpCurrent}/{hpMax}</span>
                       </div>
-                      <div className="h-1.5 w-full bg-[#1b1c24] rounded-full overflow-hidden">
+                      <div className="h-1.5 w-full bg-[#181820] border border-[#242430] overflow-hidden mb-1.5">
                         <div
-                          className="h-full bg-red-600 rounded-full transition-all duration-200"
+                          className="h-full bg-[var(--op-red)] transition-all duration-200"
                           style={{ width: `${hpPct}%` }}
                         />
                       </div>
-                      <div className="mt-1 flex items-center gap-1">
+                      <div className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => handleStepStat(p, "hp", -1)}
+                          className="w-6 h-6 flex items-center justify-center bg-[#121217] hover:bg-[#1a1a24] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] rounded-none cursor-pointer text-xs font-bold"
+                          title="Diminuir HP"
+                        >
+                          <Minus size={10} />
+                        </button>
                         <input
                           type="number"
                           defaultValue={hpCurrent}
@@ -135,23 +152,39 @@ export function MasterPlayersView({
                             const val = parseInt(e.target.value) || 0;
                             onUpdateStat(p, "hp", val, p.isExtraSheet, p.rawExtraSheetId);
                           }}
-                          className="w-16 bg-[#1a1c24] border border-[#2b2d3b] focus:border-red-500 rounded-none px-1.5 py-0.5 text-white text-xs outline-none text-center"
+                          className="w-12 h-6 bg-[#0c0c10] border-y border-[#202028] text-center text-xs text-white font-bold outline-none"
                         />
+                        <button
+                          type="button"
+                          onClick={() => handleStepStat(p, "hp", 1)}
+                          className="w-6 h-6 flex items-center justify-center bg-[#121217] hover:bg-[#1a1a24] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] rounded-none cursor-pointer text-xs font-bold"
+                          title="Aumentar HP"
+                        >
+                          <Plus size={10} />
+                        </button>
                       </div>
                     </td>
 
-                    <td className="py-3 px-4">
-                      <div className="flex items-center justify-between text-[11px] text-[#9a9ba8] mb-1">
-                        <span className="text-blue-400 font-medium">PE</span>
-                        <span>{peCurrent} / {peMax}</span>
+                    <td className="py-3 px-3 sm:px-4">
+                      <div className="flex items-center justify-between text-[11px] text-[#9ca3af] mb-1">
+                        <span className="text-yellow-500 font-bold">PE</span>
+                        <span>{peCurrent}/{peMax}</span>
                       </div>
-                      <div className="h-1.5 w-full bg-[#1b1c24] rounded-full overflow-hidden">
+                      <div className="h-1.5 w-full bg-[#181820] border border-[#242430] overflow-hidden mb-1.5">
                         <div
-                          className="h-full bg-blue-600 rounded-full transition-all duration-200"
+                          className="h-full bg-yellow-500 transition-all duration-200"
                           style={{ width: `${pePct}%` }}
                         />
                       </div>
-                      <div className="mt-1 flex items-center gap-1">
+                      <div className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => handleStepStat(p, "pe", -1)}
+                          className="w-6 h-6 flex items-center justify-center bg-[#121217] hover:bg-[#1a1a24] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] rounded-none cursor-pointer text-xs font-bold"
+                          title="Diminuir PE"
+                        >
+                          <Minus size={10} />
+                        </button>
                         <input
                           type="number"
                           defaultValue={peCurrent}
@@ -160,40 +193,48 @@ export function MasterPlayersView({
                             const val = parseInt(e.target.value) || 0;
                             onUpdateStat(p, "pe", val, p.isExtraSheet, p.rawExtraSheetId);
                           }}
-                          className="w-16 bg-[#1a1c24] border border-[#2b2d3b] focus:border-blue-500 rounded-none px-1.5 py-0.5 text-white text-xs outline-none text-center"
+                          className="w-12 h-6 bg-[#0c0c10] border-y border-[#202028] text-center text-xs text-white font-bold outline-none"
                         />
+                        <button
+                          type="button"
+                          onClick={() => handleStepStat(p, "pe", 1)}
+                          className="w-6 h-6 flex items-center justify-center bg-[#121217] hover:bg-[#1a1a24] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] rounded-none cursor-pointer text-xs font-bold"
+                          title="Aumentar PE"
+                        >
+                          <Plus size={10} />
+                        </button>
                       </div>
                     </td>
 
-                    <td className="py-3 px-4 max-w-[220px]">
+                    <td className="py-3 px-3 sm:px-4 hidden md:table-cell max-w-[200px]">
                       {p.history && p.history.length > 0 ? (
                         <div
-                          className="text-xs text-[#9c9da9] truncate"
+                          className="text-xs text-[#9d9ea9] truncate"
                           dangerouslySetInnerHTML={{ __html: p.history[0] }}
                         />
                       ) : (
-                        <span className="text-[#555663] italic">Nenhuma ação recente</span>
+                        <span className="text-[#555663] italic">Sem ações recentes</span>
                       )}
                     </td>
 
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-3 sm:px-4 text-right">
                       {p.isExtraSheet ? (
                         <button
                           type="button"
                           onClick={() => onOpenInteractiveSheet(p.rawExtraSheetId)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-950/40 hover:bg-blue-900/60 border border-blue-800/40 text-blue-300 text-xs font-medium rounded-none transition-colors cursor-pointer"
+                          className="p-1.5 bg-[#121217] hover:bg-[#1a1a24] text-[#60a5fa] border border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none transition-all cursor-pointer inline-flex items-center justify-center"
+                          title="Abrir ficha"
                         >
-                          <Maximize2 size={12} />
-                          <span>Abrir</span>
+                          <Maximize2 size={13} />
                         </button>
                       ) : (
                         <button
                           type="button"
                           onClick={() => onKickPlayer(p)}
-                          className="p-1.5 text-[#737482] hover:text-red-400 hover:bg-red-950/30 rounded-none transition-colors cursor-pointer"
-                          title="Remover jogador"
+                          className="p-1.5 bg-[#121217] hover:bg-[#1a1215] text-[#9ca3af] hover:text-[var(--op-red-bright)] border border-[#202028] hover:border-[var(--op-red)] outline outline-1 outline-[#181820] hover:outline-[var(--op-red-bright)]/40 rounded-none transition-all cursor-pointer inline-flex items-center justify-center"
+                          title="Remover participante"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={13} />
                         </button>
                       )}
                     </td>
@@ -209,7 +250,7 @@ export function MasterPlayersView({
 
   // MODO GRADE
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto px-4 font-mono">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 max-w-6xl mx-auto px-3 sm:px-4 font-mono my-4">
       {combined.map((p) => {
         const initVal = initiatives[p.id];
         const hpCurrent = p.hp?.current ?? 0;
@@ -223,29 +264,34 @@ export function MasterPlayersView({
         return (
           <div
             key={p.id}
-            className="bg-[#0a0a0a] border border-[var(--op-border)] rounded-none p-4 flex flex-col justify-between hover:border-gray-500 transition-all"
+            className="bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none p-3.5 sm:p-4 flex flex-col justify-between transition-all"
           >
             <div>
               {/* Header do Card */}
-              <div className="flex justify-between items-start mb-3 gap-2">
+              <div className="flex justify-between items-center mb-3 gap-2">
                 <div className="min-w-0 flex-1">
-                  <h4 className="text-white font-bold text-sm truncate uppercase tracking-wider">
-                    {p.name}
-                  </h4>
-                  <div className="flex items-center gap-1.5 mt-0.5">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-white font-bold text-sm truncate uppercase tracking-wider">
+                      {p.name}
+                    </h4>
                     {p.isExtraSheet ? (
-                      <span className="text-[10px] text-blue-500 font-bold uppercase">NPC</span>
+                      <span className="text-[10px] text-[#60a5fa] font-bold uppercase shrink-0">
+                        NPC
+                      </span>
                     ) : (
-                      <span className="text-[10px] text-green-500 font-bold uppercase">Player</span>
+                      <span className="text-[10px] text-[#4ade80] font-bold uppercase shrink-0">
+                        Jogador
+                      </span>
                     )}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
                   {initVal !== undefined && (
-                    <div className="px-2 py-0.5 bg-[#111] border border-[var(--op-border)] rounded-none text-center">
-                      <span className="text-[9px] text-gray-500 block leading-tight uppercase font-bold">Inic</span>
-                      <span className="text-xs font-bold text-white block leading-tight">{initVal}</span>
+                    <div className="px-2 py-1 bg-[#121217] border border-[#202028] outline outline-1 outline-[#181820] rounded-none text-center">
+                      <span className="text-xs font-bold text-white block leading-none">
+                        Inic: {initVal}
+                      </span>
                     </div>
                   )}
 
@@ -253,7 +299,7 @@ export function MasterPlayersView({
                     <button
                       type="button"
                       onClick={() => onOpenInteractiveSheet(p.rawExtraSheetId)}
-                      className="p-1.5 text-blue-400 hover:text-white bg-[#0a1525] hover:bg-[#0a2040] border border-blue-900/40 rounded-none transition-colors cursor-pointer"
+                      className="p-1.5 text-[#60a5fa] hover:text-white bg-[#121217] hover:bg-[#1a1a24] border border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
                       title="Abrir ficha"
                     >
                       <Maximize2 size={13} />
@@ -262,10 +308,10 @@ export function MasterPlayersView({
                     <button
                       type="button"
                       onClick={() => onKickPlayer(p)}
-                      className="p-1.5 text-gray-600 hover:text-white hover:bg-[var(--op-red)] rounded-none transition-colors cursor-pointer"
-                      title="Remover jogador"
+                      className="p-1.5 text-[#9ca3af] hover:text-[var(--op-red-bright)] bg-[#121217] hover:bg-[#1a1215] border border-[#202028] hover:border-[var(--op-red)] outline outline-1 outline-[#181820] hover:outline-[var(--op-red-bright)]/40 rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
+                      title="Remover da sessão"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={13} />
                     </button>
                   )}
                 </div>
@@ -274,21 +320,28 @@ export function MasterPlayersView({
               {/* Status HP e PE */}
               <div className="grid grid-cols-2 gap-2.5 mb-3">
                 {/* HP */}
-                <div className="bg-[#111] border border-[#222] rounded-none p-2.5">
-                  <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1 font-bold uppercase tracking-wider">
+                <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2.5">
+                  <div className="flex items-center justify-between text-[11px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
                     <span className="text-[var(--op-red-bright)] flex items-center gap-1">
-                      <Heart size={10} /> HP
+                      <Heart size={11} /> HP
                     </span>
                     <span>{hpCurrent}/{hpMax}</span>
                   </div>
-                  <div className="h-1.5 bg-[#1a1a1a] rounded-none overflow-hidden border border-[#333] mb-2">
+                  <div className="h-1.5 bg-[#181820] border border-[#242430] overflow-hidden mb-2">
                     <div
-                      className="h-full bg-[var(--op-red)] rounded-none transition-all duration-200"
+                      className="h-full bg-[var(--op-red)] transition-all duration-200"
                       style={{ width: `${hpPct}%` }}
                     />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] text-gray-600 uppercase font-bold tracking-wider">Ajustar:</span>
+                  <div className="flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => handleStepStat(p, "hp", -1)}
+                      className="w-7 h-7 flex items-center justify-center bg-[#14141c] hover:bg-[#1e1e28] active:bg-[#252532] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] text-xs font-bold rounded-none cursor-pointer transition-all"
+                      title="Diminuir 1 HP"
+                    >
+                      <Minus size={11} />
+                    </button>
                     <input
                       type="number"
                       defaultValue={hpCurrent}
@@ -297,27 +350,42 @@ export function MasterPlayersView({
                         const val = parseInt(e.target.value) || 0;
                         onUpdateStat(p, "hp", val, p.isExtraSheet, p.rawExtraSheetId);
                       }}
-                      className="w-14 bg-black border border-[var(--op-border)] focus:border-[var(--op-red)] text-white text-xs text-center py-0.5 rounded-none outline-none"
+                      className="w-12 h-7 bg-[#0c0c10] border-y border-[#202028] text-white text-xs font-bold text-center py-0.5 rounded-none outline-none focus:border-[var(--op-red)]"
                     />
+                    <button
+                      type="button"
+                      onClick={() => handleStepStat(p, "hp", 1)}
+                      className="w-7 h-7 flex items-center justify-center bg-[#14141c] hover:bg-[#1e1e28] active:bg-[#252532] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] text-xs font-bold rounded-none cursor-pointer transition-all"
+                      title="Aumentar 1 HP"
+                    >
+                      <Plus size={11} />
+                    </button>
                   </div>
                 </div>
 
                 {/* PE */}
-                <div className="bg-[#111] border border-[#222] rounded-none p-2.5">
-                  <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1 font-bold uppercase tracking-wider">
+                <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2.5">
+                  <div className="flex items-center justify-between text-[11px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
                     <span className="text-yellow-500 flex items-center gap-1">
-                      <Zap size={10} /> PE
+                      <Zap size={11} /> PE
                     </span>
                     <span>{peCurrent}/{peMax}</span>
                   </div>
-                  <div className="h-1.5 bg-[#1a1a1a] rounded-none overflow-hidden border border-[#333] mb-2">
+                  <div className="h-1.5 bg-[#181820] border border-[#242430] overflow-hidden mb-2">
                     <div
-                      className="h-full bg-yellow-500 rounded-none transition-all duration-200"
+                      className="h-full bg-yellow-500 transition-all duration-200"
                       style={{ width: `${pePct}%` }}
                     />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] text-gray-600 uppercase font-bold tracking-wider">Ajustar:</span>
+                  <div className="flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => handleStepStat(p, "pe", -1)}
+                      className="w-7 h-7 flex items-center justify-center bg-[#14141c] hover:bg-[#1e1e28] active:bg-[#252532] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] text-xs font-bold rounded-none cursor-pointer transition-all"
+                      title="Diminuir 1 PE"
+                    >
+                      <Minus size={11} />
+                    </button>
                     <input
                       type="number"
                       defaultValue={peCurrent}
@@ -326,20 +394,25 @@ export function MasterPlayersView({
                         const val = parseInt(e.target.value) || 0;
                         onUpdateStat(p, "pe", val, p.isExtraSheet, p.rawExtraSheetId);
                       }}
-                      className="w-14 bg-black border border-[var(--op-border)] focus:border-yellow-500 text-white text-xs text-center py-0.5 rounded-none outline-none"
+                      className="w-12 h-7 bg-[#0c0c10] border-y border-[#202028] text-white text-xs font-bold text-center py-0.5 rounded-none outline-none focus:border-yellow-500"
                     />
+                    <button
+                      type="button"
+                      onClick={() => handleStepStat(p, "pe", 1)}
+                      className="w-7 h-7 flex items-center justify-center bg-[#14141c] hover:bg-[#1e1e28] active:bg-[#252532] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] text-xs font-bold rounded-none cursor-pointer transition-all"
+                      title="Aumentar 1 PE"
+                    >
+                      <Plus size={11} />
+                    </button>
                   </div>
                 </div>
               </div>
 
               {/* Última Ação */}
               {p.history && p.history.length > 0 && (
-                <div className="pt-2.5 border-t border-[#222430]">
-                  <div className="text-[10px] text-[#737482] mb-0.5">
-                    Última ação:
-                  </div>
+                <div className="pt-2 border-t border-[#1a1a24]">
                   <div
-                    className="text-xs text-[#9d9ea9] line-clamp-2 leading-relaxed"
+                    className="text-xs text-[#828392] line-clamp-2 leading-relaxed"
                     dangerouslySetInnerHTML={{ __html: p.history[0] }}
                   />
                 </div>
@@ -350,7 +423,7 @@ export function MasterPlayersView({
               <button
                 type="button"
                 onClick={() => onOpenInteractiveSheet(p.rawExtraSheetId)}
-                className="w-full mt-3 py-1.5 bg-blue-950/30 hover:bg-blue-900/50 border border-blue-800/40 text-blue-300 rounded-none text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full mt-3 py-2 bg-[#121217] hover:bg-[#181820] border border-[#202028] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] text-[#60a5fa] rounded-none text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Maximize2 size={12} /> Abrir Ficha
               </button>

@@ -19,7 +19,7 @@ export interface MasterExtrasViewProps {
   activeFichaId: string;
   setActiveFichaId: (id: string) => void;
   setCurrentPage: (page: string) => void;
-  setMestreTab: (tab: "fichas" | "ost" | "eventos" | "extras") => void;
+  setMestreTab: (tab: "fichas" | "ost" | "extras") => void;
   toggleFichaSync: (ficha: any) => void;
   supabase: any;
 }
@@ -78,22 +78,22 @@ export function MasterExtrasView({
   };
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col gap-5 px-4 font-sans">
+    <div className="max-w-6xl mx-auto flex flex-col gap-4 px-3 sm:px-4 font-mono my-4">
       {/* Cabeçalho Limpo */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-[#14151c] border border-[#262835] rounded-none p-4 shadow-sm">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-3.5 sm:p-4">
         <div>
-          <h2 className="text-sm sm:text-base font-semibold text-white">
+          <h2 className="text-sm font-bold text-white uppercase tracking-wider">
             Fichas Extras e NPCs
           </h2>
-          <p className="text-xs text-[#8f909e] mt-0.5">
-            Crie fichas complementares para NPCs ou criaturas e sincronize com a sessão.
+          <p className="text-xs text-[#828392] mt-0.5">
+            Fichas complementares para NPCs e criaturas com suporte a sincronização.
           </p>
         </div>
 
         <button
           type="button"
           onClick={handleAddNew}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-red-700 hover:bg-red-600 active:bg-red-800 text-white text-xs font-medium rounded-none transition-colors cursor-pointer shrink-0"
+          className="inline-flex items-center gap-1.5 px-3 py-2 bg-[var(--op-red)] hover:bg-red-700 text-white text-xs font-mono font-bold uppercase tracking-wider rounded-none border border-red-950 transition-colors cursor-pointer shrink-0 min-h-[36px]"
         >
           <Plus size={14} />
           <span>Nova Ficha Extra</span>
@@ -102,17 +102,17 @@ export function MasterExtrasView({
 
       {/* Grid de Fichas Extras */}
       {extraFichas.length === 0 ? (
-        <div className="py-16 text-center flex flex-col items-center justify-center border border-[#272935] bg-[#14151c] rounded-none">
-          <Files size={36} className="text-[#626475] mb-2.5 opacity-60" />
-          <h4 className="text-sm font-semibold text-white">
+        <div className="py-14 text-center flex flex-col items-center justify-center bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] rounded-none">
+          <Files size={32} className="text-[#626475] mb-2.5 opacity-60" />
+          <h4 className="text-sm font-bold text-white uppercase tracking-wider">
             Nenhuma ficha extra cadastrada
           </h4>
-          <p className="text-xs text-[#8f909d] max-w-xs mt-1">
+          <p className="text-xs text-[#828392] max-w-xs mt-1">
             Clique no botão acima para adicionar uma ficha de NPC ou personagem secundário.
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {extraFichas.map((ficha) => {
             const hpCurrent = ficha.hp?.current ?? ficha.hpCurrent ?? 100;
             const hpMax = ficha.hp?.max ?? ficha.hpMax ?? 100;
@@ -128,10 +128,10 @@ export function MasterExtrasView({
             return (
               <div
                 key={ficha.id}
-                className={`bg-[#14151c] border rounded-none p-4 shadow-sm flex flex-col justify-between transition-all ${
+                className={`bg-[#0c0c10] border rounded-none p-3.5 sm:p-4 flex flex-col justify-between transition-all ${
                   ficha.synchronized
-                    ? "border-blue-800/60"
-                    : "border-[#262835] hover:border-[#353849]"
+                    ? "border-[var(--op-red)] outline outline-1 outline-[var(--op-red-bright)]/40"
+                    : "border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a]"
                 }`}
               >
                 <div>
@@ -139,9 +139,9 @@ export function MasterExtrasView({
                   <div className="flex justify-between items-start mb-3 gap-2">
                     <div className="flex-1 min-w-0">
                       {ficha.synchronized && (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-blue-400 font-medium mb-1">
-                          <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
-                          Sincronizado na sessão
+                        <span className="inline-flex items-center gap-1.5 text-[10px] text-[var(--op-red-bright)] font-bold uppercase tracking-wider mb-1">
+                          <span className="w-1.5 h-1.5 bg-[var(--op-red-bright)] rounded-none" />
+                          Sincronizado
                         </span>
                       )}
 
@@ -162,7 +162,7 @@ export function MasterExtrasView({
                             ),
                           );
                         }}
-                        className="bg-transparent text-white font-semibold text-sm border-b border-transparent focus:border-red-500 outline-none w-full min-w-0 pb-0.5"
+                        className="bg-transparent text-white font-bold text-sm border-b border-transparent focus:border-[var(--op-red)] outline-none w-full min-w-0 pb-0.5 uppercase tracking-wider"
                         placeholder="Nome da ficha..."
                       />
                     </div>
@@ -172,22 +172,22 @@ export function MasterExtrasView({
                         type="button"
                         onClick={() => toggleFichaSync(ficha)}
                         title={ficha.synchronized ? "Desativar sincronização" : "Sincronizar com a sessão"}
-                        className={`p-1.5 rounded-none transition-colors cursor-pointer ${
+                        className={`p-1.5 rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center ${
                           ficha.synchronized
-                            ? "text-blue-400 hover:text-blue-300 bg-blue-950/40 border border-blue-800/40"
-                            : "text-[#71717a] hover:text-white bg-[#1a1c24] border border-[#2b2d3b]"
+                            ? "text-[var(--op-red-bright)] bg-[rgba(181,42,48,0.2)] border border-[var(--op-red)] outline outline-1 outline-[var(--op-red-bright)]/40"
+                            : "text-[#828392] hover:text-white bg-[#121217] hover:bg-[#181820] border border-[#202028] outline outline-1 outline-[#181820]"
                         }`}
                       >
-                        {ficha.synchronized ? <Cloud size={14} /> : <CloudOff size={14} />}
+                        {ficha.synchronized ? <Cloud size={13} /> : <CloudOff size={13} />}
                       </button>
 
                       <button
                         type="button"
                         onClick={() => handleDuplicate(ficha)}
                         title="Duplicar ficha"
-                        className="p-1.5 text-[#71717a] hover:text-white bg-[#1a1c24] border border-[#2b2d3b] rounded-none transition-colors cursor-pointer"
+                        className="p-1.5 text-[#828392] hover:text-white bg-[#121217] hover:bg-[#181820] border border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
                       >
-                        <Copy size={14} />
+                        <Copy size={13} />
                       </button>
 
                       {deletingFichaId === ficha.id ? (
@@ -195,14 +195,14 @@ export function MasterExtrasView({
                           <button
                             type="button"
                             onClick={() => handleDeleteConfirm(ficha)}
-                            className="px-1.5 py-0.5 bg-red-600 hover:bg-red-500 text-white text-[11px] font-medium rounded-none"
+                            className="px-2 py-1 bg-red-700 hover:bg-red-600 text-white text-[10px] font-bold uppercase rounded-none"
                           >
                             Sim
                           </button>
                           <button
                             type="button"
                             onClick={() => setDeletingFichaId(null)}
-                            className="px-1.5 py-0.5 bg-[#252735] text-[#c4c4cc] text-[11px] rounded-none"
+                            className="px-2 py-1 bg-[#181820] text-[#828392] hover:text-white text-[10px] font-bold uppercase rounded-none border border-[#262634]"
                           >
                             Não
                           </button>
@@ -211,10 +211,10 @@ export function MasterExtrasView({
                         <button
                           type="button"
                           onClick={() => setDeletingFichaId(ficha.id)}
-                          className="p-1.5 text-[#71717a] hover:text-red-400 bg-[#1a1c24] border border-[#2b2d3b] rounded-none transition-colors cursor-pointer"
+                          className="p-1.5 text-[#828392] hover:text-[var(--op-red-bright)] bg-[#121217] hover:bg-[#1a1215] border border-[#202028] hover:border-[var(--op-red)] outline outline-1 outline-[#181820] hover:outline-[var(--op-red-bright)]/40 rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
                           title="Excluir ficha"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={13} />
                         </button>
                       )}
                     </div>
@@ -223,16 +223,16 @@ export function MasterExtrasView({
                   {/* HP & PE */}
                   <div className="grid grid-cols-2 gap-2.5 mb-3">
                     {/* HP */}
-                    <div className="bg-[#191b24] border border-[#242633] rounded-none p-2.5">
-                      <div className="flex items-center justify-between text-xs text-[#8e8f9e] mb-1">
-                        <span className="text-red-400 font-medium flex items-center gap-1">
-                          <Heart size={12} /> HP
+                    <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2.5">
+                      <div className="flex items-center justify-between text-[11px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
+                        <span className="text-[var(--op-red-bright)] flex items-center gap-1">
+                          <Heart size={11} /> HP
                         </span>
-                        <span className="text-[11px]">{hpCurrent}/{hpMax}</span>
+                        <span>{hpCurrent}/{hpMax}</span>
                       </div>
-                      <div className="h-1.5 bg-[#12131a] rounded-full overflow-hidden mb-2">
+                      <div className="h-1.5 bg-[#181820] border border-[#242430] overflow-hidden mb-2">
                         <div
-                          className="h-full bg-red-600 rounded-full transition-all duration-200"
+                          className="h-full bg-[var(--op-red)] transition-all duration-200"
                           style={{ width: `${hpPct}%` }}
                         />
                       </div>
@@ -254,7 +254,7 @@ export function MasterExtrasView({
                               ),
                             );
                           }}
-                          className="w-1/2 bg-[#14151c] border border-[#2d2f3d] focus:border-red-500 text-white text-xs text-center py-0.5 rounded-none outline-none"
+                          className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
                           placeholder="Atual"
                         />
                         <input
@@ -274,23 +274,23 @@ export function MasterExtrasView({
                               ),
                             );
                           }}
-                          className="w-1/2 bg-[#14151c] border border-[#2d2f3d] focus:border-red-500 text-[#8e8f9e] text-xs text-center py-0.5 rounded-none outline-none"
+                          className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
                           placeholder="Máx"
                         />
                       </div>
                     </div>
 
                     {/* PE */}
-                    <div className="bg-[#191b24] border border-[#242633] rounded-none p-2.5">
-                      <div className="flex items-center justify-between text-xs text-[#8e8f9e] mb-1">
-                        <span className="text-blue-400 font-medium flex items-center gap-1">
-                          <Zap size={12} /> PE
+                    <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2.5">
+                      <div className="flex items-center justify-between text-[11px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
+                        <span className="text-yellow-500 flex items-center gap-1">
+                          <Zap size={11} /> PE
                         </span>
-                        <span className="text-[11px]">{peCurrent}/{peMax}</span>
+                        <span>{peCurrent}/{peMax}</span>
                       </div>
-                      <div className="h-1.5 bg-[#12131a] rounded-full overflow-hidden mb-2">
+                      <div className="h-1.5 bg-[#181820] border border-[#242430] overflow-hidden mb-2">
                         <div
-                          className="h-full bg-blue-600 rounded-full transition-all duration-200"
+                          className="h-full bg-yellow-500 transition-all duration-200"
                           style={{ width: `${pePct}%` }}
                         />
                       </div>
@@ -312,7 +312,7 @@ export function MasterExtrasView({
                               ),
                             );
                           }}
-                          className="w-1/2 bg-[#14151c] border border-[#2d2f3d] focus:border-blue-500 text-white text-xs text-center py-0.5 rounded-none outline-none"
+                          className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
                           placeholder="Atual"
                         />
                         <input
@@ -332,7 +332,7 @@ export function MasterExtrasView({
                               ),
                             );
                           }}
-                          className="w-1/2 bg-[#14151c] border border-[#2d2f3d] focus:border-blue-500 text-[#8e8f9e] text-xs text-center py-0.5 rounded-none outline-none"
+                          className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
                           placeholder="Máx"
                         />
                       </div>
@@ -341,28 +341,28 @@ export function MasterExtrasView({
 
                   {/* Resumo */}
                   <div className="grid grid-cols-2 gap-2 mb-2.5">
-                    <div className="bg-[#191b24] border border-[#242633] rounded-none py-1 text-center">
-                      <span className="text-xs font-semibold text-white block">
+                    <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none py-1 text-center">
+                      <span className="text-xs font-bold text-white block">
                         {skillsCount}
                       </span>
-                      <span className="text-[#71717a] text-[10px]">
+                      <span className="text-[#828392] text-[10px] uppercase tracking-wider">
                         Habilidades
                       </span>
                     </div>
-                    <div className="bg-[#191b24] border border-[#242633] rounded-none py-1 text-center">
-                      <span className="text-xs font-semibold text-white block">
+                    <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none py-1 text-center">
+                      <span className="text-xs font-bold text-white block">
                         {variablesCount}
                       </span>
-                      <span className="text-[#71717a] text-[10px]">
+                      <span className="text-[#828392] text-[10px] uppercase tracking-wider">
                         Variáveis
                       </span>
                     </div>
                   </div>
 
                   {/* Notas */}
-                  <div className="pt-2 border-t border-[#222430]">
-                    <div className="text-[11px] text-[#8e8f9e] font-medium mb-1 flex items-center gap-1">
-                      <FileText size={12} /> Anotações:
+                  <div className="pt-2 border-t border-[#1a1a24]">
+                    <div className="text-[10px] text-[#828392] font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <FileText size={11} /> Anotações:
                     </div>
                     <textarea
                       value={ficha.notes || ""}
@@ -380,24 +380,27 @@ export function MasterExtrasView({
                           ),
                         );
                       }}
-                      placeholder="Anotações sobre a ficha..."
-                      className="w-full bg-[#191b24] border border-[#242633] focus:border-red-500 text-xs text-[#c4c4cc] p-2 rounded-none outline-none resize-none h-14"
+                      rows={2}
+                      className="w-full bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] outline-none rounded-none p-2 text-xs text-[#9ca3af] resize-none"
+                      placeholder="Observações do mestre..."
                     />
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveFichaId(ficha.id);
-                    setCurrentPage("ficha_extra");
-                    setMestreTab("fichas");
-                  }}
-                  className="w-full mt-3 py-1.5 bg-[#1f212c] hover:bg-[#282a38] text-white rounded-none text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Maximize2 size={13} />
-                  <span>Abrir ficha completa</span>
-                </button>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveFichaId(ficha.id);
+                      setCurrentPage("ficha_extra");
+                      setMestreTab("fichas");
+                    }}
+                    className="flex-1 py-2 bg-[#121217] hover:bg-[#181820] border border-[#202028] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] text-[#60a5fa] rounded-none text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer min-h-[36px]"
+                  >
+                    <Maximize2 size={13} />
+                    <span>Abrir ficha completa</span>
+                  </button>
+                </div>
               </div>
             );
           })}

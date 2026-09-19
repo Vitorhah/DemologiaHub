@@ -41,3 +41,5 @@ export interface Room {
   name: string;
   createdAt: number;
 }
+
+export * from "./types/events";

@@ -130,7 +130,6 @@ const MestreStatInput = ({
   );
 };
 
-import { SkillBuilder } from "./SkillBuilder";
 import { TabletopGrid } from "./components/TabletopGrid";
 import { QuickDiceSection } from "./components/QuickDiceSection";
 import { RollingTerminal } from "./components/RollingTerminal";
@@ -253,32 +252,11 @@ export default function App() {
   const [isMestreAuth, setIsMestreAuth] = useState(false);
   const [initiatives, setInitiatives] = useState<Record<string, number>>({});
   const [mestreTab, setMestreTab] = useState<
-    "fichas" | "ost" | "eventos" | "extras"
+    "fichas" | "ost" | "extras"
   >("fichas");
   const [mestreViewMode, setMestreViewMode] = useState<"grid" | "list">("grid");
   const [globalGridState, setGlobalGridState] = useState<any>({ objects: [] });
   const [deletingFichaId, setDeletingFichaId] = useState<string | null>(null);
-
-  const [savedEvents, setSavedEvents] = useState<any[]>(() => {
-    try {
-      const cached = localStorage.getItem("local_master_events");
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error("Falha ao parsear eventos salvos localmente:", e);
-    }
-    return [];
-  });
-  const savedEventsRef = useRef<any[]>([]);
-  useEffect(() => {
-    savedEventsRef.current = savedEvents;
-  }, [savedEvents]);
-  const [activeEventToggles, setActiveEventToggles] = useState<
-    Record<string, boolean>
-  >({});
-  const [editingEvent, setEditingEvent] = useState<any>(null);
   const [customStyle, setCustomStyle] = useState<any>({ backgroundUrl: null });
 
   const [ostList, setOstList] = useState<any[]>([]);
@@ -462,7 +440,6 @@ export default function App() {
   const pendingUpdatesRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const globalChannelRef = useRef<any>(null);
-  const activeEventsRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     localStorage.setItem("rpgSheetState", JSON.stringify(mainState));
@@ -690,72 +667,6 @@ export default function App() {
           (err) =>
             console.warn("Fetch tabletop grid request failed:", err.message),
         );
-
-      supabase
-        .from("players")
-        .select("data")
-        .eq("id", "MASTER_EVENTS")
-        .single()
-        .then(
-          ({ data, error }) => {
-            if (!error && data?.data?.events && data.data.events.length > 0) {
-              setSavedEvents(data.data.events);
-              localStorage.setItem(
-                "local_master_events",
-                JSON.stringify(data.data.events),
-              );
-            } else {
-              const backup = localStorage.getItem("local_master_events");
-              if (backup) {
-                try {
-                  const parsed = JSON.parse(backup);
-                  if (parsed && parsed.length > 0) {
-                    setSavedEvents(parsed);
-                    supabase
-                      .from("players")
-                      .upsert({
-                        id: "MASTER_EVENTS",
-                        data: { events: parsed },
-                        updated_at: new Date().toISOString(),
-                      })
-                      .then(({ error }) => {
-                        if (error)
-                          console.warn(
-                            "Falha ao restaurar MASTER_EVENTS:",
-                            error.message,
-                          );
-                      });
-                  }
-                } catch (e) {
-                  console.error("Erro ao processar backup do LocalStorage:", e);
-                }
-              }
-            }
-          },
-          (err) => {
-            console.warn("Fetch master events request failed:", err.message);
-            const backup = localStorage.getItem("local_master_events");
-            if (backup) {
-              try {
-                const parsed = JSON.parse(backup);
-                if (parsed && parsed.length > 0) setSavedEvents(parsed);
-              } catch (e) {}
-            }
-          },
-        )
-        .then(
-          () => {},
-          (err) => {
-            console.warn("Fetch master events network error:", err.message);
-            const backup = localStorage.getItem("local_master_events");
-            if (backup) {
-              try {
-                const parsed = JSON.parse(backup);
-                if (parsed && parsed.length > 0) setSavedEvents(parsed);
-              } catch (e) {}
-            }
-          },
-        );
     };
 
     fetchMasterState();
@@ -784,15 +695,6 @@ export default function App() {
               return prev;
             });
           }
-          if (newRecord?.id === "MASTER_EVENTS" && newRecord?.data?.events) {
-            setSavedEvents(newRecord.data.events);
-            if (newRecord.data.events.length > 0) {
-              localStorage.setItem(
-                "local_master_events",
-                JSON.stringify(newRecord.data.events),
-              );
-            }
-          }
         },
       )
       .on("broadcast", { event: "ost_update" }, ({ payload }) => {
@@ -811,247 +713,6 @@ export default function App() {
               return payload;
             return prev;
           });
-        }
-      })
-      .on("broadcast", { event: "builder_event" }, async ({ payload }) => {
-        if (
-          payload &&
-          (payload.target === "all" || payload.target === userUidRef.current)
-        ) {
-          const { eventId, isToggle, action } = payload;
-          const blocks =
-            payload.blocks ||
-            savedEventsRef.current.find((e) => e.id === eventId)?.blocks;
-
-          if (!blocks) return;
-
-          if (isToggle) {
-            if (action === "stop") {
-              activeEventsRef.current[eventId] = false;
-              setActiveEventToggles((prev) => ({ ...prev, [eventId]: false }));
-              return; // Just stop it
-            } else if (action === "start") {
-              activeEventsRef.current[eventId] = true;
-              setActiveEventToggles((prev) => ({ ...prev, [eventId]: true }));
-            }
-          }
-
-          const execBlocks = async () => {
-            let loopStack: number[] = [];
-            let windingDown = false;
-
-            for (let i = 0; i < blocks.length; i++) {
-              // Check if active changed
-              if (
-                isToggle &&
-                !windingDown &&
-                activeEventsRef.current[eventId] === false
-              ) {
-                let foundEnd = false;
-                let depth = 0;
-                // Find the outermost loop_end or the next loop_end? Let's just find the next one for simplicity.
-                for (let j = i; j < blocks.length; j++) {
-                  if (blocks[j].type === "loop_end") {
-                    i = j;
-                    foundEnd = true;
-                    break;
-                  }
-                }
-                if (foundEnd) {
-                  windingDown = true;
-                  continue;
-                } else {
-                  break;
-                }
-              }
-
-              const block = blocks[i];
-              if (block.type === "aguarde") {
-                const waitTime = (block.value || 0) * 1000;
-                const steps = waitTime / 100;
-                for (let s = 0; s < steps; s++) {
-                  if (
-                    isToggle &&
-                    !windingDown &&
-                    activeEventsRef.current[eventId] === false
-                  ) {
-                    break;
-                  }
-                  await new Promise((r) => setTimeout(r, 100));
-                }
-              } else if (block.type === "mudar_fundo") {
-                setCustomStyle((prev: any) => ({
-                  ...prev,
-                  backgroundUrl: block.value,
-                }));
-              } else if (block.type === "fundo_original") {
-                setCustomStyle((prev: any) => ({
-                  ...prev,
-                  backgroundUrl: null,
-                }));
-              } else if (block.type === "imagem_fade") {
-                setCustomStyle((prev: any) => ({
-                  ...prev,
-                  backgroundFade: block.value,
-                }));
-              } else if (block.type === "play_ost") {
-                const rawName = block.ostId
-                  ? block.ostId.split("_").slice(3).join("_")
-                  : "";
-                const ostName = rawName ? decodeURIComponent(rawName) : "OST";
-                const newState = {
-                  ostId: block.ostId,
-                  name: ostName,
-                  isPlaying: true,
-                  volume: block.volume ?? 1,
-                  fadeTime: block.fadeTime ?? 1,
-                  resetTimestamp: block.resetBeforePlay
-                    ? Date.now()
-                    : undefined,
-                };
-                setGlobalOstState(newState);
-                supabase
-                  .from("players")
-                  .upsert({
-                    id: "MASTER_STATE",
-                    data: { ost: newState },
-                    updated_at: new Date().toISOString(),
-                  })
-                  .then(({ error }) => {
-                    if (error) console.error(error);
-                  });
-                globalChannelRef.current
-                  ?.send({
-                    type: "broadcast",
-                    event: "ost_update",
-                    payload: newState,
-                  })
-                  .catch(console.error);
-              } else if (block.type === "stop_ost") {
-                const currentOstState = globalOstStateRef.current;
-                if (currentOstState) {
-                  const newState = {
-                    ...currentOstState,
-                    isPlaying: false,
-                    fadeTime: block.fadeTime ?? 1,
-                  };
-                  setGlobalOstState(newState);
-                  supabase
-                    .from("players")
-                    .upsert({
-                      id: "MASTER_STATE",
-                      data: { ost: newState },
-                      updated_at: new Date().toISOString(),
-                    })
-                    .then(({ error }) => {
-                      if (error) console.error(error);
-                    });
-                  globalChannelRef.current
-                    ?.send({
-                      type: "broadcast",
-                      event: "ost_update",
-                      payload: newState,
-                    })
-                    .catch(console.error);
-                }
-              } else if (block.type === "cutscene") {
-                setCutsceneState({ ...block, active: true });
-                if (activeFichaId !== "main") {
-                   setActiveFichaId("main");
-                   setCurrentPage("ficha");
-                } else if (currentPage !== "ficha") {
-                   setCurrentPage("ficha");
-                }
-                if (block.ostId) {
-                  const rawName = block.ostId ? block.ostId.split("_").slice(3).join("_") : "";
-                  const ostName = rawName ? decodeURIComponent(rawName) : "OST";
-                  setGlobalOstState({
-                    ostId: block.ostId,
-                    name: ostName,
-                    isPlaying: true,
-                    volume: 1,
-                    fadeTime: 1,
-                  });
-                }
-                const waitTime = (block.duration || 6) * 1000;
-                const steps = waitTime / 100;
-                for (let s = 0; s < steps; s++) {
-                  if (
-                    isToggle &&
-                    !windingDown &&
-                    activeEventsRef.current[eventId] === false
-                  ) {
-                    break;
-                  }
-                  await new Promise((r) => setTimeout(r, 100));
-                }
-                setCutsceneState({ ...block, active: false });
-                // We don't nullify immediately to allow fade out animation. Let the component handle it or do it after 2s.
-                setTimeout(() => {
-                   setCutsceneState(null);
-                }, 2000);
-              } else if (block.type === "fade_block") {
-                setFadeBlockState({ ...block, active: false });
-                await new Promise((r) => setTimeout(r, 50));
-                setFadeBlockState({ ...block, active: true });
-                
-                const waitTime = (block.duration || 1) * 1000;
-                const steps = waitTime / 100;
-                for (let s = 0; s < steps; s++) {
-                  if (
-                    isToggle &&
-                    !windingDown &&
-                    activeEventsRef.current[eventId] === false
-                  ) {
-                    break;
-                  }
-                  await new Promise((r) => setTimeout(r, 100));
-                }
-              } else if (block.type === "open_board") {
-                if (block.delay && block.delay > 0) {
-                  const waitTime = block.delay * 1000;
-                  const steps = waitTime / 100;
-                  for (let s = 0; s < steps; s++) {
-                    if (isToggle && !windingDown && activeEventsRef.current[eventId] === false) break;
-                    await new Promise((r) => setTimeout(r, 100));
-                  }
-                }
-                
-                if (block.aba) {
-                   if (block.aba === 'null') {
-                     setCurrentPage('null' as any);
-                   } else if (block.aba === 'ficha') {
-                     setActiveFichaId('main');
-                     setCurrentPage('ficha');
-                     setShowUpdateLog(false);
-                   } else if (block.aba === 'log') {
-                     setShowUpdateLog(true);
-                   } else {
-                     setCurrentPage(block.aba as any);
-                     setShowUpdateLog(false);
-                   }
-                }
-              } else if (block.type === "loop") {
-                loopStack.push(i);
-              } else if (block.type === "loop_end") {
-                if (loopStack.length > 0) {
-                  if (windingDown) {
-                    loopStack.pop();
-                  } else {
-                    const startIdx = loopStack[loopStack.length - 1]; // peek
-                    await new Promise((r) => setTimeout(r, 50));
-                    i = startIdx; // jump back
-                  }
-                }
-              }
-            }
-
-            // When done
-            if (isToggle) {
-              activeEventsRef.current[eventId] = false;
-            }
-          };
-          execBlocks();
         }
       })
       .subscribe();
@@ -1873,18 +1534,6 @@ export default function App() {
     setInitiatives((prev) => ({ ...prev, ...newInits }));
   };
 
-  const handleCreateExtraFicha = () => {
-    setExtraFichas([
-      {
-        ...defaultState,
-        id: Date.now().toString(),
-        name: "Novo Extra",
-        notes: "",
-      },
-      ...extraFichas,
-    ]);
-  };
-
   const handleUploadOst = (file: File) => {
     if (file.size > 2 * 1024 * 1024) {
       alert("Arquivo muito grande, limite de 2MB. Comprima o MP3.");
@@ -2145,7 +1794,7 @@ export default function App() {
 
             <div className="space-y-6 text-gray-300 text-sm leading-relaxed max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
               <p>
-                O aplicativo detectou que a conexão com o banco de dados do Supabase falhou (por exemplo: erro <strong>Invalid API key</strong>, chaves expiradas ou permissões do PostgreSQL pendentes). Para que a sincronização funcione em tempo real com o mestre, os jogadores, as músicas e eventos em múltiplos dispositivos, realize o passo a passo a seguir:
+                O aplicativo detectou que a conexão com o banco de dados do Supabase falhou (por exemplo: erro <strong>Invalid API key</strong>, chaves expiradas ou permissões do PostgreSQL pendentes). Para que a sincronização funcione em tempo real com o mestre, os jogadores e as músicas em múltiplos dispositivos, realize o passo a passo a seguir:
               </p>
 
               <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-none">
@@ -3102,10 +2751,8 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             setActiveTab={setMestreTab}
             playersCount={players.length}
             extrasCount={extraFichas.length}
-            eventsCount={savedEvents.length}
             isOstPlaying={Boolean(globalOstState?.isPlaying)}
             onRollInitiative={handleRollAllInitiatives}
-            onAddExtraFicha={handleCreateExtraFicha}
             onReturnToMainSheet={() => {
               setActiveFichaId("main");
               setCurrentPage("ficha");
@@ -3157,18 +2804,6 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               fetchOsts={fetchOsts}
               supabase={supabase}
               globalChannelRef={globalChannelRef}
-            />
-          )}
-
-          {mestreTab === "eventos" && (
-            <SkillBuilder
-              savedEvents={savedEvents}
-              setSavedEvents={setSavedEvents}
-              userUid={userUid}
-              globalChannelRef={globalChannelRef}
-              players={players}
-              activeToggles={activeEventToggles}
-              ostList={ostList}
             />
           )}
 
