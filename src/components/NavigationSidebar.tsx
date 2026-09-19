@@ -10,6 +10,7 @@ import {
   Maximize,
   FileText,
   X,
+  MessageSquare,
 } from "lucide-react";
 
 export interface NavigationSidebarProps {
@@ -121,6 +122,15 @@ export function NavigationSidebar({
       isActive: currentPage === "oraculo",
       onClick: () => {
         setCurrentPage("oraculo");
+      },
+    },
+    {
+      id: "chat",
+      label: "Chat da Mesa",
+      icon: MessageSquare,
+      isActive: currentPage === "chat",
+      onClick: () => {
+        setCurrentPage("chat");
       },
     },
     {

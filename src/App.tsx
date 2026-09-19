@@ -137,6 +137,7 @@ import { FormulaShortcutsSection } from "./components/FormulaShortcutsSection";
 import { DossierVariablesSection } from "./components/DossierVariablesSection";
 import { DossierInventorySection } from "./components/DossierInventorySection";
 import { NavigationSidebar } from "./components/NavigationSidebar";
+import { ChatContainer, clearMessages } from "./components/chat";
 
 export default function App() {
   const [mainState, setMainState] = useState(() => {
@@ -1534,6 +1535,22 @@ export default function App() {
     setInitiatives((prev) => ({ ...prev, ...newInits }));
   };
 
+  const handleClearChatHistory = async () => {
+    if (
+      window.confirm(
+        "Mestre, deseja realmente limpar todo o histórico do Chat da Mesa para todos os jogadores?",
+      )
+    ) {
+      try {
+        const currentRoom =
+          localStorage.getItem("demologia_current_room_id") || "mesa_principal";
+        await clearMessages(currentRoom, isOnline);
+      } catch (err) {
+        console.error("Erro ao limpar histórico do chat:", err);
+      }
+    }
+  };
+
   const handleUploadOst = (file: File) => {
     if (file.size > 2 * 1024 * 1024) {
       alert("Arquivo muito grande, limite de 2MB. Comprima o MP3.");
@@ -2744,6 +2761,23 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         </>
       )}
 
+      {currentPage === "chat" && (
+        <div className="min-h-screen w-full flex flex-col justify-start items-center pt-12 sm:pt-14 px-1 sm:px-4 pb-4">
+          <div className="w-full max-w-4xl flex-1 flex flex-col h-[calc(100vh-4rem)]">
+            <ChatContainer
+              currentUser={{
+                id: userUid || "local_player",
+                name: state?.name || (isMestreAuth ? "Mestre" : "Agente"),
+                isMaster: isMestreAuth,
+              }}
+              onlineCount={players.length + 1}
+              isOnline={isOnline}
+              onBackToFicha={() => setCurrentPage("ficha")}
+            />
+          </div>
+        </div>
+      )}
+
       {currentPage === "mestre" && (
         <div className="min-h-screen pb-20 font-sans">
           <MasterHeaderBar
@@ -2759,6 +2793,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             }}
             viewMode={mestreViewMode}
             setViewMode={setMestreViewMode}
+            onClearChatHistory={handleClearChatHistory}
           />
 
           {mestreTab === "fichas" && (
@@ -2767,6 +2802,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               extraFichas={extraFichas}
               initiatives={initiatives}
               viewMode={mestreViewMode}
+              onClearChatHistory={handleClearChatHistory}
               onKickPlayer={(player) => setPlayerToKick(player)}
               onOpenInteractiveSheet={(sheetId) => {
                 setActiveFichaId(sheetId);

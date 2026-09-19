@@ -370,3 +370,14 @@ button, input, textarea {
 .btn-menu:active { background: #25252b; }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+/* --- CHAT DA MESA (DEMOLOGIA AESTHETIC) --- */
+.chat-container {
+    background: var(--op-bg);
+    border: 1px solid var(--op-border);
+    border-radius: 0px !important;
+}
+
+.chat-container * {
+    border-radius: 0px !important;
+}

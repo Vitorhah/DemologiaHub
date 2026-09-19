@@ -7,6 +7,7 @@ import {
   Zap,
   Plus,
   Minus,
+  MessageSquare,
 } from "lucide-react";
 
 export interface MasterPlayersViewProps {
@@ -23,6 +24,7 @@ export interface MasterPlayersViewProps {
     rawExtraSheetId?: string,
   ) => void;
   viewMode?: "grid" | "list";
+  onClearChatHistory?: () => void;
 }
 
 export function MasterPlayersView({
@@ -33,6 +35,7 @@ export function MasterPlayersView({
   onOpenInteractiveSheet,
   onUpdateStat,
   viewMode = "grid",
+  onClearChatHistory,
 }: MasterPlayersViewProps) {
   const syncedExtrasAsPlayers = extraFichas
     .filter((f) => f.synchronized)
@@ -68,6 +71,22 @@ export function MasterPlayersView({
         <p className="text-xs text-[#828392] max-w-sm mt-1 leading-relaxed">
           Jogadores conectados ou fichas extras sincronizadas serão listados aqui.
         </p>
+
+        {onClearChatHistory && (
+          <div className="mt-6 pt-6 border-t border-[#1e1e26] w-full flex flex-col items-center">
+            <div className="text-[11px] text-[#787989] mb-3">
+              Gerenciamento da Sessão
+            </div>
+            <button
+              type="button"
+              onClick={onClearChatHistory}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-[#121218] hover:bg-red-950/40 text-[#9ca3af] hover:text-red-400 border border-[#262632] hover:border-red-900/50 outline outline-1 outline-[#181820] text-xs font-mono uppercase tracking-wider transition-all cursor-pointer"
+            >
+              <Trash2 size={13} className="text-red-500" />
+              <span>Limpar Histórico do Chat</span>
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -244,14 +263,40 @@ export function MasterPlayersView({
             </tbody>
           </table>
         </div>
+
+        {onClearChatHistory && (
+          <div className="mt-6 p-3.5 bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] flex flex-col sm:flex-row items-center justify-between gap-3 font-mono">
+            <div className="flex items-center gap-2.5">
+              <MessageSquare size={16} className="text-[var(--op-red-bright)] shrink-0" />
+              <div>
+                <div className="text-xs font-bold text-white uppercase tracking-wider">
+                  Chat da Mesa Coletivo
+                </div>
+                <div className="text-[11px] text-[#828392]">
+                  Histórico sincronizado em tempo real entre jogadores e mestre.
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClearChatHistory}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#121218] hover:bg-red-950/50 text-[#9ca3af] hover:text-red-400 border border-[#262632] hover:border-red-900/60 outline outline-1 outline-[#181820] text-xs uppercase tracking-wider transition-all cursor-pointer"
+              title="Apagar mensagens do chat da mesa"
+            >
+              <Trash2 size={13} className="text-red-500" />
+              <span>Limpar Histórico do Chat</span>
+            </button>
+          </div>
+        )}
       </div>
     );
   }
 
   // MODO GRADE
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 max-w-6xl mx-auto px-3 sm:px-4 font-mono my-4">
-      {combined.map((p) => {
+    <div className="max-w-6xl mx-auto px-3 sm:px-4 font-mono my-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+        {combined.map((p) => {
         const initVal = initiatives[p.id];
         const hpCurrent = p.hp?.current ?? 0;
         const hpMax = p.hp?.max ?? 100;
@@ -431,6 +476,32 @@ export function MasterPlayersView({
           </div>
         );
       })}
+      </div>
+
+      {onClearChatHistory && (
+        <div className="mt-8 p-3.5 bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] flex flex-col sm:flex-row items-center justify-between gap-3 font-mono">
+          <div className="flex items-center gap-2.5">
+            <MessageSquare size={16} className="text-[var(--op-red-bright)] shrink-0" />
+            <div>
+              <div className="text-xs font-bold text-white uppercase tracking-wider">
+                Chat da Mesa Coletivo
+              </div>
+              <div className="text-[11px] text-[#828392]">
+                Histórico sincronizado em tempo real entre jogadores e mestre.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClearChatHistory}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#121218] hover:bg-red-950/50 text-[#9ca3af] hover:text-red-400 border border-[#262632] hover:border-red-900/60 outline outline-1 outline-[#181820] text-xs uppercase tracking-wider transition-all cursor-pointer"
+            title="Apagar mensagens do chat da mesa"
+          >
+            <Trash2 size={13} className="text-red-500" />
+            <span>Limpar Histórico do Chat</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
