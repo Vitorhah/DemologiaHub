@@ -100,11 +100,10 @@ body.theme-rl {
     margin: 0 auto 8px auto !important;
 }
 
-/* Fundo do HUD no modo RL com tons suaves de roxo e translucidez para exibir o fundo */
+/* Fundo do HUD no modo RL */
 .theme-rl .hud-container {
-    background: radial-gradient(circle at top, rgba(168, 85, 247, 0.12) 0%, rgba(255, 255, 255, 0.03) 32%, rgba(12, 10, 16, 0.30) 70%) !important;
-    backdrop-filter: blur(4px) !important;
-    border-bottom: 1px solid rgba(168, 85, 247, 0.25) !important;
+    background: radial-gradient(circle at top, rgba(168, 85, 247, 0.15) 0%, #121018 70%) !important;
+    border-bottom: 1px solid rgba(168, 85, 247, 0.3) !important;
 }
 
 .theme-rl .section,
@@ -112,19 +111,18 @@ body.theme-rl {
 .theme-rl div.lg\:bg-\[\#111115\],
 .theme-rl .lg\:bg-\[\#111115\],
 .theme-rl .lg\:bg-\[\#111115\]\/50 {
-    background: rgba(12, 10, 18, 0.40) !important;
-    backdrop-filter: blur(8px) !important;
-    border-color: rgba(168, 85, 247, 0.25) !important;
+    background: #111115 !important;
+    border-color: rgba(168, 85, 247, 0.3) !important;
 }
 
 .theme-rl .var-box {
-    background: rgba(18, 16, 26, 0.55) !important;
-    border-color: rgba(168, 85, 247, 0.25) !important;
+    background: #161320 !important;
+    border-color: rgba(168, 85, 247, 0.3) !important;
 }
 
 .theme-rl .inv-slot {
-    background: rgba(18, 16, 26, 0.55) !important;
-    border-color: rgba(168, 85, 247, 0.25) !important;
+    background: #161320 !important;
+    border-color: rgba(168, 85, 247, 0.3) !important;
     color: #f1f5f9 !important;
 }
 
@@ -134,8 +132,8 @@ body.theme-rl {
 }
 
 .theme-rl .btn-menu {
-    background: rgba(22, 19, 32, 0.6) !important;
-    border-color: rgba(168, 85, 247, 0.25) !important;
+    background: #181524 !important;
+    border-color: rgba(168, 85, 247, 0.3) !important;
     color: #e2e8f0 !important;
 }
 

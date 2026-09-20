@@ -2138,7 +2138,9 @@ export default function App() {
             : {
                 backgroundColor: '#0a0a0a'
               }),
-          transform: cutsceneState?.active ? `scale(${cutsceneState.zoom || 1})` : 'scale(1)'
+          transform: cutsceneState?.active ? `scale(${cutsceneState.zoom || 1}) translateZ(0)` : 'translateZ(0)',
+          willChange: 'transform',
+          backfaceVisibility: 'hidden',
         }}
       />
       {supabaseConfigError && (
