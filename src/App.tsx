@@ -27,6 +27,10 @@ import { MasterHeaderBar } from "./components/MasterHeaderBar";
 import { MasterOstPanel } from "./components/MasterOstPanel";
 import { MasterPlayersView } from "./components/MasterPlayersView";
 import { MasterExtrasView } from "./components/MasterExtrasView";
+import { MasterGameModeModal } from "./components/MasterGameModeModal";
+import { ModeTransitionEffect } from "./components/ModeTransitionEffect";
+import { GameMode, GameModeConfig } from "./types";
+import rlBgUrl from "./assets/rl_bg.jpg";
 
 const TypewriterText = ({ text, className, style, speed = 50 }: { text: string, className?: string, style?: any, speed?: number }) => {
   const [displayedText, setDisplayedText] = useState("");
@@ -62,6 +66,7 @@ const defaultState = {
   name: "Ocultista",
   hp: { current: 100, max: 100 },
   pe: { current: 60, max: 60 },
+  sm: { current: 100, max: 100 },
   variables: { SAN: 1, AGL: 1, INT: 1, FOR: 1, VIT: 1, OCU: 1 } as Record<string, number>,
   skills: [
     {
@@ -184,6 +189,18 @@ export default function App() {
         defaultState.pe.current,
       max: rawState.pe?.max ?? rawState.peMax ?? defaultState.pe.max,
     },
+    sm: {
+      current:
+        rawState.sm?.current ??
+        rawState.smCurrent ??
+        rawState.san?.current ??
+        defaultState.sm.current,
+      max:
+        rawState.sm?.max ??
+        rawState.smMax ??
+        rawState.san?.max ??
+        defaultState.sm.max,
+    },
     variables: rawState.variables || defaultState.variables,
     skills: rawState.skills || defaultState.skills,
     inventory: rawState.inventory || defaultState.inventory,
@@ -210,6 +227,18 @@ export default function App() {
                 current:
                   f.pe?.current ?? f.peCurrent ?? defaultState.pe.current,
                 max: f.pe?.max ?? f.peMax ?? defaultState.pe.max,
+              },
+              sm: {
+                current:
+                  f.sm?.current ??
+                  f.smCurrent ??
+                  f.san?.current ??
+                  defaultState.sm.current,
+                max:
+                  f.sm?.max ??
+                  f.smMax ??
+                  f.san?.max ??
+                  defaultState.sm.max,
               },
             };
             const next =
@@ -288,6 +317,36 @@ export default function App() {
   const [isUploadingOst, setIsUploadingOst] = useState(false);
   const [isOstLoading, setIsOstLoading] = useState(false);
   const [supabaseConfigError, setSupabaseConfigError] = useState<string | null>(null);
+
+  // Sistema de Modos de Jogo: Demologia (Padrão) vs Real L (Fora do Paranormal)
+  const [gameModeConfig, setGameModeConfig] = useState<GameModeConfig>(() => {
+    try {
+      const saved = localStorage.getItem("demologia_game_mode_config");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { globalMode: "demologia", playerModes: {} };
+  });
+  const [showModeModal, setShowModeModal] = useState(false);
+
+  // Modo ativo para o usuário local (se tiver override individual, usa ele; senão usa o global)
+  const activeMode: GameMode = (() => {
+    if (userUid && gameModeConfig.playerModes && gameModeConfig.playerModes[userUid]) {
+      return gameModeConfig.playerModes[userUid];
+    }
+    return gameModeConfig.globalMode || "demologia";
+  })();
+  const isRlMode = activeMode === "rl";
+
+  // Aplica classe .theme-rl no documento para alternar paleta para branco/prata e silenciar elementos paranormais
+  useEffect(() => {
+    if (isRlMode) {
+      document.documentElement.classList.add("theme-rl");
+      document.body.classList.add("theme-rl");
+    } else {
+      document.documentElement.classList.remove("theme-rl");
+      document.body.classList.remove("theme-rl");
+    }
+  }, [isRlMode]);
 
   const handleSupabaseError = (err: any, context?: string) => {
     if (!err) return;
@@ -549,13 +608,21 @@ export default function App() {
               setMainState((prev: any) => {
                 const newHp = data.data.hp;
                 const newPe = data.data.pe;
+                const newSm = data.data.sm;
                 if (
                   prev.hp.current !== newHp.current ||
                   prev.pe.current !== newPe.current ||
+                  (newSm && prev.sm?.current !== newSm.current) ||
                   prev.hp.max !== newHp.max ||
-                  prev.pe.max !== newPe.max
+                  prev.pe.max !== newPe.max ||
+                  (newSm && prev.sm?.max !== newSm.max)
                 ) {
-                  return { ...prev, hp: newHp, pe: newPe };
+                  return {
+                    ...prev,
+                    hp: newHp,
+                    pe: newPe,
+                    sm: newSm || prev.sm,
+                  };
                 }
                 return prev;
               });
@@ -583,13 +650,21 @@ export default function App() {
             setMainState((prev: any) => {
               const newHp = payload.new.data.hp;
               const newPe = payload.new.data.pe;
+              const newSm = payload.new.data.sm;
               if (
                 prev.hp.current !== newHp.current ||
                 prev.pe.current !== newPe.current ||
+                (newSm && prev.sm?.current !== newSm.current) ||
                 prev.hp.max !== newHp.max ||
-                prev.pe.max !== newPe.max
+                prev.pe.max !== newPe.max ||
+                (newSm && prev.sm?.max !== newSm.max)
               ) {
-                return { ...prev, hp: newHp, pe: newPe };
+                return {
+                  ...prev,
+                  hp: newHp,
+                  pe: newPe,
+                  sm: newSm || prev.sm,
+                };
               }
               return prev;
             });
@@ -645,6 +720,17 @@ export default function App() {
                 return prev;
               });
             }
+            if (data?.data?.modeConfig) {
+              setGameModeConfig((prev: any) => {
+                if (JSON.stringify(prev) !== JSON.stringify(data.data.modeConfig)) {
+                  try {
+                    localStorage.setItem("demologia_game_mode_config", JSON.stringify(data.data.modeConfig));
+                  } catch {}
+                  return data.data.modeConfig;
+                }
+                return prev;
+              });
+            }
           },
           (err) =>
             console.warn("Fetch master state request failed:", err.message),
@@ -689,6 +775,17 @@ export default function App() {
               return prev;
             });
           }
+          if (newRecord?.id === "MASTER_STATE" && newRecord?.data?.modeConfig) {
+            setGameModeConfig((prev: any) => {
+              if (JSON.stringify(prev) !== JSON.stringify(newRecord.data.modeConfig)) {
+                try {
+                  localStorage.setItem("demologia_game_mode_config", JSON.stringify(newRecord.data.modeConfig));
+                } catch {}
+                return newRecord.data.modeConfig;
+              }
+              return prev;
+            });
+          }
           if (newRecord?.id === "TABLETOP_GRID" && newRecord?.data) {
             setGlobalGridState((prev: any) => {
               if (JSON.stringify(prev) !== JSON.stringify(newRecord.data))
@@ -703,6 +800,19 @@ export default function App() {
           setGlobalOstState((prev: any) => {
             if (JSON.stringify(prev) !== JSON.stringify(payload))
               return payload;
+            return prev;
+          });
+        }
+      })
+      .on("broadcast", { event: "mode_update" }, ({ payload }) => {
+        if (payload) {
+          setGameModeConfig((prev: any) => {
+            if (JSON.stringify(prev) !== JSON.stringify(payload)) {
+              try {
+                localStorage.setItem("demologia_game_mode_config", JSON.stringify(payload));
+              } catch {}
+              return payload;
+            }
             return prev;
           });
         }
@@ -1144,11 +1254,11 @@ export default function App() {
   };
 
   const updateStat = (
-    stat: "hp" | "pe",
+    stat: "hp" | "pe" | "sm",
     field: "current" | "max",
     val: number,
   ) => {
-    if (stat === "hp" && field === "current") vibrate(100);
+    if ((stat === "hp" || stat === "sm") && field === "current") vibrate(100);
     setState((prev: any) => ({
       ...prev,
       [stat]: { ...prev[stat], [field]: val || 0 },
@@ -1416,7 +1526,7 @@ export default function App() {
 
   const editPlayerStatExact = async (
     p: any,
-    stat: "hp" | "pe",
+    stat: "hp" | "pe" | "sm",
     value: number,
   ) => {
     const newData = { ...p };
@@ -1431,6 +1541,9 @@ export default function App() {
 
   const pePercent =
     Math.max(0, Math.min(100, (state.pe.current / state.pe.max) * 100)) || 0;
+
+  const smPercent =
+    Math.max(0, Math.min(100, (state.sm.current / state.sm.max) * 100)) || 0;
   const icons = ["X", "O", "∆", "□"];
 
   const renderHud = () => (
@@ -1438,7 +1551,7 @@ export default function App() {
       <img
         className="eye-logo"
         src="https://i.ibb.co/xq2KhP1v/3-Sem-T-tulo.png"
-        alt="Símbolo Demologia"
+        alt={isRlMode ? "Símbolo Real L" : "Símbolo Demologia"}
       />
       <div className="status-numbers relative">
         <input
@@ -1454,12 +1567,21 @@ export default function App() {
           }
           placeholder="NOME"
         />
-        <div className="pe-text z-0">
-          <span>
-            {state.pe.current}/{state.pe.max}
-          </span>
-          PE
-        </div>
+        {!isRlMode ? (
+          <div className="pe-text z-0">
+            <span>
+              {state.pe.current}/{state.pe.max}
+            </span>
+            PE
+          </div>
+        ) : (
+          <div className="sm-text sn-text z-0" title="Sanidade Mental (SM)">
+            <span>
+              {state.sm.current}/{state.sm.max}
+            </span>
+            SM
+          </div>
+        )}
         <div className="hp-text z-0">
           <span>
             {state.hp.current}/{state.hp.max}
@@ -1469,6 +1591,7 @@ export default function App() {
       </div>
 
       <div className="status-bars">
+        {/* Barra de HP (sempre visível) */}
         <div className="bar-wrapper">
           <div
             className="bar-fill hp-fill"
@@ -1492,28 +1615,62 @@ export default function App() {
           </span>
         </div>
 
-        <div className="bar-wrapper" style={{ marginTop: "15px" }}>
-          <div
-            className="bar-fill pe-fill"
-            style={{ width: `${pePercent}%` }}
-          ></div>
-        </div>
-        <div className="status-inputs">
-          <span>
-            PE:{" "}
-            <MestreStatInput
-              value={state.pe.current}
-              className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
-              onSave={(val) => updateStat("pe", "current", val)}
-            />{" "}
-            /{" "}
-            <MestreStatInput
-              value={state.pe.max}
-              className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
-              onSave={(val) => updateStat("pe", "max", val)}
-            />
-          </span>
-        </div>
+        {/* Modo Demologia: Apenas barra de PE */}
+        {!isRlMode && (
+          <>
+            <div className="bar-wrapper" style={{ marginTop: "15px" }}>
+              <div
+                className="bar-fill pe-fill"
+                style={{ width: `${pePercent}%` }}
+              ></div>
+            </div>
+            <div className="status-inputs">
+              <span>
+                PE:{" "}
+                <MestreStatInput
+                  value={state.pe.current}
+                  className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
+                  onSave={(val) => updateStat("pe", "current", val)}
+                />{" "}
+                /{" "}
+                <MestreStatInput
+                  value={state.pe.max}
+                  className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
+                  onSave={(val) => updateStat("pe", "max", val)}
+                />
+              </span>
+            </div>
+          </>
+        )}
+
+        {/* Modo Real L: Apenas barra de SM (Sanidade Mental) */}
+        {isRlMode && (
+          <>
+            <div className="bar-wrapper" style={{ marginTop: "15px" }}>
+              <div
+                className="bar-fill sm-fill"
+                style={{ width: `${smPercent}%` }}
+                title={`Sanidade Mental: ${state.sm.current}/${state.sm.max}`}
+              ></div>
+            </div>
+            <div className="status-inputs">
+              <span title="Sanidade Mental">
+                SM:{" "}
+                <MestreStatInput
+                  value={state.sm.current}
+                  className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
+                  onSave={(val) => updateStat("sm", "current", val)}
+                />{" "}
+                /{" "}
+                <MestreStatInput
+                  value={state.sm.max}
+                  className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
+                  onSave={(val) => updateStat("sm", "max", val)}
+                />
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1760,6 +1917,72 @@ export default function App() {
       .catch(console.error);
   };
 
+  const handleApplyGameMode = async (target: "all" | string, newMode: GameMode) => {
+    let updatedConfig: GameModeConfig;
+    if (target === "all") {
+      updatedConfig = {
+        globalMode: newMode,
+        playerModes: {},
+      };
+    } else {
+      updatedConfig = {
+        globalMode: gameModeConfig.globalMode || "demologia",
+        playerModes: {
+          ...(gameModeConfig.playerModes || {}),
+          [target]: newMode,
+        },
+      };
+    }
+
+    setGameModeConfig(updatedConfig);
+    try {
+      localStorage.setItem("demologia_game_mode_config", JSON.stringify(updatedConfig));
+    } catch {}
+
+    try {
+      await supabase.from("players").upsert({
+        id: "MASTER_STATE",
+        data: {
+          ...(globalOstState ? { ost: globalOstState } : {}),
+          modeConfig: updatedConfig,
+        },
+        updated_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn("Erro ao sincronizar MASTER_STATE com o novo modo:", err);
+    }
+
+    if (target !== "all") {
+      try {
+        const targetPlayer = players.find((p) => p.id === target);
+        if (targetPlayer) {
+          const currentData = targetPlayer.data || targetPlayer;
+          await supabase.from("players").update({
+            data: { ...currentData, mode: newMode },
+          }).eq("id", target);
+        }
+      } catch (err) {
+        console.warn("Erro ao atualizar modo individual no Supabase:", err);
+      }
+    }
+
+    try {
+      globalChannelRef.current?.send({
+        type: "broadcast",
+        event: "mode_update",
+        payload: updatedConfig,
+      });
+    } catch (err) {
+      console.warn("Erro no broadcast de mode_update:", err);
+    }
+  };
+
+  const handleTogglePlayerMode = (playerId: string) => {
+    const currentPMode = (gameModeConfig.playerModes && gameModeConfig.playerModes[playerId]) || gameModeConfig.globalMode || "demologia";
+    const nextMode: GameMode = currentPMode === "rl" ? "demologia" : "rl";
+    handleApplyGameMode(playerId, nextMode);
+  };
+
   return (
     <div id="app" className="relative min-h-screen">
       <div 
@@ -1776,6 +1999,15 @@ export default function App() {
                 backgroundSize: "cover",
                 backgroundPosition: "center",
                 backgroundAttachment: "fixed",
+                transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + 's ease-out' : '1s ease-out'}`,
+              }
+            : activeMode === "rl"
+            ? {
+                backgroundImage: `linear-gradient(180deg, rgba(8, 8, 11, 0.35) 0%, rgba(13, 11, 18, 0.45) 45%, rgba(7, 7, 10, 0.60) 100%), url(${rlBgUrl})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center bottom",
+                backgroundAttachment: "fixed",
+                backgroundColor: '#08080a',
                 transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + 's ease-out' : '1s ease-out'}`,
               }
             : {
@@ -2111,6 +2343,17 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         }}
       />
 
+      <ModeTransitionEffect activeMode={activeMode} />
+
+      <MasterGameModeModal
+        isOpen={showModeModal}
+        onClose={() => setShowModeModal(false)}
+        currentGlobalMode={gameModeConfig.globalMode || "demologia"}
+        playerModes={gameModeConfig.playerModes || {}}
+        players={players}
+        onApplyMode={handleApplyGameMode}
+      />
+
       {playerToKick && (
         <div className="fixed inset-0 bg-black/85 z-[300] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-[#0e0e12] border border-[#26262e] rounded-none p-6 sm:p-8 max-w-sm w-full relative overflow-hidden shadow-2xl">
@@ -2159,6 +2402,8 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         setShowPasswordModal={setShowPasswordModal}
         setActiveFichaId={setActiveFichaId}
         setShowUpdateLog={setShowUpdateLog}
+        gameMode={activeMode}
+        onOpenModeModal={isMestreAuth ? () => setShowModeModal(true) : undefined}
       />
 
       {/* Botão de menu hambúrguer estilo YouTube no canto superior esquerdo */}
@@ -2178,11 +2423,11 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           
           {/* Left Column: HUD, Variables, Skills */}
           <div className="flex-1 w-full flex flex-col gap-0 lg:gap-6">
-            <div className="lg:border lg:border-[var(--op-border)] lg:bg-[#111115] lg:shadow-xl">
+            <div className="hud-wrapper-box lg:border lg:border-[var(--op-border)] lg:bg-[#111115]/50 lg:backdrop-blur-md lg:shadow-xl">
               {renderHud()}
             </div>
 
-            <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115] lg:shadow-xl">
+            <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115]/50 lg:backdrop-blur-md lg:shadow-xl">
               <div className="section-title">Variáveis de Status</div>
             <div className="var-grid">
               {Object.entries(state.variables).map(([key, value]) => (
@@ -2214,8 +2459,9 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             </button>
           </div>
 
-            <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115] lg:shadow-xl">
-            <div className="section-title">Habilidades (Skills)</div>
+            {!isRlMode && (
+              <div className="section skills-section lg:border lg:border-[var(--op-border)] lg:bg-[#111115]/50 lg:backdrop-blur-md lg:shadow-xl">
+                <div className="section-title">Habilidades (Skills)</div>
             <div className="skill-list">
               {state.skills.map((skill, index) => {
                 const icon = icons[index % icons.length];
@@ -2616,12 +2862,13 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               />
             </div>
           </div>
+          )}
           </div> {/* End Left Column */}
 
           {/* Right Column: Inventory, System/Menu */}
           <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col gap-0 lg:gap-6 shrink-0">
 
-          <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115] lg:shadow-xl">
+          <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115]/50 lg:backdrop-blur-md lg:shadow-xl">
             <div className="section-title">Inventário</div>
             <div className="inv-grid">
               {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -2637,7 +2884,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             </div>
           </div>
 
-          <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115] lg:shadow-xl">
+          <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115]/50 lg:backdrop-blur-md lg:shadow-xl">
             <div className="section-title">Sistema Demologia</div>
             <div className="menu-grid">
               <button className="btn-menu" onClick={exportData}>
@@ -2794,6 +3041,8 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             viewMode={mestreViewMode}
             setViewMode={setMestreViewMode}
             onClearChatHistory={handleClearChatHistory}
+            currentGlobalMode={gameModeConfig.globalMode}
+            onOpenModeModal={() => setShowModeModal(true)}
           />
 
           {mestreTab === "fichas" && (
@@ -2803,6 +3052,9 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               initiatives={initiatives}
               viewMode={mestreViewMode}
               onClearChatHistory={handleClearChatHistory}
+              playerModes={gameModeConfig.playerModes || {}}
+              currentGlobalMode={gameModeConfig.globalMode}
+              onTogglePlayerMode={handleTogglePlayerMode}
               onKickPlayer={(player) => setPlayerToKick(player)}
               onOpenInteractiveSheet={(sheetId) => {
                 setActiveFichaId(sheetId);
@@ -2854,6 +3106,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               setMestreTab={setMestreTab}
               toggleFichaSync={toggleFichaSync}
               supabase={supabase}
+              currentGlobalMode={gameModeConfig.globalMode || "demologia"}
             />
           )}
         </div>

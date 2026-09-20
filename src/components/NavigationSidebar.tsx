@@ -11,7 +11,10 @@ import {
   FileText,
   X,
   MessageSquare,
+  Flame,
+  EyeOff,
 } from "lucide-react";
+import { GameMode } from "../types";
 
 export interface NavigationSidebarProps {
   currentPage: string;
@@ -22,6 +25,8 @@ export interface NavigationSidebarProps {
   setShowPasswordModal: (show: boolean) => void;
   setActiveFichaId: (id: string) => void;
   setShowUpdateLog: (show: boolean) => void;
+  gameMode?: GameMode;
+  onOpenModeModal?: () => void;
 }
 
 export function NavigationSidebar({
@@ -33,7 +38,10 @@ export function NavigationSidebar({
   setShowPasswordModal,
   setActiveFichaId,
   setShowUpdateLog,
+  gameMode = "demologia",
+  onOpenModeModal,
 }: NavigationSidebarProps) {
+  const isRlMode = gameMode === "rl";
   // Fecha com a tecla Esc
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -89,17 +97,21 @@ export function NavigationSidebar({
         scrollToSection(".hud-container");
       },
     },
-    {
-      id: "tecnicas",
-      label: "Técnicas",
-      icon: Sparkles,
-      isActive: false,
-      onClick: () => {
-        setActiveFichaId("main");
-        setCurrentPage("ficha");
-        scrollToSection(".skill-list");
-      },
-    },
+    ...(!isRlMode
+      ? [
+          {
+            id: "tecnicas",
+            label: "Técnicas",
+            icon: Sparkles,
+            isActive: false,
+            onClick: () => {
+              setActiveFichaId("main");
+              setCurrentPage("ficha");
+              scrollToSection(".skill-list");
+            },
+          },
+        ]
+      : []),
     {
       id: "inventario",
       label: "Inventário",
@@ -142,6 +154,20 @@ export function NavigationSidebar({
         setCurrentPage("conexao");
       },
     },
+    ...(isMestreAuth && onOpenModeModal
+      ? [
+          {
+            id: "tema",
+            label: isRlMode ? "Tema: Real L" : "Tema: Demologia",
+            icon: isRlMode ? EyeOff : Flame,
+            isActive: false,
+            onClick: () => {
+              onOpenModeModal();
+              setMenuOpen(false);
+            },
+          },
+        ]
+      : []),
     {
       id: "mestre",
       label: "Mestre",
@@ -185,7 +211,9 @@ export function NavigationSidebar({
         aria-current={active ? "page" : undefined}
         className={`group relative w-full flex items-center justify-between px-3.5 py-2.5 rounded-none text-xs font-mono tracking-wider uppercase transition-all duration-150 cursor-pointer text-left min-h-[46px] select-none ${
           active
-            ? "bg-[rgba(181,42,48,0.2)] text-white border border-[var(--op-red)] outline outline-1 outline-[var(--op-red-bright)]/50 font-bold shadow-sm"
+            ? isRlMode
+              ? "bg-gradient-to-r from-purple-950/40 via-purple-900/20 to-white/[0.04] text-white border border-purple-400/60 outline outline-1 outline-white/30 font-bold shadow-[0_0_10px_rgba(168,85,247,0.2)]"
+              : "bg-[rgba(181,42,48,0.2)] text-white border border-[var(--op-red)] outline outline-1 outline-[var(--op-red-bright)]/50 font-bold shadow-sm"
             : "bg-[#101015] hover:bg-[#15151c] text-[#9ca3af] hover:text-white border border-[#202028] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a]"
         } focus-visible:outline-none focus-visible:outline-[var(--op-red-bright)]`}
       >
@@ -194,7 +222,9 @@ export function NavigationSidebar({
           <div
             className={`w-7 h-7 rounded-none flex items-center justify-center shrink-0 transition-colors duration-150 ${
               active
-                ? "bg-[var(--op-red-bright)]/25 text-[var(--op-red-bright)] outline outline-1 outline-[var(--op-red-bright)]/40"
+                ? isRlMode
+                  ? "bg-purple-500/20 text-purple-300 outline outline-1 outline-purple-400/40"
+                  : "bg-[var(--op-red-bright)]/25 text-[var(--op-red-bright)] outline outline-1 outline-[var(--op-red-bright)]/40"
                 : "bg-white/[0.03] text-[#828392] group-hover:text-white group-hover:bg-white/[0.06] outline outline-1 outline-white/[0.06]"
             }`}
           >
@@ -209,7 +239,11 @@ export function NavigationSidebar({
         {active && (
           <div className="flex items-center shrink-0 pl-2">
             <span
-              className="w-1.5 h-1.5 bg-[var(--op-red-bright)] rounded-none outline outline-1 outline-[var(--op-red)]/60 shadow-[0_0_6px_rgba(181,42,48,0.85)]"
+              className={`w-1.5 h-1.5 rounded-none outline outline-1 ${
+                isRlMode
+                  ? "bg-purple-400 outline-white/80 shadow-[0_0_8px_rgba(168,85,247,0.8),0_0_2px_#fff]"
+                  : "bg-[var(--op-red-bright)] outline-[var(--op-red)]/60 shadow-[0_0_6px_rgba(181,42,48,0.85)]"
+              }`}
               aria-hidden="true"
             />
           </div>
@@ -248,7 +282,11 @@ export function NavigationSidebar({
           <div className="flex items-center justify-between pb-3.5 mb-2 border-b border-[#1c1c24] shrink-0">
             <div className="flex items-center gap-2.5">
               <div
-                className="w-2 h-2 bg-[var(--op-red-bright)] rounded-none outline outline-1 outline-[var(--op-red)]/60 shadow-[0_0_6px_rgba(181,42,48,0.7)]"
+                className={`w-2 h-2 rounded-none outline outline-1 ${
+                  isRlMode
+                    ? "bg-purple-400 outline-white/70 shadow-[0_0_8px_rgba(168,85,247,0.8),0_0_2px_#fff]"
+                    : "bg-[var(--op-red-bright)] outline-[var(--op-red)]/60 shadow-[0_0_6px_rgba(181,42,48,0.7)]"
+                }`}
                 aria-hidden="true"
               />
               <span className="font-mono text-xs font-bold tracking-[0.2em] text-[#eeeeee] uppercase">
@@ -256,15 +294,47 @@ export function NavigationSidebar({
               </span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setMenuOpen(false)}
-              className="w-8 h-8 rounded-none flex items-center justify-center text-[#9ca3af] hover:text-white bg-[#121217] hover:bg-[#181820] border border-[#22222a] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] transition-all cursor-pointer"
-              aria-label="Fechar menu"
-              title="Fechar (Esc)"
-            >
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-2">
+              {isMestreAuth && onOpenModeModal ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenModeModal();
+                    setMenuOpen(false);
+                  }}
+                  className={`text-[9px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-none border transition-all cursor-pointer flex items-center gap-1 ${
+                    isRlMode
+                      ? "bg-purple-950/50 hover:bg-purple-900/70 text-purple-200 border-purple-400/50 shadow-[0_0_8px_rgba(168,85,247,0.25)]"
+                      : "bg-[var(--op-red)]/20 hover:bg-[var(--op-red)]/40 text-[var(--op-red-bright)] border-[var(--op-red)]/40"
+                  }`}
+                  title="Mestre: Clique para trocar tema / modo de jogo"
+                >
+                  <span>{isRlMode ? "Real L" : "Demologia"}</span>
+                  <span className="opacity-70 text-[8px]">⇄</span>
+                </button>
+              ) : (
+                <span
+                  className={`text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-none border ${
+                    isRlMode
+                      ? "bg-purple-950/40 text-purple-200 border-purple-400/50 shadow-[0_0_8px_rgba(168,85,247,0.25)]"
+                      : "bg-[var(--op-red)]/20 text-[var(--op-red-bright)] border-[var(--op-red)]/40"
+                  }`}
+                  title="Modo de Jogo Atual (Definido pelo Mestre)"
+                >
+                  {isRlMode ? "Real L" : "Demologia"}
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                className="w-8 h-8 rounded-none flex items-center justify-center text-[#9ca3af] hover:text-white bg-[#121217] hover:bg-[#181820] border border-[#22222a] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] transition-all cursor-pointer"
+                aria-label="Fechar menu"
+                title="Fechar (Esc)"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           {/* ITENS DE NAVEGAÇÃO COM ROLAGEM SUAVE TOUCH-FRIENDLY */}

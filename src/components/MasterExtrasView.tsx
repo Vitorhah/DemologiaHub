@@ -9,6 +9,7 @@ import {
   Maximize2,
   Heart,
   Zap,
+  Brain,
   FileText,
 } from "lucide-react";
 
@@ -22,6 +23,7 @@ export interface MasterExtrasViewProps {
   setMestreTab: (tab: "fichas" | "ost" | "extras") => void;
   toggleFichaSync: (ficha: any) => void;
   supabase: any;
+  currentGlobalMode?: "demologia" | "rl";
 }
 
 export function MasterExtrasView({
@@ -34,6 +36,7 @@ export function MasterExtrasView({
   setMestreTab,
   toggleFichaSync,
   supabase,
+  currentGlobalMode = "demologia",
 }: MasterExtrasViewProps) {
   const [deletingFichaId, setDeletingFichaId] = useState<string | null>(null);
 
@@ -121,6 +124,10 @@ export function MasterExtrasView({
             const peCurrent = ficha.pe?.current ?? 60;
             const peMax = ficha.pe?.max ?? 60;
             const pePct = Math.max(0, Math.min(100, (peCurrent / peMax) * 100)) || 0;
+
+            const smCurrent = ficha.sm?.current ?? ficha.san?.current ?? 100;
+            const smMax = ficha.sm?.max ?? ficha.san?.max ?? 100;
+            const smPct = Math.max(0, Math.min(100, (smCurrent / smMax) * 100)) || 0;
 
             const skillsCount = ficha.skills?.length ?? 0;
             const variablesCount = Object.keys(ficha.variables || {}).length;
@@ -220,13 +227,13 @@ export function MasterExtrasView({
                     </div>
                   </div>
 
-                  {/* HP & PE */}
-                  <div className="grid grid-cols-2 gap-2.5 mb-3">
+                  {/* HP & Status Condicional (PE em Demologia, SN em Real L) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                     {/* HP */}
-                    <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2.5">
-                      <div className="flex items-center justify-between text-[11px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
+                    <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2">
+                      <div className="flex items-center justify-between text-[10px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
                         <span className="text-[var(--op-red-bright)] flex items-center gap-1">
-                          <Heart size={11} /> HP
+                          <Heart size={10} /> HP
                         </span>
                         <span>{hpCurrent}/{hpMax}</span>
                       </div>
@@ -280,63 +287,125 @@ export function MasterExtrasView({
                       </div>
                     </div>
 
-                    {/* PE */}
-                    <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2.5">
-                      <div className="flex items-center justify-between text-[11px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
-                        <span className="text-yellow-500 flex items-center gap-1">
-                          <Zap size={11} /> PE
-                        </span>
-                        <span>{peCurrent}/{peMax}</span>
+                    {/* Modo RL: Exibe SN abaixo de HP */}
+                    {currentGlobalMode === "rl" ? (
+                      <div className="bg-[#140b20] border border-purple-500/30 outline outline-1 outline-purple-500/20 rounded-none p-2">
+                        <div className="flex items-center justify-between text-[10px] text-[#c084fc] mb-1 font-bold uppercase tracking-wider">
+                          <span className="text-purple-400 flex items-center gap-1">
+                            <Brain size={10} /> SN
+                          </span>
+                          <span>{smCurrent}/{smMax}</span>
+                        </div>
+                        <div className="h-1.5 bg-[#181820] border border-purple-900/40 overflow-hidden mb-2">
+                          <div
+                            className="h-full bg-purple-600 transition-all duration-200"
+                            style={{ width: `${smPct}%` }}
+                          />
+                        </div>
+                        <div className="flex gap-1">
+                          <input
+                            type="number"
+                            value={smCurrent}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              setExtraFichas(
+                                extraFichas.map((f) =>
+                                  f.id === ficha.id
+                                    ? {
+                                        ...f,
+                                        sm: { ...(f.sm || f.san), current: val },
+                                        san: { ...(f.sm || f.san), current: val },
+                                        last_local_edit: f.synchronized ? Date.now() : undefined,
+                                      }
+                                    : f,
+                                ),
+                              );
+                            }}
+                            className="w-1/2 bg-[#0c0c10] border border-purple-500/40 focus:border-purple-400 text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                            placeholder="Atual"
+                          />
+                          <input
+                            type="number"
+                            value={smMax}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              setExtraFichas(
+                                extraFichas.map((f) =>
+                                  f.id === ficha.id
+                                    ? {
+                                        ...f,
+                                        sm: { ...(f.sm || f.san), max: val },
+                                        san: { ...(f.sm || f.san), max: val },
+                                        last_local_edit: f.synchronized ? Date.now() : undefined,
+                                      }
+                                    : f,
+                                ),
+                              );
+                            }}
+                            className="w-1/2 bg-[#0c0c10] border border-purple-500/40 focus:border-purple-400 text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                            placeholder="Máx"
+                          />
+                        </div>
                       </div>
-                      <div className="h-1.5 bg-[#181820] border border-[#242430] overflow-hidden mb-2">
-                        <div
-                          className="h-full bg-yellow-500 transition-all duration-200"
-                          style={{ width: `${pePct}%` }}
-                        />
+                    ) : (
+                      /* Modo Demologia: Exibe PE abaixo de HP */
+                      <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2">
+                        <div className="flex items-center justify-between text-[10px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
+                          <span className="text-yellow-500 flex items-center gap-1">
+                            <Zap size={10} /> PE
+                          </span>
+                          <span>{peCurrent}/{peMax}</span>
+                        </div>
+                        <div className="h-1.5 bg-[#181820] border border-[#242430] overflow-hidden mb-2">
+                          <div
+                            className="h-full bg-yellow-500 transition-all duration-200"
+                            style={{ width: `${pePct}%` }}
+                          />
+                        </div>
+                        <div className="flex gap-1">
+                          <input
+                            type="number"
+                            value={peCurrent}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              setExtraFichas(
+                                extraFichas.map((f) =>
+                                  f.id === ficha.id
+                                    ? {
+                                        ...f,
+                                        pe: { ...f.pe, current: val },
+                                        last_local_edit: f.synchronized ? Date.now() : undefined,
+                                      }
+                                    : f,
+                                ),
+                              );
+                            }}
+                            className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                            placeholder="Atual"
+                          />
+                          <input
+                            type="number"
+                            value={peMax}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              setExtraFichas(
+                                extraFichas.map((f) =>
+                                  f.id === ficha.id
+                                    ? {
+                                        ...f,
+                                        pe: { ...f.pe, max: val },
+                                        last_local_edit: f.synchronized ? Date.now() : undefined,
+                                      }
+                                    : f,
+                                ),
+                              );
+                            }}
+                            className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                            placeholder="Máx"
+                          />
+                        </div>
                       </div>
-                      <div className="flex gap-1">
-                        <input
-                          type="number"
-                          value={peCurrent}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value) || 0;
-                            setExtraFichas(
-                              extraFichas.map((f) =>
-                                f.id === ficha.id
-                                  ? {
-                                      ...f,
-                                      pe: { ...f.pe, current: val },
-                                      last_local_edit: f.synchronized ? Date.now() : undefined,
-                                    }
-                                  : f,
-                              ),
-                            );
-                          }}
-                          className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
-                          placeholder="Atual"
-                        />
-                        <input
-                          type="number"
-                          value={peMax}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value) || 0;
-                            setExtraFichas(
-                              extraFichas.map((f) =>
-                                f.id === ficha.id
-                                  ? {
-                                      ...f,
-                                      pe: { ...f.pe, max: val },
-                                      last_local_edit: f.synchronized ? Date.now() : undefined,
-                                    }
-                                  : f,
-                              ),
-                            );
-                          }}
-                          className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
-                          placeholder="Máx"
-                        />
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Resumo */}

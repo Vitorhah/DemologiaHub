@@ -6,6 +6,7 @@ export interface RPGCharacter {
   isNPC: boolean;
   hp: { current: number; max: number };
   pe: { current: number; max: number };
+  sm?: { current: number; max: number }; // Sanidade Mental (SM)
   san: { current: number; max: number }; // PV and PE in rules are PV, PE, Sanidade
   attributes: {
     AGL: number;
@@ -40,6 +41,13 @@ export interface Room {
   masterId: string;
   name: string;
   createdAt: number;
+}
+
+export type GameMode = "demologia" | "rl";
+
+export interface GameModeConfig {
+  globalMode: GameMode;
+  playerModes?: Record<string, GameMode>;
 }
 
 export * from "./types/events";

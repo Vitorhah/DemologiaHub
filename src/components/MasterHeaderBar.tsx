@@ -8,7 +8,10 @@ import {
   LayoutGrid,
   List,
   Trash2,
+  Flame,
+  EyeOff,
 } from "lucide-react";
+import { GameMode } from "../types";
 
 export interface MasterHeaderBarProps {
   activeTab: "fichas" | "ost" | "extras";
@@ -21,6 +24,8 @@ export interface MasterHeaderBarProps {
   viewMode?: "grid" | "list";
   setViewMode?: (mode: "grid" | "list") => void;
   onClearChatHistory?: () => void;
+  currentGlobalMode?: GameMode;
+  onOpenModeModal?: () => void;
 }
 
 export function MasterHeaderBar({
@@ -34,6 +39,8 @@ export function MasterHeaderBar({
   viewMode = "grid",
   setViewMode,
   onClearChatHistory,
+  currentGlobalMode = "demologia",
+  onOpenModeModal,
 }: MasterHeaderBarProps) {
   const tabs = [
     {
@@ -138,6 +145,33 @@ export function MasterHeaderBar({
 
           {/* Lado Direito: Ações rápidas */}
           <div className="flex items-center justify-end gap-2 shrink-0">
+            {onOpenModeModal && (
+              <button
+                type="button"
+                onClick={onOpenModeModal}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs uppercase tracking-wider font-mono rounded-none transition-all cursor-pointer min-h-[38px] border ${
+                  currentGlobalMode === "rl"
+                    ? "bg-[#180f24] hover:bg-[#251738] text-white border-purple-400/60 shadow-[0_0_12px_rgba(168,85,247,0.35)]"
+                    : "bg-[#140b0d] hover:bg-[#201013] text-[#ff8085] hover:text-white border-[#8f171c]/50 hover:border-[#b52a30] shadow-[0_0_10px_rgba(143,23,28,0.25)]"
+                }`}
+                title="Abrir menu de seleção de modos (Demologia / Real L)"
+              >
+                {currentGlobalMode === "rl" ? (
+                  <>
+                    <EyeOff size={13} className="text-purple-300" />
+                    <span className="hidden sm:inline">Modo: Real L</span>
+                    <span className="sm:hidden">RL</span>
+                  </>
+                ) : (
+                  <>
+                    <Flame size={13} className="text-[#ff5258]" />
+                    <span className="hidden sm:inline">Modo: Demologia</span>
+                    <span className="sm:hidden">Demologia</span>
+                  </>
+                )}
+              </button>
+            )}
+
             {onClearChatHistory && (
               <button
                 type="button"
