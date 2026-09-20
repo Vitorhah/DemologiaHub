@@ -2114,7 +2114,7 @@ export default function App() {
     <div id="app" className="relative min-h-screen">
       <div 
         id="app-bg"
-        className="fixed inset-0 z-[-15] pointer-events-none"
+        className="fixed inset-0 z-0 pointer-events-none"
         style={{
           ...(customStyle.backgroundUrl
             ? {
@@ -2542,7 +2542,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         <Menu size={18} />
       </button>
 
-      <main className="w-full transition-all min-h-screen">
+      <main className="w-full transition-all min-h-screen relative z-10">
         {(currentPage === "ficha" || currentPage === "ficha_extra") && (
         <div className="max-w-7xl mx-auto w-full pb-32 sm:pb-28 lg:pb-24 px-2.5 sm:px-4 lg:px-4 lg:py-6 flex flex-col lg:flex-row gap-3.5 sm:gap-4 lg:gap-8 items-start">
           
