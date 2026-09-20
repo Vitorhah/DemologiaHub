@@ -62,12 +62,39 @@ const isVideoBackground = (url: string | null | undefined): boolean => {
   );
 };
 
+export const calculateMaxStats = (variables: Record<string, number> = {}) => {
+  const findVal = (name: string): number => {
+    const entry = Object.entries(variables).find(
+      ([k]) => k.trim().toUpperCase() === name.toUpperCase()
+    );
+    if (entry !== undefined) {
+      const parsed = Number(entry[1]);
+      return isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+  };
+
+  const vit = findVal("VIT");
+  const agl = findVal("AGL");
+  const san = findVal("SAN");
+
+  const hpMax = Math.max(1, 20 + vit * 6);
+  const peMax = Math.max(0, 5 + agl * 3 + san * 2);
+  const smMax = Math.max(1, 30 + san * 4);
+
+  return { hpMax, peMax, smMax, vit, agl, san };
+};
+
+const defaultInitialVariables = { SAN: 1, AGL: 1, INT: 1, FOR: 1, VIT: 1, OCU: 1 } as Record<string, number>;
+const defaultInitialMax = calculateMaxStats(defaultInitialVariables);
+
 const defaultState = {
   name: "Ocultista",
-  hp: { current: 100, max: 100 },
-  pe: { current: 60, max: 60 },
-  sm: { current: 100, max: 100 },
-  variables: { SAN: 1, AGL: 1, INT: 1, FOR: 1, VIT: 1, OCU: 1 } as Record<string, number>,
+  hp: { current: defaultInitialMax.hpMax, max: defaultInitialMax.hpMax },
+  pe: { current: defaultInitialMax.peMax, max: defaultInitialMax.peMax },
+  sm: { current: defaultInitialMax.smMax, max: defaultInitialMax.smMax },
+  autoMaxStats: true,
+  variables: defaultInitialVariables,
   skills: [
     {
       id: 1,
@@ -1265,27 +1292,114 @@ export default function App() {
     }));
   };
 
+  const applyAutoMaxToState = (prevState: any, newVars: Record<string, number>) => {
+    if (prevState.autoMaxStats === false) {
+      return { ...prevState, variables: newVars };
+    }
+    const { hpMax, peMax, smMax } = calculateMaxStats(newVars);
+    return {
+      ...prevState,
+      variables: newVars,
+      hp: {
+        ...prevState.hp,
+        max: hpMax,
+        current: Math.min(prevState.hp?.current ?? hpMax, hpMax),
+      },
+      pe: {
+        ...prevState.pe,
+        max: peMax,
+        current: Math.min(prevState.pe?.current ?? peMax, peMax),
+      },
+      sm: {
+        ...prevState.sm,
+        max: smMax,
+        current: Math.min(prevState.sm?.current ?? smMax, smMax),
+      },
+    };
+  };
+
   const removeVariable = (key: string) => {
-    const newVars = { ...state.variables };
-    delete newVars[key];
-    setState({ ...state, variables: newVars });
+    setState((prev: any) => {
+      const newVars = { ...prev.variables };
+      delete newVars[key];
+      return applyAutoMaxToState(prev, newVars);
+    });
   };
 
   const updateVariable = (key: string, val: number) => {
-    setState((prev: any) => ({
-      ...prev,
-      variables: { ...prev.variables, [key]: val || 0 },
-    }));
+    setState((prev: any) => {
+      const newVars = { ...prev.variables, [key]: val || 0 };
+      return applyAutoMaxToState(prev, newVars);
+    });
   };
 
   const renameVariable = (oldKey: string, newKeyRaw: string) => {
     const newKey = newKeyRaw.trim().toUpperCase();
     if (newKey !== oldKey && newKey !== "") {
-      const newVars = { ...state.variables };
-      newVars[newKey] = newVars[oldKey];
-      delete newVars[oldKey];
-      setState({ ...state, variables: newVars });
+      setState((prev: any) => {
+        const newVars = { ...prev.variables };
+        newVars[newKey] = newVars[oldKey];
+        delete newVars[oldKey];
+        return applyAutoMaxToState(prev, newVars);
+      });
     }
+  };
+
+  const forceRecalculateMaxStats = () => {
+    setState((prev: any) => {
+      const { hpMax, peMax, smMax } = calculateMaxStats(prev.variables);
+      return {
+        ...prev,
+        autoMaxStats: true,
+        hp: {
+          ...prev.hp,
+          max: hpMax,
+          current: Math.min(prev.hp?.current ?? hpMax, hpMax),
+        },
+        pe: {
+          ...prev.pe,
+          max: peMax,
+          current: Math.min(prev.pe?.current ?? peMax, peMax),
+        },
+        sm: {
+          ...prev.sm,
+          max: smMax,
+          current: Math.min(prev.sm?.current ?? smMax, smMax),
+        },
+      };
+    });
+  };
+
+  const toggleAutoMaxStats = () => {
+    setState((prev: any) => {
+      const nextMode = prev.autoMaxStats === false;
+      if (nextMode) {
+        const { hpMax, peMax, smMax } = calculateMaxStats(prev.variables);
+        return {
+          ...prev,
+          autoMaxStats: true,
+          hp: {
+            ...prev.hp,
+            max: hpMax,
+            current: Math.min(prev.hp?.current ?? hpMax, hpMax),
+          },
+          pe: {
+            ...prev.pe,
+            max: peMax,
+            current: Math.min(prev.pe?.current ?? peMax, peMax),
+          },
+          sm: {
+            ...prev.sm,
+            max: smMax,
+            current: Math.min(prev.sm?.current ?? smMax, smMax),
+          },
+        };
+      }
+      return {
+        ...prev,
+        autoMaxStats: false,
+      };
+    });
   };
 
   const addVariable = () => {
@@ -1555,7 +1669,7 @@ export default function App() {
       />
       <div className="status-numbers relative">
         <input
-          className="bg-transparent text-white font-bold text-center text-4xl uppercase outline-none w-full drop-shadow-[0_0_10px_rgba(211,0,0,0.6)]"
+          className="bg-transparent text-white font-bold text-center text-2xl sm:text-3xl md:text-4xl uppercase outline-none w-full drop-shadow-[0_0_10px_rgba(211,0,0,0.6)] px-2"
           style={{
             textShadow: "2px 2px 0px #500",
             marginBottom: "-10px",
@@ -1568,26 +1682,36 @@ export default function App() {
           placeholder="NOME"
         />
         {!isRlMode ? (
-          <div className="pe-text z-0">
-            <span>
-              {state.pe.current}/{state.pe.max}
-            </span>
-            PE
-          </div>
+          <>
+            <div className="pe-text z-0">
+              <span>
+                {state.pe.current}/{state.pe.max}
+              </span>
+              PE
+            </div>
+            <div className="hp-text z-0">
+              <span>
+                {state.hp.current}/{state.hp.max}
+              </span>
+              HP
+            </div>
+          </>
         ) : (
-          <div className="sm-text sn-text z-0" title="Sanidade Mental (SM)">
-            <span>
-              {state.sm.current}/{state.sm.max}
-            </span>
-            SM
-          </div>
+          <>
+            <div className="hp-text z-0">
+              <span>
+                {state.hp.current}/{state.hp.max}
+              </span>
+              HP
+            </div>
+            <div className="sm-text sn-text z-0" title="Sanidade Mental (SM)">
+              <span>
+                {state.sm.current}/{state.sm.max}
+              </span>
+              SM
+            </div>
+          </>
         )}
-        <div className="hp-text z-0">
-          <span>
-            {state.hp.current}/{state.hp.max}
-          </span>
-          HP
-        </div>
       </div>
 
       <div className="status-bars">
@@ -1611,6 +1735,7 @@ export default function App() {
               value={state.hp.max}
               className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
               onSave={(val) => updateStat("hp", "max", val)}
+              placeholder="Max HP"
             />
           </span>
         </div>
@@ -1637,6 +1762,7 @@ export default function App() {
                   value={state.pe.max}
                   className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
                   onSave={(val) => updateStat("pe", "max", val)}
+                  placeholder="Max PE"
                 />
               </span>
             </div>
@@ -1666,6 +1792,7 @@ export default function App() {
                   value={state.sm.max}
                   className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
                   onSave={(val) => updateStat("sm", "max", val)}
+                  placeholder="Max SM"
                 />
               </span>
             </div>
@@ -1998,7 +2125,6 @@ export default function App() {
                     : `url(${customStyle.backgroundUrl})`,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
-                backgroundAttachment: "fixed",
                 transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + 's ease-out' : '1s ease-out'}`,
               }
             : activeMode === "rl"
@@ -2006,7 +2132,6 @@ export default function App() {
                 backgroundImage: `linear-gradient(180deg, rgba(8, 8, 11, 0.35) 0%, rgba(13, 11, 18, 0.45) 45%, rgba(7, 7, 10, 0.60) 100%), url(${rlBgUrl})`,
                 backgroundSize: "cover",
                 backgroundPosition: "center bottom",
-                backgroundAttachment: "fixed",
                 backgroundColor: '#08080a',
                 transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + 's ease-out' : '1s ease-out'}`,
               }
@@ -2419,17 +2544,17 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
       <main className="w-full transition-all min-h-screen">
         {(currentPage === "ficha" || currentPage === "ficha_extra") && (
-        <div className="max-w-7xl mx-auto w-full pb-20 lg:px-4 lg:py-6 flex flex-col lg:flex-row lg:gap-8 items-start">
+        <div className="max-w-7xl mx-auto w-full pb-24 px-2.5 sm:px-4 lg:px-4 lg:py-6 flex flex-col lg:flex-row gap-3.5 sm:gap-4 lg:gap-8 items-start">
           
           {/* Left Column: HUD, Variables, Skills */}
-          <div className="flex-1 w-full flex flex-col gap-0 lg:gap-6">
-            <div className="hud-wrapper-box lg:border lg:border-[var(--op-border)] lg:bg-[#111115]/50 lg:backdrop-blur-md lg:shadow-xl">
+          <div className="flex-1 w-full flex flex-col gap-3.5 sm:gap-4 lg:gap-6">
+            <div className="hud-wrapper-box border border-[var(--op-border)] bg-[#111115]/50 backdrop-blur-md shadow-lg">
               {renderHud()}
             </div>
 
-            <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115]/50 lg:backdrop-blur-md lg:shadow-xl">
+            <div className="section border border-[var(--op-border)] bg-[#111115]/50 backdrop-blur-md shadow-lg">
               <div className="section-title">Variáveis de Status</div>
-            <div className="var-grid">
+              <div className="var-grid">
               {Object.entries(state.variables).map(([key, value]) => (
                 <div className="var-box" key={key}>
                   <button
@@ -2460,7 +2585,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           </div>
 
             {!isRlMode && (
-              <div className="section skills-section lg:border lg:border-[var(--op-border)] lg:bg-[#111115]/50 lg:backdrop-blur-md lg:shadow-xl">
+              <div className="section skills-section border border-[var(--op-border)] bg-[#111115]/50 backdrop-blur-md shadow-lg">
                 <div className="section-title">Habilidades (Skills)</div>
             <div className="skill-list">
               {state.skills.map((skill, index) => {
@@ -2866,9 +2991,9 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           </div> {/* End Left Column */}
 
           {/* Right Column: Inventory, System/Menu */}
-          <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col gap-0 lg:gap-6 shrink-0">
+          <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col gap-3.5 sm:gap-4 lg:gap-6 shrink-0">
 
-          <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115]/50 lg:backdrop-blur-md lg:shadow-xl">
+          <div className="section border border-[var(--op-border)] bg-[#111115]/50 backdrop-blur-md shadow-lg">
             <div className="section-title">Inventário</div>
             <div className="inv-grid">
               {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -2884,7 +3009,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             </div>
           </div>
 
-          <div className="section lg:border lg:border-[var(--op-border)] lg:bg-[#111115]/50 lg:backdrop-blur-md lg:shadow-xl">
+          <div className="section border border-[var(--op-border)] bg-[#111115]/50 backdrop-blur-md shadow-lg">
             <div className="section-title">Sistema Demologia</div>
             <div className="menu-grid">
               <button className="btn-menu" onClick={exportData}>
