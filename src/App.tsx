@@ -1669,7 +1669,7 @@ export default function App() {
       />
       <div className="status-numbers relative">
         <input
-          className="bg-transparent text-white font-bold text-center text-2xl sm:text-3xl md:text-4xl uppercase outline-none w-full drop-shadow-[0_0_10px_rgba(211,0,0,0.6)] px-2"
+          className="bg-transparent text-white font-bold text-center text-[29px] sm:text-[35px] md:text-[41px] uppercase outline-none w-full drop-shadow-[0_0_10px_rgba(211,0,0,0.6)] px-2"
           style={{
             textShadow: "2px 2px 0px #500",
             marginBottom: "-10px",
@@ -1743,7 +1743,7 @@ export default function App() {
         {/* Modo Demologia: Apenas barra de PE */}
         {!isRlMode && (
           <>
-            <div className="bar-wrapper" style={{ marginTop: "15px" }}>
+            <div className="bar-wrapper mt-2 sm:mt-2.5">
               <div
                 className="bar-fill pe-fill"
                 style={{ width: `${pePercent}%` }}
@@ -1772,7 +1772,7 @@ export default function App() {
         {/* Modo Real L: Apenas barra de SM (Sanidade Mental) */}
         {isRlMode && (
           <>
-            <div className="bar-wrapper" style={{ marginTop: "15px" }}>
+            <div className="bar-wrapper mt-2 sm:mt-2.5">
               <div
                 className="bar-fill sm-fill"
                 style={{ width: `${smPercent}%` }}
@@ -2114,7 +2114,7 @@ export default function App() {
     <div id="app" className="relative min-h-screen">
       <div 
         id="app-bg"
-        className="fixed inset-0 z-[-15]"
+        className="fixed inset-0 z-[-15] pointer-events-none"
         style={{
           ...(customStyle.backgroundUrl
             ? {
@@ -2544,7 +2544,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
       <main className="w-full transition-all min-h-screen">
         {(currentPage === "ficha" || currentPage === "ficha_extra") && (
-        <div className="max-w-7xl mx-auto w-full pb-24 px-2.5 sm:px-4 lg:px-4 lg:py-6 flex flex-col lg:flex-row gap-3.5 sm:gap-4 lg:gap-8 items-start">
+        <div className="max-w-7xl mx-auto w-full pb-32 sm:pb-28 lg:pb-24 px-2.5 sm:px-4 lg:px-4 lg:py-6 flex flex-col lg:flex-row gap-3.5 sm:gap-4 lg:gap-8 items-start">
           
           {/* Left Column: HUD, Variables, Skills */}
           <div className="flex-1 w-full flex flex-col gap-3.5 sm:gap-4 lg:gap-6">
