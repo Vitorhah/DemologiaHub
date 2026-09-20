@@ -278,6 +278,8 @@ html {
     min-height: 100%;
     -webkit-text-size-adjust: 100%;
     background-color: var(--op-bg);
+    touch-action: pan-y;
+    overscroll-behavior-y: none;
 }
 
 body {
@@ -288,6 +290,8 @@ body {
     overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior-y: none;
 }
 
 #root, #app {
