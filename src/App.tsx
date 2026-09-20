@@ -2548,11 +2548,11 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           
           {/* Left Column: HUD, Variables, Skills */}
           <div className="flex-1 w-full flex flex-col gap-3.5 sm:gap-4 lg:gap-6">
-            <div className="hud-wrapper-box border border-[var(--op-border)] bg-[#111115]/50 backdrop-blur-md shadow-lg">
+            <div className="hud-wrapper-box border border-[var(--op-border)] bg-[#111115] shadow-lg">
               {renderHud()}
             </div>
 
-            <div className="section border border-[var(--op-border)] bg-[#111115]/50 backdrop-blur-md shadow-lg">
+            <div className="section border border-[var(--op-border)] bg-[#111115] shadow-lg">
               <div className="section-title">Variáveis de Status</div>
               <div className="var-grid">
               {Object.entries(state.variables).map(([key, value]) => (
@@ -2585,7 +2585,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           </div>
 
             {!isRlMode && (
-              <div className="section skills-section border border-[var(--op-border)] bg-[#111115]/50 backdrop-blur-md shadow-lg">
+              <div className="section skills-section border border-[var(--op-border)] bg-[#111115] shadow-lg">
                 <div className="section-title">Habilidades (Skills)</div>
             <div className="skill-list">
               {state.skills.map((skill, index) => {
@@ -2993,7 +2993,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           {/* Right Column: Inventory, System/Menu */}
           <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col gap-3.5 sm:gap-4 lg:gap-6 shrink-0">
 
-          <div className="section border border-[var(--op-border)] bg-[#111115]/50 backdrop-blur-md shadow-lg">
+          <div className="section border border-[var(--op-border)] bg-[#111115] shadow-lg">
             <div className="section-title">Inventário</div>
             <div className="inv-grid">
               {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -3009,7 +3009,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             </div>
           </div>
 
-          <div className="section border border-[var(--op-border)] bg-[#111115]/50 backdrop-blur-md shadow-lg">
+          <div className="section border border-[var(--op-border)] bg-[#111115] shadow-lg">
             <div className="section-title">Sistema Demologia</div>
             <div className="menu-grid">
               <button className="btn-menu" onClick={exportData}>
