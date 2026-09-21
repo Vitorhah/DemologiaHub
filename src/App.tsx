@@ -1683,17 +1683,17 @@ export default function App() {
         />
         {!isRlMode ? (
           <>
-            <div className="pe-text z-0">
-              <span>
-                {state.pe.current}/{state.pe.max}
-              </span>
-              PE
-            </div>
             <div className="hp-text z-0">
               <span>
                 {state.hp.current}/{state.hp.max}
               </span>
               HP
+            </div>
+            <div className="pe-text z-0">
+              <span>
+                {state.pe.current}/{state.pe.max}
+              </span>
+              PE
             </div>
           </>
         ) : (

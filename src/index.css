@@ -234,12 +234,12 @@ body.theme-rl {
         margin-top: -10px;
     }
     
-    .pe-text { margin-left: 20px; }
-    .hp-text { margin-left: 36px; margin-top: -2px; }
-    .sm-text, .sn-text { margin-left: 20px; margin-top: -2px; }
+    .hp-text { margin-left: 20px; margin-top: 0px; }
+    .pe-text { margin-left: 36px; margin-top: -2px; }
+    .sm-text, .sn-text { margin-left: 32px; margin-top: -2px; }
 
-    .theme-rl .pe-text { margin-left: 20px; }
     .theme-rl .hp-text { margin-left: 18px; margin-top: 0px; }
+    .theme-rl .pe-text { margin-left: 32px; margin-top: -2px; }
     .theme-rl .sm-text, .theme-rl .sn-text { margin-left: 32px; margin-top: -2px; }
 
     .status-bars {
@@ -354,9 +354,9 @@ button, input, textarea {
     text-shadow: 2px 2px 0px #000;
 }
 
-.pe-text { color: var(--pe-blue); text-shadow: 0 0 8px var(--pe-glow); margin-left: 40px;}
-.hp-text { color: var(--blood-red); text-shadow: 0 0 8px var(--blood-glow); margin-left: 70px; margin-top: -5px;}
-.sm-text, .sn-text { color: var(--sm-purple); text-shadow: 0 0 8px var(--sm-glow); margin-left: 40px; margin-top: -5px;}
+.hp-text { color: var(--blood-red); text-shadow: 0 0 8px var(--blood-glow); margin-left: 40px; }
+.pe-text { color: var(--pe-blue); text-shadow: 0 0 8px var(--pe-glow); margin-left: 65px; margin-top: -5px; }
+.sm-text, .sn-text { color: var(--sm-purple); text-shadow: 0 0 8px var(--sm-glow); margin-left: 65px; margin-top: -5px; }
 
 .status-bars {
     padding: 8px 16px;
