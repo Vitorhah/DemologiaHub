@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Home,
   User,
@@ -13,6 +13,10 @@ import {
   MessageSquare,
   Flame,
   EyeOff,
+  Download,
+  Upload,
+  Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { GameMode } from "../types";
 
@@ -27,6 +31,10 @@ export interface NavigationSidebarProps {
   setShowUpdateLog: (show: boolean) => void;
   gameMode?: GameMode;
   onOpenModeModal?: () => void;
+  onExportData?: () => void;
+  onImportData?: () => void;
+  onClearHistory?: () => void;
+  onResetData?: () => void;
 }
 
 export function NavigationSidebar({
@@ -40,8 +48,14 @@ export function NavigationSidebar({
   setShowUpdateLog,
   gameMode = "demologia",
   onOpenModeModal,
+  onExportData,
+  onImportData,
+  onClearHistory,
+  onResetData,
 }: NavigationSidebarProps) {
   const isRlMode = gameMode === "rl";
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   // Fecha com a tecla Esc
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -212,9 +226,9 @@ export function NavigationSidebar({
         className={`group relative w-full flex items-center justify-between px-3.5 py-2.5 rounded-none text-xs font-mono tracking-wider uppercase transition-all duration-150 cursor-pointer text-left min-h-[46px] select-none ${
           active
             ? isRlMode
-              ? "bg-gradient-to-r from-purple-950/40 via-purple-900/20 to-white/[0.04] text-white border border-purple-400/60 outline outline-1 outline-white/30 font-bold shadow-[0_0_10px_rgba(168,85,247,0.2)]"
-              : "bg-[rgba(181,42,48,0.2)] text-white border border-[var(--op-red)] outline outline-1 outline-[var(--op-red-bright)]/50 font-bold shadow-sm"
-            : "bg-[#101015] hover:bg-[#15151c] text-[#9ca3af] hover:text-white border border-[#202028] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a]"
+              ? "bg-gradient-to-r from-purple-950/60 via-purple-900/30 to-purple-950/10 text-white border border-purple-400/70 outline outline-1 outline-white/30 font-bold shadow-[0_0_15px_rgba(168,85,247,0.25)]"
+              : "bg-gradient-to-r from-[rgba(181,42,48,0.35)] via-[rgba(143,23,28,0.22)] to-[rgba(181,42,48,0.06)] text-white border border-[var(--op-red)] outline outline-1 outline-[var(--op-red-bright)]/50 font-bold shadow-[0_0_12px_rgba(181,42,48,0.25)]"
+            : "bg-gradient-to-r from-[#121218] to-[#0e0e13] hover:from-[#181822] hover:to-[#121218] text-[#9ca3af] hover:text-white border border-[#202028] hover:border-[#3a3a48] outline outline-1 outline-[#16161f] hover:outline-[#444456]"
         } focus-visible:outline-none focus-visible:outline-[var(--op-red-bright)]`}
       >
         {/* Ícone e Rótulo */}
@@ -358,6 +372,77 @@ export function NavigationSidebar({
                 {systemNavItems.map(renderNavButton)}
               </nav>
             </div>
+
+            {/* SEÇÃO: DADOS DA FICHA / BACKUP */}
+            {(onExportData || onImportData || onResetData || onClearHistory) && (
+              <div>
+                <span className="text-[10px] font-mono font-bold tracking-[0.2em] text-[#636471] uppercase px-1 block mb-2">
+                  Dados & Backup
+                </span>
+                <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+                  {onExportData && (
+                    <button
+                      type="button"
+                      onClick={onExportData}
+                      className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-none bg-[#111116] hover:bg-[#181822] text-[#c0c0cc] hover:text-white border border-[#22222c] hover:border-[#383848] transition-colors cursor-pointer text-center uppercase tracking-wider"
+                      title="Exportar dados da ficha em JSON"
+                    >
+                      <Download size={13} className="text-[#888898]" />
+                      <span>Exportar</span>
+                    </button>
+                  )}
+                  {onImportData && (
+                    <button
+                      type="button"
+                      onClick={onImportData}
+                      className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-none bg-[#111116] hover:bg-[#181822] text-[#c0c0cc] hover:text-white border border-[#22222c] hover:border-[#383848] transition-colors cursor-pointer text-center uppercase tracking-wider"
+                      title="Importar dados da ficha via JSON"
+                    >
+                      <Upload size={13} className="text-[#888898]" />
+                      <span>Importar</span>
+                    </button>
+                  )}
+                  {onClearHistory && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!confirmClear) {
+                          setConfirmClear(true);
+                          setTimeout(() => setConfirmClear(false), 3000);
+                        } else {
+                          onClearHistory();
+                          setConfirmClear(false);
+                        }
+                      }}
+                      className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-none bg-[#111116] hover:bg-[#181822] text-[#d97706] hover:text-[#fbbf24] border border-[#2a2215] hover:border-[#45331e] transition-colors cursor-pointer text-center uppercase tracking-wider"
+                      title="Limpar histórico de rolagens"
+                    >
+                      <Trash2 size={13} />
+                      <span>{confirmClear ? "Confirmar" : "Histórico"}</span>
+                    </button>
+                  )}
+                  {onResetData && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!confirmReset) {
+                          setConfirmReset(true);
+                          setTimeout(() => setConfirmReset(false), 3000);
+                        } else {
+                          onResetData();
+                          setConfirmReset(false);
+                        }
+                      }}
+                      className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-none bg-[#161012] hover:bg-[#201215] text-[#e11d48] hover:text-[#f43f5e] border border-[#38151c] hover:border-[#521c27] transition-colors cursor-pointer text-center uppercase tracking-wider"
+                      title="Resetar todos os dados da ficha"
+                    >
+                      <RotateCcw size={13} />
+                      <span>{confirmReset ? "Confirmar" : "Resetar"}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

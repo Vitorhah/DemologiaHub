@@ -2129,14 +2129,15 @@ export default function App() {
               }
             : activeMode === "rl"
             ? {
-                backgroundImage: `linear-gradient(180deg, rgba(8, 8, 11, 0.35) 0%, rgba(13, 11, 18, 0.45) 45%, rgba(7, 7, 10, 0.60) 100%), url(${rlBgUrl})`,
+                backgroundImage: `radial-gradient(ellipse 90% 60% at 50% -10%, rgba(168, 85, 247, 0.18) 0%, rgba(30, 20, 48, 0.4) 40%, rgba(8, 8, 12, 0.92) 80%, #060609 100%), linear-gradient(180deg, rgba(8, 8, 11, 0.2) 0%, rgba(13, 11, 18, 0.45) 50%, rgba(7, 7, 10, 0.85) 100%), url(${rlBgUrl})`,
                 backgroundSize: "cover",
                 backgroundPosition: "center bottom",
-                backgroundColor: '#08080a',
+                backgroundColor: '#070609',
                 transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + 's ease-out' : '1s ease-out'}`,
               }
             : {
-                backgroundColor: '#0a0a0a'
+                backgroundImage: `radial-gradient(ellipse 95% 55% at 50% -12%, rgba(181, 42, 48, 0.16) 0%, rgba(110, 14, 20, 0.08) 35%, rgba(11, 11, 14, 0) 70%), radial-gradient(ellipse 70% 45% at 85% 95%, rgba(143, 23, 28, 0.08) 0%, transparent 60%), linear-gradient(180deg, #0e0d12 0%, #0a0a0d 35%, #070709 100%)`,
+                backgroundColor: '#070709',
               }),
           transform: cutsceneState?.active ? `scale(${cutsceneState.zoom || 1}) translateZ(0)` : 'translateZ(0)',
           willChange: 'transform',
@@ -2546,15 +2547,15 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
       <main className="w-full transition-all min-h-screen relative z-10">
         {(currentPage === "ficha" || currentPage === "ficha_extra") && (
-        <div className="max-w-7xl mx-auto w-full pb-32 sm:pb-28 lg:pb-24 px-2.5 sm:px-4 lg:px-4 lg:py-6 flex flex-col lg:flex-row gap-3.5 sm:gap-4 lg:gap-8 items-start">
+        <div className="home-sheet-container max-w-7xl mx-auto w-full pb-32 sm:pb-28 lg:pb-24 px-2.5 sm:px-4 lg:px-4 lg:py-6 flex flex-col lg:flex-row gap-3.5 sm:gap-4 lg:gap-8 items-start">
           
           {/* Left Column: HUD, Variables, Skills */}
           <div className="flex-1 w-full flex flex-col gap-3.5 sm:gap-4 lg:gap-6">
-            <div className="hud-wrapper-box border border-[var(--op-border)] bg-[#111115] shadow-lg">
+            <div className="hud-wrapper-box">
               {renderHud()}
             </div>
 
-            <div className="section border border-[var(--op-border)] bg-[#111115] shadow-lg">
+            <div className="section">
               <div className="section-title">Variáveis de Status</div>
               <div className="var-grid">
               {Object.entries(state.variables).map(([key, value]) => (
@@ -2587,7 +2588,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           </div>
 
             {!isRlMode && (
-              <div className="section skills-section border border-[var(--op-border)] bg-[#111115] shadow-lg">
+              <div className="section skills-section">
                 <div className="section-title">Habilidades (Skills)</div>
             <div className="skill-list">
               {state.skills.map((skill, index) => {
@@ -2995,7 +2996,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           {/* Right Column: Inventory, System/Menu */}
           <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col gap-3.5 sm:gap-4 lg:gap-6 shrink-0">
 
-          <div className="section border border-[var(--op-border)] bg-[#111115] shadow-lg">
+          <div className="section">
             <div className="section-title">Inventário</div>
             <div className="inv-grid">
               {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -3011,7 +3012,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             </div>
           </div>
 
-          <div className="section border border-[var(--op-border)] bg-[#111115] shadow-lg">
+          <div className="section">
             <div className="section-title">Sistema Demologia</div>
             <div className="menu-grid">
               <button className="btn-menu" onClick={exportData}>
