@@ -168,6 +168,19 @@ export function NavigationSidebar({
         setCurrentPage("conexao");
       },
     },
+    ...(isRlMode
+      ? [
+          {
+            id: "caderno",
+            label: "Caderno de Campo",
+            icon: FileText,
+            isActive: currentPage === "caderno",
+            onClick: () => {
+              setCurrentPage("caderno");
+            },
+          },
+        ]
+      : []),
     ...(isMestreAuth && onOpenModeModal
       ? [
           {

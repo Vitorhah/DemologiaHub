@@ -29,6 +29,7 @@ import { MasterPlayersView } from "./components/MasterPlayersView";
 import { MasterExtrasView } from "./components/MasterExtrasView";
 import { MasterGameModeModal } from "./components/MasterGameModeModal";
 import { ModeTransitionEffect } from "./components/ModeTransitionEffect";
+import { CadernoDeCampoView } from "./components/CadernoDeCampoView";
 import { GameMode, GameModeConfig } from "./types";
 import rlBgUrl from "./assets/rl_bg.jpg";
 
@@ -2534,16 +2535,36 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         onOpenModeModal={isMestreAuth ? () => setShowModeModal(true) : undefined}
       />
 
-      {/* Botão de menu hambúrguer estilo YouTube no canto superior esquerdo */}
-      <button
-        type="button"
-        onClick={() => setMenuOpen(!menuOpen)}
-        className="fixed top-3 left-4 z-40 w-9 h-9 flex items-center justify-center bg-[#111114]/95 hover:bg-[#1c1c20] text-[#dedede] hover:text-white border border-[#2a2a30] rounded-none transition-colors cursor-pointer shadow-md focus-visible:outline-none focus-visible:border-[var(--op-red)]"
-        aria-label="Abrir menu de navegação"
-        title="Menu de navegação"
-      >
-        <Menu size={18} />
-      </button>
+      {/* Botão de menu hambúrguer no canto superior esquerdo (quando fora do caderno) */}
+      {currentPage !== "caderno" && (
+        <button
+          type="button"
+          onClick={() => setMenuOpen(!menuOpen)}
+          className={`fixed top-3 left-4 z-40 w-9 h-9 flex items-center justify-center transition-colors cursor-pointer shadow-md focus-visible:outline-none rounded-none ${
+            isRlMode
+              ? "bg-[#181428]/95 hover:bg-[#251e3e] text-[#d8b4fe] hover:text-white border border-[#a855f7]/35 shadow-purple-950/40"
+              : "bg-[#111114]/95 hover:bg-[#1c1c20] text-[#dedede] hover:text-white border border-[#2a2a30] focus-visible:border-[var(--op-red)]"
+          }`}
+          aria-label="Abrir menu de navegação"
+          title="Menu de navegação"
+        >
+          <Menu size={18} />
+        </button>
+      )}
+
+      {/* Botão de atalho rápido para o Caderno de Campo quando em Modo IRL (quando fora do caderno) */}
+      {isRlMode && currentPage !== "caderno" && (
+        <button
+          type="button"
+          onClick={() => setCurrentPage("caderno")}
+          className="fixed top-3 left-16 z-40 min-h-[38px] px-3.5 flex items-center gap-2 border border-[#a855f7]/35 hover:border-[#c084fc] rounded-xl transition-all cursor-pointer shadow-lg bg-[#181428]/95 hover:bg-[#251e3e] text-[#d8b4fe] hover:text-white text-xs font-mono font-bold tracking-wider uppercase active:scale-95 shadow-purple-950/40"
+          aria-label="Abrir Caderno de Campo"
+          title="Caderno de Campo (Arquivo de Casos IRL)"
+        >
+          <FileText size={15} className="text-[#c084fc]" />
+          <span className="hidden sm:inline">Caderno</span>
+        </button>
+      )}
 
       <main className="w-full transition-all min-h-screen relative z-10">
         {(currentPage === "ficha" || currentPage === "ficha_extra") && (
@@ -3237,6 +3258,17 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               currentGlobalMode={gameModeConfig.globalMode || "demologia"}
             />
           )}
+        </div>
+      )}
+
+      {currentPage === "caderno" && (
+        <div className="min-h-screen w-full flex flex-col pt-4 sm:pt-6 pb-16">
+          <CadernoDeCampoView
+            onBackToSheet={() => setCurrentPage("ficha")}
+            onOpenSidebar={() => setMenuOpen(true)}
+            userUid={userUid}
+            isOnline={isOnline}
+          />
         </div>
       )}
       </main>

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;700;900&family=JetBrains+Mono:wght@400;700;800&family=Inter:wght@400;700;900&family=Special+Elite&family=Cinzel:wght@400;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;700;900&family=JetBrains+Mono:wght@400;700;800&family=Inter:wght@400;700;900&family=Special+Elite&family=Cinzel:wght@400;700;900&family=Oswald:wght@500;700&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -10,6 +10,7 @@
     --font-rpg: "Blur Light Regular", "Courier New", Courier, monospace;
     --font-special: "Special Elite", system-ui, serif;
     --font-cinzel: "Cinzel", serif;
+    --font-head: "Oswald", "Arial Narrow", Impact, sans-serif;
 }
 
 /* --- FONTES E VARIÁVEIS --- */
