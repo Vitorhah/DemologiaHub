@@ -32,6 +32,7 @@ import { ModeTransitionEffect } from "./components/ModeTransitionEffect";
 import { CadernoDeCampoView } from "./components/CadernoDeCampoView";
 import { GameMode, GameModeConfig } from "./types";
 import rlBgUrl from "./assets/rl_bg.jpg";
+import demologiaLogoUrl from "./assets/demologia_logo.png";
 
 const TypewriterText = ({ text, className, style, speed = 50 }: { text: string, className?: string, style?: any, speed?: number }) => {
   const [displayedText, setDisplayedText] = useState("");
@@ -1665,7 +1666,7 @@ export default function App() {
     <div className="hud-container relative pointer-events-auto">
       <img
         className="eye-logo"
-        src="https://i.ibb.co/xq2KhP1v/3-Sem-T-tulo.png"
+        src={demologiaLogoUrl}
         alt={isRlMode ? "Símbolo Real L" : "Símbolo Demologia"}
       />
       <div className="status-numbers relative">

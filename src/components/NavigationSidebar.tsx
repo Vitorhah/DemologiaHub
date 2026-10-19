@@ -19,6 +19,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { GameMode } from "../types";
+import demologiaLogoUrl from "../assets/demologia_logo.png";
 
 export interface NavigationSidebarProps {
   currentPage: string;
@@ -308,13 +309,10 @@ export function NavigationSidebar({
           {/* CABEÇALHO DO MENU */}
           <div className="flex items-center justify-between pb-3.5 mb-2 border-b border-[#1c1c24] shrink-0">
             <div className="flex items-center gap-2.5">
-              <div
-                className={`w-2 h-2 rounded-none outline outline-1 ${
-                  isRlMode
-                    ? "bg-purple-400 outline-white/70 shadow-[0_0_8px_rgba(168,85,247,0.8),0_0_2px_#fff]"
-                    : "bg-[var(--op-red-bright)] outline-[var(--op-red)]/60 shadow-[0_0_6px_rgba(181,42,48,0.7)]"
-                }`}
-                aria-hidden="true"
+              <img
+                src={demologiaLogoUrl}
+                alt="Logo Demologia"
+                className="w-5 h-5 object-cover rounded-none border border-[#2a2a34]"
               />
               <span className="font-mono text-xs font-bold tracking-[0.2em] text-[#eeeeee] uppercase">
                 Menu

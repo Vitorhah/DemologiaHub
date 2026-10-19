@@ -36,6 +36,7 @@ import {
   Layers,
   Menu,
 } from 'lucide-react';
+import demologiaLogoUrl from '../assets/demologia_logo.png';
 
 interface CadernoDeCampoViewProps {
   onBackToSheet?: () => void;
@@ -543,20 +544,13 @@ export const CadernoDeCampoView: React.FC<CadernoDeCampoViewProps> = ({
             </button>
           )}
 
-          {/* Luminous Amethyst Sigil Badge (subtle rounded-md) */}
-          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-md bg-[#22183c] border border-[#a855f7]/40 flex items-center justify-center p-2 shadow-[0_0_15px_rgba(168,85,247,0.3)] flex-none">
-            <svg
-              className="w-full h-full"
-              viewBox="0 0 40 40"
-              fill="none"
-              stroke="#c084fc"
-              strokeWidth="2.2"
-              aria-hidden="true"
-            >
-              <path d="M3 20c6-9 12-13 17-13s11 4 17 13c-6 9-12 13-17 13S9 29 3 20z" />
-              <circle cx="20" cy="20" r="5" />
-              <path d="M20 4v32" strokeDasharray="2 3" />
-            </svg>
+          {/* Luminous Logo Badge (subtle rounded-md) */}
+          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-md bg-[#1d1633] border border-[#a855f7]/40 flex items-center justify-center p-1 shadow-[0_0_15px_rgba(168,85,247,0.3)] flex-none overflow-hidden">
+            <img
+              src={demologiaLogoUrl}
+              alt="Logo Demologia"
+              className="w-full h-full object-cover rounded-sm"
+            />
           </div>
           <div>
             <h1 className="text-base sm:text-lg lg:text-xl font-bold tracking-wide uppercase text-white flex items-center flex-wrap gap-2 sm:gap-2.5">
@@ -1063,8 +1057,12 @@ export const CadernoDeCampoView: React.FC<CadernoDeCampoViewProps> = ({
             </div>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-center p-8 text-[#a09bb8]">
-              <div className="w-16 h-16 rounded-lg bg-[#1d1633] border border-[#a855f7]/30 flex items-center justify-center mb-4 shadow-lg shadow-purple-950/60 p-4">
-                <FolderOpen size={32} className="text-[#c084fc]" />
+              <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-md bg-[#1d1633] border border-[#a855f7]/30 flex items-center justify-center mb-4 shadow-lg shadow-purple-950/60 p-2 overflow-hidden">
+                <img
+                  src={demologiaLogoUrl}
+                  alt="Logo Demologia"
+                  className="w-full h-full object-cover rounded-sm opacity-85"
+                />
               </div>
               <h3 className="text-lg font-bold text-white mb-1.5">Nenhum caso selecionado</h3>
               <p className="max-w-xs text-xs sm:text-sm text-[#8a8a9a] leading-relaxed">
