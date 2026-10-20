@@ -13,6 +13,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { GameMode } from "../types";
+import { StatMathInput } from "./StatMathInput";
 
 export interface MasterPlayersViewProps {
   players: any[];
@@ -194,14 +195,11 @@ export function MasterPlayersView({
                         >
                           <Minus size={10} />
                         </button>
-                        <input
-                          type="number"
-                          defaultValue={hpCurrent}
-                          key={`hp-${p.id}-${hpCurrent}`}
-                          onBlur={(e) => {
-                            const val = parseInt(e.target.value) || 0;
-                            onUpdateStat(p, "hp", val, p.isExtraSheet, p.rawExtraSheetId);
-                          }}
+                        <StatMathInput
+                          value={hpCurrent}
+                          onSave={(val) =>
+                            onUpdateStat(p, "hp", val, p.isExtraSheet, p.rawExtraSheetId)
+                          }
                           className="w-12 h-6 bg-[#0c0c10] border-y border-[#202028] text-center text-xs text-white font-bold outline-none"
                         />
                         <button
@@ -239,14 +237,11 @@ export function MasterPlayersView({
                           >
                             <Minus size={10} />
                           </button>
-                          <input
-                            type="number"
-                            defaultValue={smCurrent}
-                            key={`sm-${p.id}-${smCurrent}`}
-                            onBlur={(e) => {
-                              const val = parseInt(e.target.value) || 0;
-                              onUpdateStat(p, "sm", val, p.isExtraSheet, p.rawExtraSheetId);
-                            }}
+                          <StatMathInput
+                            value={smCurrent}
+                            onSave={(val) =>
+                              onUpdateStat(p, "sm", val, p.isExtraSheet, p.rawExtraSheetId)
+                            }
                             className="w-12 h-6 bg-[#0c0c10] border-y border-[#202028] text-center text-xs text-white font-bold outline-none focus:border-purple-400"
                           />
                           <button
@@ -282,14 +277,11 @@ export function MasterPlayersView({
                           >
                             <Minus size={10} />
                           </button>
-                          <input
-                            type="number"
-                            defaultValue={peCurrent}
-                            key={`pe-${p.id}-${peCurrent}`}
-                            onBlur={(e) => {
-                              const val = parseInt(e.target.value) || 0;
-                              onUpdateStat(p, "pe", val, p.isExtraSheet, p.rawExtraSheetId);
-                            }}
+                          <StatMathInput
+                            value={peCurrent}
+                            onSave={(val) =>
+                              onUpdateStat(p, "pe", val, p.isExtraSheet, p.rawExtraSheetId)
+                            }
                             className="w-12 h-6 bg-[#0c0c10] border-y border-[#202028] text-center text-xs text-white font-bold outline-none focus:border-yellow-500"
                           />
                           <button
@@ -485,14 +477,11 @@ export function MasterPlayersView({
                     >
                       <Minus size={10} />
                     </button>
-                    <input
-                      type="number"
-                      defaultValue={hpCurrent}
-                      key={`card-hp-${p.id}-${hpCurrent}`}
-                      onBlur={(e) => {
-                        const val = parseInt(e.target.value) || 0;
-                        onUpdateStat(p, "hp", val, p.isExtraSheet, p.rawExtraSheetId);
-                      }}
+                    <StatMathInput
+                      value={hpCurrent}
+                      onSave={(val) =>
+                        onUpdateStat(p, "hp", val, p.isExtraSheet, p.rawExtraSheetId)
+                      }
                       className="w-10 h-6 bg-[#0c0c10] border-y border-[#202028] text-white text-xs font-bold text-center py-0.5 rounded-none outline-none focus:border-[var(--op-red)]"
                     />
                     <button
@@ -530,14 +519,11 @@ export function MasterPlayersView({
                       >
                         <Minus size={10} />
                       </button>
-                      <input
-                        type="number"
-                        defaultValue={smCurrent}
-                        key={`card-sm-${p.id}-${smCurrent}`}
-                        onBlur={(e) => {
-                          const val = parseInt(e.target.value) || 0;
-                          onUpdateStat(p, "sm", val, p.isExtraSheet, p.rawExtraSheetId);
-                        }}
+                      <StatMathInput
+                        value={smCurrent}
+                        onSave={(val) =>
+                          onUpdateStat(p, "sm", val, p.isExtraSheet, p.rawExtraSheetId)
+                        }
                         className="w-10 h-6 bg-[#0c0c10] border-y border-[#202028] text-white text-xs font-bold text-center py-0.5 rounded-none outline-none focus:border-purple-400"
                       />
                       <button
@@ -573,14 +559,11 @@ export function MasterPlayersView({
                       >
                         <Minus size={10} />
                       </button>
-                      <input
-                        type="number"
-                        defaultValue={peCurrent}
-                        key={`card-pe-${p.id}-${peCurrent}`}
-                        onBlur={(e) => {
-                          const val = parseInt(e.target.value) || 0;
-                          onUpdateStat(p, "pe", val, p.isExtraSheet, p.rawExtraSheetId);
-                        }}
+                      <StatMathInput
+                        value={peCurrent}
+                        onSave={(val) =>
+                          onUpdateStat(p, "pe", val, p.isExtraSheet, p.rawExtraSheetId)
+                        }
                         className="w-10 h-6 bg-[#0c0c10] border-y border-[#202028] text-white text-xs font-bold text-center py-0.5 rounded-none outline-none focus:border-yellow-500"
                       />
                       <button

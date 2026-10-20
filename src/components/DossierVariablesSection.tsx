@@ -15,6 +15,7 @@ import {
   Shield,
   FileText,
 } from "lucide-react";
+import { StatMathInput } from "./StatMathInput";
 
 interface VariableMeta {
   fullName: string;
@@ -278,12 +279,12 @@ export function DossierVariablesSection({
                 </button>
 
                 <div className="text-center px-1">
-                  <input
-                    type="number"
+                  <StatMathInput
                     value={value}
-                    onChange={(e) => updateVariable(key, parseInt(e.target.value) || 0)}
-                    className="w-12 bg-transparent text-center text-xl sm:text-2xl font-mono font-black text-white outline-none tracking-tight select-all focus:text-[var(--op-red-bright)]"
-                    title="Clique para digitar o valor"
+                    onSave={(val) => updateVariable(key, val)}
+                    className="w-14 bg-transparent text-center text-xl sm:text-2xl font-mono font-black text-white outline-none tracking-tight focus:text-[var(--op-red-bright)]"
+                    title={`Editar valor de ${key} (aceita números ou +, -, *)`}
+                    ariaLabel={`Editar valor de ${key}`}
                   />
                   <div className="text-[8px] font-mono uppercase tracking-widest text-[#666]">
                     NÍVEL

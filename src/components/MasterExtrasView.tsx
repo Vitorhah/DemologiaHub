@@ -12,6 +12,7 @@ import {
   Brain,
   FileText,
 } from "lucide-react";
+import { StatMathInput } from "./StatMathInput";
 
 export interface MasterExtrasViewProps {
   extraFichas: any[];
@@ -244,46 +245,46 @@ export function MasterExtrasView({
                         />
                       </div>
                       <div className="flex gap-1">
-                        <input
-                          type="number"
-                          value={hpCurrent}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value) || 0;
-                            setExtraFichas(
-                              extraFichas.map((f) =>
-                                f.id === ficha.id
-                                  ? {
-                                      ...f,
-                                      hp: { ...f.hp, current: val },
-                                      last_local_edit: f.synchronized ? Date.now() : undefined,
-                                    }
-                                  : f,
-                              ),
-                            );
-                          }}
-                          className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
-                          placeholder="Atual"
-                        />
-                        <input
-                          type="number"
-                          value={hpMax}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value) || 0;
-                            setExtraFichas(
-                              extraFichas.map((f) =>
-                                f.id === ficha.id
-                                  ? {
-                                      ...f,
-                                      hp: { ...f.hp, max: val },
-                                      last_local_edit: f.synchronized ? Date.now() : undefined,
-                                    }
-                                  : f,
-                              ),
-                            );
-                          }}
-                          className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
-                          placeholder="Máx"
-                        />
+                        <div className="w-1/2">
+                          <StatMathInput
+                            value={hpCurrent}
+                            onSave={(val) => {
+                              setExtraFichas(
+                                extraFichas.map((f) =>
+                                  f.id === ficha.id
+                                    ? {
+                                        ...f,
+                                        hp: { ...f.hp, current: val },
+                                        last_local_edit: f.synchronized ? Date.now() : undefined,
+                                      }
+                                    : f,
+                                ),
+                              );
+                            }}
+                            className="w-full bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                            placeholder="Atual"
+                          />
+                        </div>
+                        <div className="w-1/2">
+                          <StatMathInput
+                            value={hpMax}
+                            onSave={(val) => {
+                              setExtraFichas(
+                                extraFichas.map((f) =>
+                                  f.id === ficha.id
+                                    ? {
+                                        ...f,
+                                        hp: { ...f.hp, max: val },
+                                        last_local_edit: f.synchronized ? Date.now() : undefined,
+                                      }
+                                    : f,
+                                ),
+                              );
+                            }}
+                            className="w-full bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                            placeholder="Máx"
+                          />
+                        </div>
                       </div>
                     </div>
 
@@ -303,48 +304,48 @@ export function MasterExtrasView({
                           />
                         </div>
                         <div className="flex gap-1">
-                          <input
-                            type="number"
-                            value={smCurrent}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || 0;
-                              setExtraFichas(
-                                extraFichas.map((f) =>
-                                  f.id === ficha.id
-                                    ? {
-                                        ...f,
-                                        sm: { ...(f.sm || f.san), current: val },
-                                        san: { ...(f.sm || f.san), current: val },
-                                        last_local_edit: f.synchronized ? Date.now() : undefined,
-                                      }
-                                    : f,
-                                ),
-                              );
-                            }}
-                            className="w-1/2 bg-[#0c0c10] border border-purple-500/40 focus:border-purple-400 text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
-                            placeholder="Atual"
-                          />
-                          <input
-                            type="number"
-                            value={smMax}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || 0;
-                              setExtraFichas(
-                                extraFichas.map((f) =>
-                                  f.id === ficha.id
-                                    ? {
-                                        ...f,
-                                        sm: { ...(f.sm || f.san), max: val },
-                                        san: { ...(f.sm || f.san), max: val },
-                                        last_local_edit: f.synchronized ? Date.now() : undefined,
-                                      }
-                                    : f,
-                                ),
-                              );
-                            }}
-                            className="w-1/2 bg-[#0c0c10] border border-purple-500/40 focus:border-purple-400 text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
-                            placeholder="Máx"
-                          />
+                          <div className="w-1/2">
+                            <StatMathInput
+                              value={smCurrent}
+                              onSave={(val) => {
+                                setExtraFichas(
+                                  extraFichas.map((f) =>
+                                    f.id === ficha.id
+                                      ? {
+                                          ...f,
+                                          sm: { ...(f.sm || f.san), current: val },
+                                          san: { ...(f.sm || f.san), current: val },
+                                          last_local_edit: f.synchronized ? Date.now() : undefined,
+                                        }
+                                      : f,
+                                  ),
+                                );
+                              }}
+                              className="w-full bg-[#0c0c10] border border-purple-500/40 focus:border-purple-400 text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                              placeholder="Atual"
+                            />
+                          </div>
+                          <div className="w-1/2">
+                            <StatMathInput
+                              value={smMax}
+                              onSave={(val) => {
+                                setExtraFichas(
+                                  extraFichas.map((f) =>
+                                    f.id === ficha.id
+                                      ? {
+                                          ...f,
+                                          sm: { ...(f.sm || f.san), max: val },
+                                          san: { ...(f.sm || f.san), max: val },
+                                          last_local_edit: f.synchronized ? Date.now() : undefined,
+                                        }
+                                      : f,
+                                  ),
+                                );
+                              }}
+                              className="w-full bg-[#0c0c10] border border-purple-500/40 focus:border-purple-400 text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                              placeholder="Máx"
+                            />
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -363,46 +364,46 @@ export function MasterExtrasView({
                           />
                         </div>
                         <div className="flex gap-1">
-                          <input
-                            type="number"
-                            value={peCurrent}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || 0;
-                              setExtraFichas(
-                                extraFichas.map((f) =>
-                                  f.id === ficha.id
-                                    ? {
-                                        ...f,
-                                        pe: { ...f.pe, current: val },
-                                        last_local_edit: f.synchronized ? Date.now() : undefined,
-                                      }
-                                    : f,
-                                ),
-                              );
-                            }}
-                            className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
-                            placeholder="Atual"
-                          />
-                          <input
-                            type="number"
-                            value={peMax}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || 0;
-                              setExtraFichas(
-                                extraFichas.map((f) =>
-                                  f.id === ficha.id
-                                    ? {
-                                        ...f,
-                                        pe: { ...f.pe, max: val },
-                                        last_local_edit: f.synchronized ? Date.now() : undefined,
-                                      }
-                                    : f,
-                                ),
-                              );
-                            }}
-                            className="w-1/2 bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
-                            placeholder="Máx"
-                          />
+                          <div className="w-1/2">
+                            <StatMathInput
+                              value={peCurrent}
+                              onSave={(val) => {
+                                setExtraFichas(
+                                  extraFichas.map((f) =>
+                                    f.id === ficha.id
+                                      ? {
+                                          ...f,
+                                          pe: { ...f.pe, current: val },
+                                          last_local_edit: f.synchronized ? Date.now() : undefined,
+                                        }
+                                      : f,
+                                  ),
+                                );
+                              }}
+                              className="w-full bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                              placeholder="Atual"
+                            />
+                          </div>
+                          <div className="w-1/2">
+                            <StatMathInput
+                              value={peMax}
+                              onSave={(val) => {
+                                setExtraFichas(
+                                  extraFichas.map((f) =>
+                                    f.id === ficha.id
+                                      ? {
+                                          ...f,
+                                          pe: { ...f.pe, max: val },
+                                          last_local_edit: f.synchronized ? Date.now() : undefined,
+                                        }
+                                      : f,
+                                  ),
+                                );
+                              }}
+                              className="w-full bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                              placeholder="Máx"
+                            />
+                          </div>
                         </div>
                       </div>
                     )}

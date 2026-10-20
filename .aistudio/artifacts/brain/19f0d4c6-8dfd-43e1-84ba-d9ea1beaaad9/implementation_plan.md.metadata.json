@@ -1,6 +1,6 @@
 {
-  "summary": "Refined implementation plan for upgrading the Caderno de Campo UI with modern curved card geometry, the authentic Real L amethyst-purple palette for IRL mode, and touch-optimized controls for the Android WebView.",
-  "updatedAt": "2026-10-17T01:21:52.814208702Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Implementation plan for enabling fast mathematical expressions (+, -, *) on character resource bars across player HUD and master panels with subtle validation tooltips and secure non-eval parsing.",
+  "updatedAt":  "2026-10-20T17:42:39.949723641Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }

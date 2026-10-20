@@ -129,40 +129,8 @@ const defaultState = {
   history: [] as string[],
 };
 
-const MestreStatInput = ({
-  value,
-  className,
-  onSave,
-  placeholder,
-}: {
-  value: number;
-  className: string;
-  onSave: (val: number) => void;
-  placeholder?: string;
-}) => {
-  const [localVal, setLocalVal] = useState<string | number>(value);
-  const [isFocused, setIsFocused] = useState(false);
-
-  useEffect(() => {
-    if (!isFocused) setLocalVal(value);
-  }, [value, isFocused]);
-
-  return (
-    <input
-      type="number"
-      value={isFocused ? localVal : value}
-      placeholder={placeholder}
-      onFocus={() => setIsFocused(true)}
-      onChange={(e) => setLocalVal(e.target.value)}
-      onBlur={() => {
-        setIsFocused(false);
-        onSave(parseInt(localVal as string) || 0);
-      }}
-      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-      className={className}
-    />
-  );
-};
+import { StatMathInput } from "./components/StatMathInput";
+const MestreStatInput = StatMathInput;
 
 import { TabletopGrid } from "./components/TabletopGrid";
 import { QuickDiceSection } from "./components/QuickDiceSection";
@@ -1731,6 +1699,8 @@ export default function App() {
               value={state.hp.current}
               className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
               onSave={(val) => updateStat("hp", "current", val)}
+              ariaLabel="Editar Vida Atual"
+              title="Editar Vida Atual (digite um número ou use +, -, * como: +20, -15, *2)"
             />{" "}
             /{" "}
             <MestreStatInput
@@ -1738,6 +1708,8 @@ export default function App() {
               className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
               onSave={(val) => updateStat("hp", "max", val)}
               placeholder="Max HP"
+              ariaLabel="Editar Vida Máxima"
+              title="Editar Vida Máxima"
             />
           </span>
         </div>
@@ -1758,6 +1730,8 @@ export default function App() {
                   value={state.pe.current}
                   className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
                   onSave={(val) => updateStat("pe", "current", val)}
+                  ariaLabel="Editar Energia Atual"
+                  title="Editar Energia Atual (digite um número ou use +, -, * como: +20, -15, *2)"
                 />{" "}
                 /{" "}
                 <MestreStatInput
@@ -1765,6 +1739,8 @@ export default function App() {
                   className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
                   onSave={(val) => updateStat("pe", "max", val)}
                   placeholder="Max PE"
+                  ariaLabel="Editar Energia Máxima"
+                  title="Editar Energia Máxima"
                 />
               </span>
             </div>
@@ -1788,6 +1764,8 @@ export default function App() {
                   value={state.sm.current}
                   className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
                   onSave={(val) => updateStat("sm", "current", val)}
+                  ariaLabel="Editar Sanidade Atual"
+                  title="Editar Sanidade Atual (digite um número ou use +, -, * como: +20, -15, *2)"
                 />{" "}
                 /{" "}
                 <MestreStatInput
@@ -1795,6 +1773,8 @@ export default function App() {
                   className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
                   onSave={(val) => updateStat("sm", "max", val)}
                   placeholder="Max SM"
+                  ariaLabel="Editar Sanidade Máxima"
+                  title="Editar Sanidade Máxima"
                 />
               </span>
             </div>
@@ -3066,11 +3046,24 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
       {currentPage === "oraculo" && (
         <div className="pb-36 max-w-xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 space-y-3.5 sm:space-y-4">
+          {isRlMode && (
+            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-none bg-gradient-to-r from-[#1c1230] via-[#2a1745] to-[#160e26] border border-purple-500/35 text-xs font-mono shadow-[0_4px_16px_rgba(168,85,247,0.2)]">
+              <span className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#c084fc] shadow-[0_0_8px_#c084fc] animate-pulse" />
+                <strong className="text-white uppercase tracking-wider font-bold">Modo Real L Ativo</strong>
+                <span className="hidden sm:inline text-purple-300/70">• Rolagem Balística & Perícias Táticas</span>
+              </span>
+              <span className="text-[10px] uppercase font-bold tracking-widest text-[#e9d5ff] bg-purple-950/80 border border-purple-500/50 px-2.5 py-0.5 rounded-none shadow-sm">
+                IRL
+              </span>
+            </div>
+          )}
           <QuickDiceSection
             quickDiceQty={quickDiceQty}
             setQuickDiceQty={setQuickDiceQty}
             onRoll={executeRoll}
             lastRoll={lastRollResult}
+            isRlMode={isRlMode}
           />
           <RollingTerminal
             diceInput={diceInput}
@@ -3079,12 +3072,14 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             history={state.history}
             historyRef={historyRef}
             isShaking={isShaking}
-            title="Terminal de Rolagem"
+            title={isRlMode ? "Terminal de Rolagem (Modo Real L)" : "Terminal de Rolagem"}
+            isRlMode={isRlMode}
           />
           <FormulaShortcutsSection
             onRollFormula={executeRoll}
             setDiceInput={setDiceInput}
             diceInput={diceInput}
+            isRlMode={isRlMode}
           />
         </div>
       )}
