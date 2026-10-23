@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   Menu,
   X,
   Edit2,
-  ShieldAlert,
   Trash2,
   Minus,
   Plus,
@@ -22,6 +21,7 @@ import {
   Radio,
 } from "lucide-react";
 import { supabase, supabaseUrl, supabaseAnonKey } from "./lib/supabase";
+import { MusicSync, PlaybackState } from "./services/musicSync";
 import { PasswordAuthModal } from "./components/PasswordAuthModal";
 import { MasterHeaderBar } from "./components/MasterHeaderBar";
 import { MasterOstPanel } from "./components/MasterOstPanel";
@@ -31,7 +31,6 @@ import { MasterGameModeModal } from "./components/MasterGameModeModal";
 import { ModeTransitionEffect } from "./components/ModeTransitionEffect";
 import { CadernoDeCampoView } from "./components/CadernoDeCampoView";
 import { GameMode, GameModeConfig } from "./types";
-import rlBgUrl from "./assets/rl_bg.jpg";
 import demologiaLogoUrl from "./assets/demologia_logo.png";
 
 const TypewriterText = ({ text, className, style, speed = 50 }: { text: string, className?: string, style?: any, speed?: number }) => {
@@ -286,10 +285,18 @@ export default function App() {
   const [deletingFichaId, setDeletingFichaId] = useState<string | null>(null);
   const [customStyle, setCustomStyle] = useState<any>({ backgroundUrl: null });
 
-  const [ostList, setOstList] = useState<any[]>([]);
-  const [globalOstState, setGlobalOstState] = useState<any>(null);
-  const globalOstStateRef = useRef<any>(null);
-  
+  // Sincronizador de Trilha Sonora Nativo via Supabase e Web Audio API
+  const currentRoomId = useMemo(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("room") || "default-table";
+    }
+    return "default-table";
+  }, []);
+
+  const musicSync = useMemo(() => new MusicSync(supabase), []);
+  const [playbackState, setPlaybackState] = useState<PlaybackState | null>(null);
+
   const [cutsceneState, setCutsceneState] = useState<any>(null);
   const [fadeBlockState, setFadeBlockState] = useState<any>(null);
   const cutsceneStateRef = useRef<any>(null);
@@ -297,22 +304,11 @@ export default function App() {
     cutsceneStateRef.current = cutsceneState;
   }, [cutsceneState]);
 
-  useEffect(() => {
-    globalOstStateRef.current = globalOstState;
-  }, [globalOstState]);
-
-  const [loadedOstData, setLoadedOstData] = useState<any>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const fadeAnimationRef = useRef<number | null>(null);
-  const lastResetTimestampRef = useRef<number | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showUpdateLog, setShowUpdateLog] = useState(false);
   const [playerToKick, setPlayerToKick] = useState<any>(null);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState(false);
-  const [requiresInteraction, setRequiresInteraction] = useState(false);
-  const [isUploadingOst, setIsUploadingOst] = useState(false);
-  const [isOstLoading, setIsOstLoading] = useState(false);
   const [supabaseConfigError, setSupabaseConfigError] = useState<string | null>(null);
 
   // Sistema de Modos de Jogo: Demologia (Padrão) vs Real L (Fora do Paranormal)
@@ -344,6 +340,18 @@ export default function App() {
       document.body.classList.remove("theme-rl");
     }
   }, [isRlMode]);
+
+  // Conecta e sincroniza a trilha sonora da mesa para todos os participantes (jogadores e Mestre)
+  useEffect(() => {
+    musicSync.joinRoom(currentRoomId, isMestreAuth);
+    const unsubscribe = musicSync.onStateChange((state) => {
+      setPlaybackState(state);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [musicSync, currentRoomId, isMestreAuth]);
 
   const handleSupabaseError = (err: any, context?: string) => {
     if (!err) return;
@@ -710,13 +718,6 @@ export default function App() {
               console.warn("Error fetching master state:", error.message);
               return;
             }
-            if (data?.data?.ost) {
-              setGlobalOstState((prev: any) => {
-                if (JSON.stringify(prev) !== JSON.stringify(data.data.ost))
-                  return data.data.ost;
-                return prev;
-              });
-            }
             if (data?.data?.modeConfig) {
               setGameModeConfig((prev: any) => {
                 if (JSON.stringify(prev) !== JSON.stringify(data.data.modeConfig)) {
@@ -765,13 +766,6 @@ export default function App() {
         { event: "*", schema: "public", table: "players" },
         (payload) => {
           const newRecord = payload.new as any;
-          if (newRecord?.id === "MASTER_STATE" && newRecord?.data?.ost) {
-            setGlobalOstState((prev: any) => {
-              if (JSON.stringify(prev) !== JSON.stringify(newRecord.data.ost))
-                return newRecord.data.ost;
-              return prev;
-            });
-          }
           if (newRecord?.id === "MASTER_STATE" && newRecord?.data?.modeConfig) {
             setGameModeConfig((prev: any) => {
               if (JSON.stringify(prev) !== JSON.stringify(newRecord.data.modeConfig)) {
@@ -792,15 +786,6 @@ export default function App() {
           }
         },
       )
-      .on("broadcast", { event: "ost_update" }, ({ payload }) => {
-        if (payload) {
-          setGlobalOstState((prev: any) => {
-            if (JSON.stringify(prev) !== JSON.stringify(payload))
-              return payload;
-            return prev;
-          });
-        }
-      })
       .on("broadcast", { event: "mode_update" }, ({ payload }) => {
         if (payload) {
           setGameModeConfig((prev: any) => {
@@ -832,151 +817,6 @@ export default function App() {
       supabase.removeChannel(channel);
     };
   }, []);
-
-  useEffect(() => {
-    if (globalOstState?.ostId && globalOstState.ostId !== loadedOstData?.id) {
-      setIsOstLoading(true);
-      supabase
-        .from("players")
-        .select("data")
-        .eq("id", globalOstState.ostId)
-        .single()
-        .then(
-          async ({ data }) => {
-            if (data?.data?.base64) {
-              setLoadedOstData({
-                id: globalOstState.ostId,
-                base64: data.data.base64,
-                name: data.data.name,
-              });
-            }
-            setIsOstLoading(false);
-          },
-          (e) => {
-            console.error("Failed to load OST:", e);
-            setIsOstLoading(false);
-          },
-        );
-    }
-  }, [globalOstState?.ostId, loadedOstData?.id]);
-
-  useEffect(() => {
-    if (!audioRef.current || !loadedOstData) return;
-
-    const audioEl = audioRef.current;
-
-    const attemptPlay = () => {
-      if (globalOstState?.isPlaying && audioEl.paused) {
-        const playPromise = audioEl.play() as Promise<void> | undefined;
-        if (playPromise !== undefined && playPromise.catch) {
-          playPromise
-            .then(() => {
-              setRequiresInteraction(false);
-            })
-            .catch((e) => {
-              console.warn("Auto-play error:", e.name, e.message);
-              setRequiresInteraction(true);
-            });
-        }
-      }
-    };
-
-    // Prevent re-assigning the same base64 to src which can interrupt playback
-    if (audioEl.dataset.ostId !== loadedOstData.id) {
-      audioEl.src = loadedOstData.base64;
-      audioEl.dataset.ostId = loadedOstData.id;
-      audioEl.volume = 0;
-      audioEl.load();
-    }
-
-    if (
-      globalOstState?.resetTimestamp &&
-      globalOstState.resetTimestamp !== lastResetTimestampRef.current
-    ) {
-      lastResetTimestampRef.current = globalOstState.resetTimestamp;
-      audioEl.currentTime = 0;
-    }
-
-    // Always attempt to play if global state is playing
-    attemptPlay();
-
-    const targetVolume = globalOstState?.isPlaying
-      ? (globalOstState.volume ?? 1)
-      : 0;
-    const fadeMs = (globalOstState?.fadeTime ?? 0) * 1000;
-
-    if (fadeAnimationRef.current !== null) {
-      cancelAnimationFrame(fadeAnimationRef.current);
-      fadeAnimationRef.current = null;
-    }
-
-    if (fadeMs <= 0) {
-      if (Math.abs(audioEl.volume - targetVolume) > 0.01) {
-        audioEl.volume = Math.max(0, Math.min(1, targetVolume));
-      }
-      if (targetVolume === 0 && !globalOstState?.isPlaying && !audioEl.paused) {
-        audioEl.pause();
-      }
-    } else {
-      const startVol = audioEl.volume;
-      const volDiff = targetVolume - startVol;
-      const startTime = performance.now();
-
-      const animateFade = (time: number) => {
-        let elapsed = time - startTime;
-        if (elapsed >= fadeMs) {
-          audioEl.volume = Math.max(0, Math.min(1, targetVolume));
-          if (
-            targetVolume === 0 &&
-            !globalOstState?.isPlaying &&
-            !audioEl.paused
-          ) {
-            audioEl.pause();
-          }
-        } else {
-          audioEl.volume = Math.max(
-            0,
-            Math.min(1, startVol + volDiff * (elapsed / fadeMs)),
-          );
-          fadeAnimationRef.current = requestAnimationFrame(animateFade);
-        }
-      };
-      fadeAnimationRef.current = requestAnimationFrame(animateFade);
-    }
-
-    // Periodically ensure playback if it's supposed to be playing
-    const playCheckInterval = setInterval(() => {
-      if (
-        audioEl &&
-        globalOstState?.isPlaying &&
-        audioEl.paused &&
-        !requiresInteraction
-      ) {
-        attemptPlay();
-      }
-    }, 2000);
-
-    return () => {
-      clearInterval(playCheckInterval);
-    };
-  }, [globalOstState, loadedOstData]);
-
-  const fetchOsts = () => {
-    supabase
-      .from("players")
-      .select("id")
-      .like("id", "OST_FILE_%")
-      .then(({ data, error }) => {
-        if (error) handleSupabaseError(error, "Buscar Trilhas Sonoras (OSTs)");
-        if (data) setOstList(data);
-      });
-  };
-
-  useEffect(() => {
-    if (currentPage === "mestre" && mestreTab === "ost") {
-      fetchOsts();
-    }
-  }, [currentPage, mestreTab]);
 
   // Global synchronization and real-time subscription for EXTRA CHARACTER SHEETS (for all connected users)
   useEffect(() => {
@@ -1817,215 +1657,6 @@ export default function App() {
     }
   };
 
-  const handleUploadOst = (file: File) => {
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Arquivo muito grande, limite de 2MB. Comprima o MP3.");
-      return;
-    }
-    setIsUploadingOst(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      let base64 = reader.result as string;
-      if (base64.startsWith("data:;base64,")) {
-        base64 = base64.replace("data:;base64,", "data:audio/mpeg;base64,");
-      } else if (base64.startsWith("data:application/octet-stream;base64,")) {
-        base64 = base64.replace(
-          "data:application/octet-stream;base64,",
-          "data:audio/mpeg;base64,",
-        );
-      }
-      const ostId = `OST_FILE_${Date.now()}_${encodeURIComponent(file.name)}`;
-      await supabase.from("players").upsert({
-        id: ostId,
-        data: { base64, name: file.name },
-        updated_at: new Date().toISOString(),
-      });
-      fetchOsts();
-      setIsUploadingOst(false);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handlePlayOst = (ostId: string) => {
-    const rawName = ostId.split("_").slice(3).join("_");
-    const ostName = decodeURIComponent(rawName);
-
-    if (globalOstState?.ostId === ostId) {
-      const newIsPlaying = !globalOstState?.isPlaying;
-      const stateData = {
-        ...globalOstState,
-        isPlaying: newIsPlaying,
-      };
-      setGlobalOstState(stateData);
-      supabase
-        .from("players")
-        .upsert({
-          id: "MASTER_STATE",
-          data: { ost: stateData },
-          updated_at: new Date().toISOString(),
-        })
-        .then(({ error }) => {
-          if (error) console.error("MASTER_STATE upsert error:", error.message);
-        });
-      globalChannelRef.current
-        ?.send({
-          type: "broadcast",
-          event: "ost_update",
-          payload: stateData,
-        })
-        .catch(console.error);
-    } else {
-      const stateData = {
-        ostId,
-        name: ostName,
-        isPlaying: true,
-        volume: globalOstState?.volume ?? 1,
-        fadeIn: globalOstState?.fadeIn ?? true,
-        loop: globalOstState?.loop ?? true,
-        resetTimestamp: Date.now(),
-      };
-      setGlobalOstState(stateData);
-      supabase
-        .from("players")
-        .upsert({
-          id: "MASTER_STATE",
-          data: { ost: stateData },
-          updated_at: new Date().toISOString(),
-        })
-        .then(({ error }) => {
-          if (error) console.error("MASTER_STATE upsert error:", error.message);
-        });
-      globalChannelRef.current
-        ?.send({
-          type: "broadcast",
-          event: "ost_update",
-          payload: stateData,
-        })
-        .catch(console.error);
-    }
-  };
-
-  const handleStopOst = () => {
-    const stateData = {
-      ...globalOstState,
-      isPlaying: false,
-    };
-    setGlobalOstState(stateData);
-    supabase
-      .from("players")
-      .upsert({
-        id: "MASTER_STATE",
-        data: { ost: stateData },
-        updated_at: new Date().toISOString(),
-      })
-      .then(({ error }) => {
-        if (error) console.error("MASTER_STATE stop error:", error.message);
-      });
-    globalChannelRef.current
-      ?.send({
-        type: "broadcast",
-        event: "ost_update",
-        payload: stateData,
-      })
-      .catch(console.error);
-  };
-
-  const handleDeleteOst = async (ostId: string) => {
-    await supabase.from("players").delete().eq("id", ostId);
-    if (globalOstState?.ostId === ostId) {
-      await supabase.from("players").delete().eq("id", "MASTER_STATE");
-      const emptyState = {
-        ostId: null,
-        isPlaying: false,
-        volume: 1,
-      };
-      setGlobalOstState(emptyState);
-      globalChannelRef.current
-        ?.send({
-          type: "broadcast",
-          event: "ost_update",
-          payload: emptyState,
-        })
-        .catch(console.error);
-    }
-    fetchOsts();
-  };
-
-  const handleVolumeChange = (newVol: number) => {
-    const stateData = {
-      ...globalOstState,
-      volume: newVol,
-    };
-    setGlobalOstState(stateData);
-    supabase
-      .from("players")
-      .upsert({
-        id: "MASTER_STATE",
-        data: { ost: stateData },
-        updated_at: new Date().toISOString(),
-      })
-      .then(({ error }) => {
-        if (error) console.error("MASTER_STATE volume error:", error.message);
-      });
-    globalChannelRef.current
-      ?.send({
-        type: "broadcast",
-        event: "ost_update",
-        payload: stateData,
-      })
-      .catch(console.error);
-  };
-
-  const handleFadeToggle = (fadeIn: boolean) => {
-    const stateData = {
-      ...globalOstState,
-      fadeIn,
-    };
-    setGlobalOstState(stateData);
-    supabase
-      .from("players")
-      .upsert({
-        id: "MASTER_STATE",
-        data: { ost: stateData },
-        updated_at: new Date().toISOString(),
-      })
-      .then(({ error }) => {
-        if (error) console.error("MASTER_STATE fade error:", error.message);
-      });
-    globalChannelRef.current
-      ?.send({
-        type: "broadcast",
-        event: "ost_update",
-        payload: stateData,
-      })
-      .catch(console.error);
-  };
-
-  const handleLoopToggle = (loop: boolean) => {
-    const stateData = {
-      ...globalOstState,
-      loop,
-    };
-    setGlobalOstState(stateData);
-    supabase
-      .from("players")
-      .upsert({
-        id: "MASTER_STATE",
-        data: { ost: stateData },
-        updated_at: new Date().toISOString(),
-      })
-      .then(({ error }) => {
-        if (error) console.error("MASTER_STATE loop error:", error.message);
-      });
-    globalChannelRef.current
-      ?.send({
-        type: "broadcast",
-        event: "ost_update",
-        payload: stateData,
-      })
-      .catch(console.error);
-  };
-
   const handleApplyGameMode = async (target: "all" | string, newMode: GameMode) => {
     let updatedConfig: GameModeConfig;
     if (target === "all") {
@@ -2052,7 +1683,6 @@ export default function App() {
       await supabase.from("players").upsert({
         id: "MASTER_STATE",
         data: {
-          ...(globalOstState ? { ost: globalOstState } : {}),
           modeConfig: updatedConfig,
         },
         updated_at: new Date().toISOString(),
@@ -2111,9 +1741,7 @@ export default function App() {
               }
             : activeMode === "rl"
             ? {
-                backgroundImage: `radial-gradient(ellipse 90% 60% at 50% -10%, rgba(168, 85, 247, 0.18) 0%, rgba(30, 20, 48, 0.4) 40%, rgba(8, 8, 12, 0.92) 80%, #060609 100%), linear-gradient(180deg, rgba(8, 8, 11, 0.2) 0%, rgba(13, 11, 18, 0.45) 50%, rgba(7, 7, 10, 0.85) 100%), url(${rlBgUrl})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center bottom",
+                backgroundImage: `radial-gradient(ellipse 90% 60% at 50% -10%, rgba(168, 85, 247, 0.16) 0%, rgba(30, 20, 48, 0.35) 40%, rgba(8, 8, 12, 0.95) 80%, #060609 100%), linear-gradient(180deg, #0e0c16 0%, #090810 40%, #050508 100%)`,
                 backgroundColor: '#070609',
                 transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + 's ease-out' : '1s ease-out'}`,
               }
@@ -2302,7 +1930,6 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           )}
         </div>
       )}
-      <audio ref={audioRef} loop preload="auto" />
       
       {/* Fade Block Overlay */}
       {fadeBlockState !== null && (
@@ -2348,40 +1975,6 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       </div>
 
       <div className={`w-full min-h-screen transition-opacity duration-700 ${cutsceneState?.active ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-        {requiresInteraction && (
-        <div className="fixed inset-0 bg-black/85 z-[300] flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm">
-          <div className="bg-[#0e0e12] border border-[#26262e] rounded-none p-6 sm:p-8 max-w-md w-full shadow-2xl relative overflow-hidden text-left">
-            <div className="h-[3px] w-full bg-[var(--op-red)] absolute top-0 left-0" />
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-red-950/30 border border-red-800/40 flex items-center justify-center text-[var(--op-red-bright)] rounded-none shrink-0">
-                <ShieldAlert size={20} className="animate-pulse" />
-              </div>
-              <div>
-                <span className="text-[10px] font-mono uppercase font-bold tracking-widest text-[#72727e] block">
-                  Permissão do Navegador
-                </span>
-                <h2 className="text-base font-bold text-white uppercase tracking-wider font-mono">
-                  Conexão de Áudio Pendente
-                </h2>
-              </div>
-            </div>
-
-            <p className="text-xs text-[#8c8c96] font-mono leading-relaxed mb-6 border-b border-[#1c1c24] pb-4">
-              O Mestre sincronizou uma trilha sonora. O navegador requer interação manual inicial para autorizar a reprodução contínua do áudio.
-            </p>
-
-            <button
-              onClick={() => {
-                setRequiresInteraction(false);
-                audioRef.current?.play().catch(() => setRequiresInteraction(true));
-              }}
-              className="w-full bg-[var(--op-red)] hover:bg-[#a81d23] active:bg-[#781418] text-white font-mono font-bold text-xs uppercase tracking-widest py-3 px-6 rounded-none transition-colors cursor-pointer"
-            >
-              Autorizar e Sincronizar Áudio
-            </button>
-          </div>
-        </div>
-      )}
 
       {showUpdateLog && (
         <div className="fixed inset-0 bg-black/85 z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
@@ -3177,7 +2770,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             setActiveTab={setMestreTab}
             playersCount={players.length}
             extrasCount={extraFichas.length}
-            isOstPlaying={Boolean(globalOstState?.isPlaying)}
+            isOstPlaying={Boolean(playbackState?.is_playing)}
             onRollInitiative={handleRollAllInitiatives}
             onReturnToMainSheet={() => {
               setActiveFichaId("main");
@@ -3227,17 +2820,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           )}
 
           {mestreTab === "ost" && (
-            <MasterOstPanel
-              ostList={ostList}
-              globalOstState={globalOstState}
-              setGlobalOstState={setGlobalOstState}
-              audioRef={audioRef}
-              requiresInteraction={requiresInteraction}
-              setRequiresInteraction={setRequiresInteraction}
-              fetchOsts={fetchOsts}
-              supabase={supabase}
-              globalChannelRef={globalChannelRef}
-            />
+            <MasterOstPanel musicSync={musicSync} />
           )}
 
           {mestreTab === "extras" && (

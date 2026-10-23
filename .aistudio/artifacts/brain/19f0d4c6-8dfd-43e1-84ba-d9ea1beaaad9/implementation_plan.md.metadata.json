@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for enabling fast mathematical expressions (+, -, *) on character resource bars across player HUD and master panels with subtle validation tooltips and secure non-eval parsing.",
-  "updatedAt":  "2026-10-20T17:42:39.949723641Z",
+  "summary":  "Plano de implementação para o novo sistema de música sincronizada do Demologia Tabletop via Supabase (Realtime + Storage + Postgres) e Web Audio API.",
+  "updatedAt":  "2026-10-23T00:38:58.008588988Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

@@ -1,106 +1,124 @@
-# Fast Math Operations on Resource Bars (Demologia Tabletop)
+# Sistema de Áudio Sincronizado para Mesas de RPG (Demologia Hub)
 
-Implement an inline mathematical expression evaluator for character resource bars (HP, PE, SM/Sanity) across the player HUD and Master panels, allowing relative (`+20`, `-15`, `*2`), binary (`70+20`, `70-15`, `70*2`), and direct (`45`) integer edits without mental calculation.
+Implementação completa em TypeScript de um sistema de sincronização musical para mesas de RPG online utilizando **Supabase (PostgreSQL + Realtime + Storage)** e a **API nativa de áudio do navegador** (`HTMLAudioElement`), sem bibliotecas externas. Substitui totalmente o sistema legado baseado em base64 e eventos pontuais na tabela `players`.
 
-## User Review & Critical Decisions
+---
+
+## Revisão e Decisões Confirmadas
 
 > [!IMPORTANT]
-> Key decisions confirmed during Phase 1 clarification:
-
-- **Confirmed Decision 1 (Invalid Input Feedback)**: Show subtle red highlight with a brief, discreet tooltip badge that automatically fades after 2 seconds while preserving the original value.
-- **Confirmed Decision 2 (Scope of Implementation)**: Applied across both the active player HUD resource bars and the Master's tabletop panels (MasterPlayersView and MasterExtrasView).
-- **Confirmed Decision 3 (Strict Operator Constraints)**: Exclusively supports addition (`+`), subtraction (`-`), and multiplication (`*`). Rejects division (`/`), decimals (`.`, `,`), and letters. Zero usage of `eval()`.
-
----
-
-## 1. Overview & Core Concept
-
-- **What It Does**: Upgrades resource number editing inputs so users can type math operations directly into the field instead of calculating in their head.
-- **Target Experience**: Fast, tactical flow during combat or stressful RP scenes. Typing `+15` heals 15, `-28` applies 28 damage, and `*2` doubles current resource, updating bars and peer sync instantly.
+> Decisões alinhadas na Fase de Clarificação:
+> - **Bucket de Armazenamento**: Nomeado como `audio-tracks` no Supabase Storage com acesso público de leitura.
+> - **Escopo de Sala**: Identificador padrão `default-table`, com suporte arquitetural completo a múltiplas salas simultâneas via parâmetro de URL (`?room=id`) ou configuração de sessão.
+> - **Políticas de RLS e Permissão**: Políticas de `SELECT` abertas para todos os participantes da mesa via chave `anon`. Políticas de gravação (`INSERT`, `UPDATE`, `DELETE`) concedidas para `anon` e `authenticated`, com a trava operacional e autorização de controle restrita no aplicativo através da autenticação de Mestre (`isMestreAuth`).
 
 ---
 
-## 2. Mathematical Parser Specification (`src/utils/statMath.ts`)
+## 1. Visão Geral e Conceito Central
 
-A standalone, deterministic parser without `eval()`:
+- **O que faz**: O Mestre controla a trilha sonora da mesa (reproduzir, pausar, retomar, parar, trocar de faixa, regular volume e ativar repetição/loop). Todos os jogadores conectados na mesa escutam exatamente o mesmo trecho da música, milimetricamente sincronizados através do relógio do servidor, com correção de drift e desbloqueio silencioso de autoplay.
+- **Público-alvo**: O Mestre de jogo gerencia a biblioteca e a atmosfera; os Jogadores desfrutam da trilha sonora imersiva sem qualquer necessidade de interação visual, botões ou pop-ups intrusivos.
+- **Valor Principal**: Eliminação da limitação de arquivos de 2.5MB e lag de base64 no banco; reprodução instantânea com suporte a upload de arquivos ilimitados (mp3, ogg, wav, m4a) ou links diretos, tolerância a oscilações de rede e recuperação automática de conexão.
 
-```typescript
-export interface StatParseResult {
-  success: boolean;
-  value?: number;
-  error?: string;
-}
+---
 
-export function evaluateStatExpression(
-  input: string,
-  currentValue: number,
-  options?: { min?: number }
-): StatParseResult
+## 2. Experiência do Usuário e Design Visual
+
+### Fluxos do Mestre (Painel OST no Demologia Hub)
+- **Aba "OST" no Painel do Mestre**:
+  - Estética industrial e classificada de agência paranormal: tons `#0b0b0d` e `#151518`, acentos em carmesim (`#8f171c`), tipografia monoespaçada técnica (`JetBrains Mono`).
+  - **Reprodutor em Destaque**: Exibição da faixa atual, barra de progresso em tempo real, botões de ação tátil (Play/Pause, Stop, Loop, Slider de Volume 0-100%).
+  - **Biblioteca de Faixas**:
+    - Upload direto (áudios `.mp3`, `.ogg`, `.wav`, `.m4a`) com envio em tempo real para o bucket `audio-tracks`.
+    - Adição por Link Direto (URL HTTP/HTTPS).
+    - Ações por faixa: Reproduzir agora, Renomear, Excluir (com remoção física no Storage se for upload).
+    - Busca e filtragem rápida por nome.
+
+### Fluxo dos Jogadores (Silencioso e Invisível)
+- Nenhum componente visual, banner ou popup é exibido para os jogadores.
+- Ao entrar na mesa (`joinRoom`), o motor busca o `playback_state` atual e calcula o deslocamento temporal entre o cliente e o servidor via `server_now()`.
+- Se o áudio estiver tocando, inicia imediatamente na posição calculada: `(Date.now() + offset - started_at) / 1000`.
+- Se o navegador bloquear o autoplay (`NotAllowedError`), o sistema registra listeners silenciosos (`pointerdown`, `keydown`, `touchstart`) em `document` com `{ once: true }`. No primeiro clique ou toque do jogador no tabuleiro ou na ficha, a música começa a tocar sincronizada e os listeners são descartados.
+- Checagem a cada 60s de recalibração de relógio; se a diferença do áudio local para a posição ideal ultrapassar 0.3s, ajusta suavemente `audio.currentTime`.
+
+---
+
+## 3. Decisões de Engenharia e Trade-Offs
+
+- **Sincronização por Timestamp do Servidor (`started_at`) vs Streaming Contínuo**:
+  - *Abordagem Escolhida*: Armazenar o instante de início (`started_at`) e a posição de pausa (`paused_position`), permitindo que cada cliente compute localmente sua posição via Web Audio API.
+  - *Por que*: Consome largura de banda insignificante no banco, elimina latência de WebRTC/servidor de streaming e garante sincronia com tolerância a drift de 0.3s.
+- **Ntp-Lite para Sincronia de Relógio**:
+  - *Abordagem Escolhida*: Medição do tempo de ida e volta (RTT) na chamada RPC `server_now()`, definindo `offset = serverTime - (tReq + tResp) / 2`.
+  - *Por que*: Neutraliza diferenças de fuso horário, relógio do sistema operacional do jogador descalibrado e latência de rede.
+- **Preload Inteligente**:
+  - *Abordagem Escolhida*: Configuração de `audio.preload = 'auto'` e buffer prévio da faixa ativa para transições rápidas.
+
+---
+
+## 4. Arquitetura Técnica e Diagrama de Componentes
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        SUPABASE POSTGRESQL                             │
+│  ┌───────────────────────┐             ┌─────────────────────────────┐ │
+│  │     tracks            │             │       playback_state        │ │
+│  │ (id, room_id, name,   │             │ (id, room_id, track_url,    │ │
+│  │  url, source, etc.)   │             │  started_at, is_playing,    │ │
+│  └───────────┬───────────┘             │  paused_pos, volume, loop)  │ │
+│              │                         └──────────────┬──────────────┘ │
+│              │ Realtime Broadcast                     │ Realtime       │
+└──────────────┼────────────────────────────────────────┼────────────────┘
+               │                                        │
+               ▼                                        ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                 CLIENT ENGINE (src/services/musicSync.ts)               │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │                         MusicSync Class                          │  │
+│  │  - joinRoom(roomId, isMaster)                                    │  │
+│  │  - syncClock(): RPC server_now() com compensação de RTT          │  │
+│  │  - Realtime Channel ('room_audio_<roomId>')                      │  │
+│  │  - HTMLAudioElement único + Autoplay Blocker Handler             │  │
+│  │  - Drift Correction Loop (tolerância: 0.3s)                      │  │
+│  │  - Métodos do Mestre: playTrack, pause, resume, stop, etc.       │  │
+│  └───────────────────▲──────────────────────────────▲───────────────┘  │
+│                      │                              │                  │
+│       Controle do    │                              │ Sincronização    │
+│       Mestre         │                              │ Silenciosa       │
+│                      │                              │                  │
+│  ┌───────────────────┴───────────────┐  ┌───────────┴───────────────┐  │
+│  │      MasterOstPanel.tsx           │  │      App.tsx (Raiz)       │  │
+│  │  - Lista de faixas & Busca        │  │  - Inicializa MusicSync   │  │
+│  │  - Upload Storage (sem limite)    │  │  - Todos os jogadores     │  │
+│  │  - Link externo (.mp3/.ogg)       │  │  - Sem UI para jogador    │  │
+│  │  - Controles (Play/Stop/Vol/Loop) │  │  - Resiliente e invisível │  │
+│  └───────────────────────────────────┘  └───────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Parsing Rules
-
-1. **Rejection Filter**:
-   - If input is empty or whitespace $\rightarrow$ `"Campo vazio"`.
-   - If input contains `/`, `.` or `,` $\rightarrow$ `"Divisões e decimais não permitidos"`.
-   - If input contains letters or invalid symbols $\rightarrow$ `"Entrada inválida"`.
-2. **Pattern A: Relative Operation (`+N`, `-N`, `*N`)**:
-   - Matches `/^([+\-*])\s*(\d+)$/`.
-   - Applies operand to `currentValue`.
-   - Example: `70` with `+20` $\rightarrow$ `90`; `70` with `-15` $\rightarrow$ `55`; `70` with `*2` $\rightarrow$ `140`.
-3. **Pattern B: Binary Operation (`A+B`, `A-B`, `A*B`)**:
-   - Matches `/^(\d+)\s*([+\-*])\s*(\d+)$/`.
-   - Evaluates left and right integer operands.
-   - Example: `70+20` $\rightarrow$ `90`; `70-15` $\rightarrow$ `55`; `70*2` $\rightarrow$ `140`.
-4. **Pattern C: Direct Integer (`N`)**:
-   - Matches `/^(\d+)$/`.
-   - Sets exact value directly.
-   - Example: `45` $\rightarrow$ `45`.
-5. **Clamping & Bounds**:
-   - Lower bound clamped to $\ge 0$ (resources cannot be negative).
-   - Operands and results are strictly integers (`Math.round`).
-
 ---
 
-## 3. Component Architecture & UI Upgrades
+## 5. Plano de Execução em Fases
 
-### `src/components/StatMathInput.tsx` (Reusable Component)
-
-Replaces and standardizes `MestreStatInput`:
-- Uses `type="text"` to allow typing arithmetic operators without native browser number constraints.
-- Shows current numeric value when unfocused.
-- On Focus: allows editing with full cursor flexibility.
-- On Enter or Blur:
-  - Validates and calculates via `evaluateStatExpression`.
-  - On Success: calls `onSave(result)` immediately, updates visual bar width and state, and formats field back to final integer.
-  - On Error: shows subtle red border highlight and a compact floating error badge (`-top-6 left-1/2 -translate-x-1/2`) with the error reason, reverting field to previous value after 2 seconds.
-- On Escape: reverts without saving.
-
-### Integration Points
-
-1. **Player HUD (`src/App.tsx`)**:
-   - `HP: Current / Max`
-   - `PE: Current / Max` (Demologia mode)
-   - `SM: Current / Max` (Real L mode)
-   - Custom Variables in Sheet
-2. **Master Tabletop Panels**:
-   - `src/components/MasterPlayersView.tsx`: Player HP, PE, SM current values in desktop table and mobile list cards.
-   - `src/components/MasterExtrasView.tsx`: Extra NPC/Monster sheets HP, PE, SM current values.
-
----
-
-## 4. Test Verification Matrix
-
-| Current | Input | Expected Output | Status |
-|---:|---|---:|:---:|
-| 70 | `+20` | `90` | Valid Relative Addition |
-| 70 | `-15` | `55` | Valid Relative Subtraction |
-| 70 | `*2` | `140` | Valid Relative Multiplication |
-| 70 | `70+20` | `90` | Valid Binary Addition |
-| 70 | `70-15` | `55` | Valid Binary Subtraction |
-| 70 | `70*2` | `140` | Valid Binary Multiplication |
-| 70 | `45` | `45` | Valid Direct Assignment |
-| 70 | `abc` | Rejected, keeps `70`, shows tooltip | Expected Rejection |
-| 70 | `70/2` | Rejected, keeps `70`, shows tooltip | Expected Rejection |
-| 70 | `70.5` | Rejected, keeps `70`, shows tooltip | Expected Rejection |
-| 70 | `-100` | `0` (clamped min) | Lower Bound Guard |
+1. **Geração do Script SQL Completo (`supabase_music_sync.sql`)**:
+   - `DROP` das estruturas legadas de música.
+   - Criação da tabela `playback_state` e `tracks` com índices e restrições.
+   - Criação da função RPC `server_now()`.
+   - Habilitação no `supabase_realtime` publication.
+   - Políticas RLS para `playback_state`, `tracks` e bucket do Supabase Storage `audio-tracks`.
+2. **Construção do Módulo Central (`src/services/musicSync.ts`)**:
+   - Tipagem estrita de `PlaybackState`, `Track`, `MusicSyncOptions`.
+   - Classe `MusicSync` encapsulando conexão, sincronia de relógio a cada 60s, manipulação de `HTMLAudioElement`, listeners de autoplay desbloqueado e reconexão automática.
+   - Métodos do Mestre com tratamento de erro e `try/catch`.
+   - Comentários detalhados em português.
+3. **Criação do Novo Painel do Mestre (`src/components/MasterOstPanel.tsx`)**:
+   - Interface renovada na estética de agência confidencial do Demologia Hub.
+   - Integração com `MusicSync` para upload sem limites no bucket `audio-tracks`, cadastro de links externos, play/pause/stop/volume/loop e exclusão.
+4. **Limpeza do Sistema Legado e Integração Global no `src/App.tsx`**:
+   - Remover métodos antigos de manipulação de base64 e listeners `ost_update` manuais no canal de broadcast.
+   - Inicializar a instância de `MusicSync` conectada à sala atual para todos os usuários (jogadores e mestre).
+   - Manter reprodução de fundo contínua e desacoplada da navegação de abas.
+5. **Verificação e Testes**:
+   - Verificação de tipos via `lint_applet` e compilação com `compile_applet`.
+   - Validação de que não há bibliotecas adicionais externas de áudio.
