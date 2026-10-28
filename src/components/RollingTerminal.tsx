@@ -37,7 +37,7 @@ export function RollingTerminal({
         <button
           type="button"
           onClick={() => setShowHistory((prev) => !prev)}
-          className={`text-[11px] font-mono px-2.5 py-1.5 min-h-[36px] rounded-none border cursor-pointer transition-colors flex items-center gap-1.5 font-normal touch-manipulation select-none ${
+          className={`text-[11px] font-mono px-3 py-1.5 min-h-[44px] sm:min-h-[38px] rounded-none border cursor-pointer transition-colors flex items-center gap-1.5 font-normal touch-manipulation select-none ${
             isRlMode
               ? "bg-[#181228] hover:bg-[#251a3d] border-purple-500/30 text-[#d8b4fe] hover:text-white"
               : "bg-[#131318] hover:bg-[#1c1c24] border-[var(--op-border)] text-[var(--op-text-muted)] hover:text-white"

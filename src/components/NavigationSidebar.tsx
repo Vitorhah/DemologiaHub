@@ -1,10 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  Home,
   User,
-  Sparkles,
   Dices,
-  Package,
   ShieldAlert,
   Radio,
   Maximize,
@@ -13,10 +10,8 @@ import {
   MessageSquare,
   Flame,
   EyeOff,
-  Download,
-  Upload,
-  Trash2,
-  RotateCcw,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { GameMode } from "../types";
 import demologiaLogoUrl from "../assets/demologia_logo.png";
@@ -32,10 +27,7 @@ export interface NavigationSidebarProps {
   setShowUpdateLog: (show: boolean) => void;
   gameMode?: GameMode;
   onOpenModeModal?: () => void;
-  onExportData?: () => void;
-  onImportData?: () => void;
-  onClearHistory?: () => void;
-  onResetData?: () => void;
+  isOnline?: boolean;
 }
 
 export function NavigationSidebar({
@@ -49,15 +41,13 @@ export function NavigationSidebar({
   setShowUpdateLog,
   gameMode = "demologia",
   onOpenModeModal,
-  onExportData,
-  onImportData,
-  onClearHistory,
-  onResetData,
+  isOnline = false,
 }: NavigationSidebarProps) {
   const isRlMode = gameMode === "rl";
-  const [confirmClear, setConfirmClear] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
-  // Fecha com a tecla Esc
+  const [collapsed, setCollapsed] = useState(false);
+  const touchStartXRef = useRef<number | null>(null);
+
+  // Fecha com a tecla Esc e trava o scroll do body quando a gaveta mobile está aberta
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && menuOpen) {
@@ -65,10 +55,32 @@ export function NavigationSidebar({
       }
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+
+    if (menuOpen && window.innerWidth < 1024) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = "";
+    };
   }, [menuOpen, setMenuOpen]);
 
-  // Rola suavemente até uma seção específica dentro da ficha se já estiver na página
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0]?.clientX ?? null;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null) return;
+    const endX = e.changedTouches[0]?.clientX ?? touchStartXRef.current;
+    if (endX - touchStartXRef.current < -45) {
+      setMenuOpen(false);
+    }
+    touchStartXRef.current = null;
+  };
+
   const scrollToSection = (sectionSelector?: string) => {
     if (sectionSelector) {
       setTimeout(() => {
@@ -76,7 +88,7 @@ export function NavigationSidebar({
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "start" });
         }
-      }, 50);
+      }, 40);
     } else {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -84,17 +96,17 @@ export function NavigationSidebar({
 
   const handleNavClick = (action: () => void) => {
     action();
-    // Fecha o menu gaveta ao selecionar um item
     setMenuOpen(false);
   };
 
-  // Grupo 1: Ficha do Agente
-  const agentNavItems = [
+  const isSheetPage = currentPage === "ficha" || currentPage === "ficha_extra";
+
+  const navItems = [
     {
-      id: "inicio",
-      label: "Início",
-      icon: Home,
-      isActive: currentPage === "ficha",
+      id: "ficha",
+      label: "Ficha",
+      icon: User,
+      isActive: isSheetPage,
       onClick: () => {
         setActiveFichaId("main");
         setCurrentPage("ficha");
@@ -102,100 +114,38 @@ export function NavigationSidebar({
       },
     },
     {
-      id: "personagem",
-      label: "Personagem",
-      icon: User,
-      isActive: currentPage === "ficha",
-      onClick: () => {
-        setActiveFichaId("main");
-        setCurrentPage("ficha");
-        scrollToSection(".hud-container");
-      },
-    },
-    ...(!isRlMode
-      ? [
-          {
-            id: "tecnicas",
-            label: "Técnicas",
-            icon: Sparkles,
-            isActive: false,
-            onClick: () => {
-              setActiveFichaId("main");
-              setCurrentPage("ficha");
-              scrollToSection(".skill-list");
-            },
-          },
-        ]
-      : []),
-    {
-      id: "inventario",
-      label: "Inventário",
-      icon: Package,
-      isActive: false,
-      onClick: () => {
-        setActiveFichaId("main");
-        setCurrentPage("ficha");
-        scrollToSection(".inv-grid");
-      },
-    },
-  ];
-
-  // Grupo 2: Sistema e Operações
-  const systemNavItems = [
-    {
       id: "dados",
-      label: "Rolar dados",
+      label: "Dados",
       icon: Dices,
       isActive: currentPage === "oraculo",
-      onClick: () => {
-        setCurrentPage("oraculo");
-      },
+      onClick: () => setCurrentPage("oraculo"),
     },
     {
       id: "chat",
-      label: "Chat da Mesa",
+      label: "Chat",
       icon: MessageSquare,
       isActive: currentPage === "chat",
-      onClick: () => {
-        setCurrentPage("chat");
-      },
-    },
-    {
-      id: "conexao",
-      label: "Conexão",
-      icon: Radio,
-      isActive: currentPage === "conexao",
-      onClick: () => {
-        setCurrentPage("conexao");
-      },
+      onClick: () => setCurrentPage("chat"),
     },
     ...(isRlMode
       ? [
           {
             id: "caderno",
-            label: "Caderno de Campo",
+            label: "Caderno",
             icon: FileText,
             isActive: currentPage === "caderno",
-            onClick: () => {
-              setCurrentPage("caderno");
-            },
+            onClick: () => setCurrentPage("caderno"),
           },
         ]
       : []),
-    ...(isMestreAuth && onOpenModeModal
-      ? [
-          {
-            id: "tema",
-            label: isRlMode ? "Tema: Real L" : "Tema: Demologia",
-            icon: isRlMode ? EyeOff : Flame,
-            isActive: false,
-            onClick: () => {
-              onOpenModeModal();
-              setMenuOpen(false);
-            },
-          },
-        ]
-      : []),
+    {
+      id: "conexao",
+      label: "Conexão",
+      icon: Radio,
+      isActive: currentPage === "conexao",
+      statusDot: isOnline ? "online" : "offline",
+      onClick: () => setCurrentPage("conexao"),
+    },
     {
       id: "mestre",
       label: "Mestre",
@@ -211,286 +161,262 @@ export function NavigationSidebar({
     },
   ];
 
+  const sheetQuickJumps = [
+    { label: "Status", selector: ".hud-container" },
+    ...(!isRlMode ? [{ label: "Skills", selector: ".skills-section" }] : []),
+    { label: "Itens", selector: ".inv-grid" },
+  ];
+
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-      }
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
     }
   };
 
-  const renderNavButton = (item: {
-    id: string;
-    label: string;
-    icon: React.ElementType;
-    isActive: boolean;
-    onClick: () => void;
-  }) => {
-    const Icon = item.icon;
-    const active = item.isActive;
-
-    return (
-      <button
-        key={item.id}
-        type="button"
-        onClick={() => handleNavClick(item.onClick)}
-        aria-current={active ? "page" : undefined}
-        className={`group relative w-full flex items-center justify-between px-3.5 py-2.5 rounded-none text-xs font-mono tracking-wider uppercase transition-all duration-150 cursor-pointer text-left min-h-[46px] select-none ${
-          active
-            ? isRlMode
-              ? "bg-gradient-to-r from-purple-950/60 via-purple-900/30 to-purple-950/10 text-white border border-purple-400/70 outline outline-1 outline-white/30 font-bold shadow-[0_0_15px_rgba(168,85,247,0.25)]"
-              : "bg-gradient-to-r from-[rgba(181,42,48,0.35)] via-[rgba(143,23,28,0.22)] to-[rgba(181,42,48,0.06)] text-white border border-[var(--op-red)] outline outline-1 outline-[var(--op-red-bright)]/50 font-bold shadow-[0_0_12px_rgba(181,42,48,0.25)]"
-            : "bg-gradient-to-r from-[#121218] to-[#0e0e13] hover:from-[#181822] hover:to-[#121218] text-[#9ca3af] hover:text-white border border-[#202028] hover:border-[#3a3a48] outline outline-1 outline-[#16161f] hover:outline-[#444456]"
-        } focus-visible:outline-none focus-visible:outline-[var(--op-red-bright)]`}
-      >
-        {/* Ícone e Rótulo */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div
-            className={`w-7 h-7 rounded-none flex items-center justify-center shrink-0 transition-colors duration-150 ${
-              active
-                ? isRlMode
-                  ? "bg-purple-500/20 text-purple-300 outline outline-1 outline-purple-400/40"
-                  : "bg-[var(--op-red-bright)]/25 text-[var(--op-red-bright)] outline outline-1 outline-[var(--op-red-bright)]/40"
-                : "bg-white/[0.03] text-[#828392] group-hover:text-white group-hover:bg-white/[0.06] outline outline-1 outline-white/[0.06]"
-            }`}
-          >
-            <Icon size={15} />
-          </div>
-          <span className="truncate text-xs tracking-wider">
-            {item.label}
-          </span>
-        </div>
-
-        {/* Indicador sutil de item ativo */}
-        {active && (
-          <div className="flex items-center shrink-0 pl-2">
-            <span
-              className={`w-1.5 h-1.5 rounded-none outline outline-1 ${
-                isRlMode
-                  ? "bg-purple-400 outline-white/80 shadow-[0_0_8px_rgba(168,85,247,0.8),0_0_2px_#fff]"
-                  : "bg-[var(--op-red-bright)] outline-[var(--op-red)]/60 shadow-[0_0_6px_rgba(181,42,48,0.85)]"
-              }`}
-              aria-hidden="true"
-            />
-          </div>
-        )}
-      </button>
-    );
-  };
-
   return (
-    <aside aria-label="Menu de Navegação Principal">
-      {/* 1. Backdrop escuro com blur moderno */}
+    <aside
+      aria-label="Menu de Navegação Principal"
+      className={`${
+        collapsed ? "lg:w-[68px]" : "lg:w-56 xl:w-60"
+      } lg:shrink-0 lg:sticky lg:top-0 lg:h-[100dvh] lg:z-30 transition-[width] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-[width]`}
+    >
+      {/* Backdrop mobile com fade escuro de opacidade reduzida e desfoque */}
       <div
-        className={`fixed inset-0 z-50 bg-black/65 backdrop-blur-sm transition-opacity duration-200 ${
+        className={`fixed inset-0 z-50 bg-[#06060a]/55 backdrop-blur-md transition-opacity duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] lg:hidden ${
           menuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
         onClick={() => setMenuOpen(false)}
         aria-hidden="true"
       />
 
-      {/* 2. Gaveta lateral deslizante otimizada para Mobile (WebView) e Desktop */}
+      {/* Gaveta mobile & Sidebar dinâmica no Desktop */}
       <div
-        className={`fixed top-0 left-0 bottom-0 z-50 w-72 sm:w-80 max-w-[85vw] bg-[#0c0c10] border-r border-[#1f1f26] outline outline-1 outline-[#16161d] flex flex-col justify-between p-4 sm:p-5 shadow-2xl transition-transform duration-200 ease-out select-none ${
-          menuOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className={`fixed top-0 left-0 bottom-0 z-50 w-64 max-w-[82vw] lg:static lg:w-full lg:max-w-none lg:h-[100dvh] bg-[#0a0a0e]/95 backdrop-blur-md border-r border-[#1c1c24] flex flex-col justify-between p-3 shadow-2xl lg:shadow-none transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform select-none ${
+          menuOpen
+            ? "translate-x-0 pointer-events-auto"
+            : "-translate-x-full pointer-events-none lg:translate-x-0 lg:pointer-events-auto"
         }`}
         style={{
-          paddingTop: "max(1.25rem, env(safe-area-inset-top, 1.25rem))",
-          paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))",
+          paddingTop: "max(0.875rem, env(safe-area-inset-top, 0.875rem))",
+          paddingBottom: "max(0.875rem, env(safe-area-inset-bottom, 0.875rem))",
         }}
-        role="dialog"
-        aria-modal="true"
+        role="navigation"
         aria-label="Painel de Navegação"
       >
-        {/* PARTE SUPERIOR: CABEÇALHO & LISTA DE NAVEGAÇÃO */}
+        {/* TOPO: Marca + Seletor de Modo + Colapsar/Fechar */}
         <div className="flex flex-col flex-1 overflow-hidden">
-          {/* CABEÇALHO DO MENU */}
-          <div className="flex items-center justify-between pb-3.5 mb-2 border-b border-[#1c1c24] shrink-0">
-            <div className="flex items-center gap-2.5">
+          <div
+            className={`flex items-center ${
+              collapsed ? "lg:justify-center" : "justify-between"
+            } pb-3 mb-3 border-b border-[#181820] shrink-0 gap-2`}
+          >
+            <button
+              type="button"
+              onClick={() =>
+                handleNavClick(() => {
+                  setActiveFichaId("main");
+                  setCurrentPage("ficha");
+                  scrollToSection();
+                })
+              }
+              className={`flex items-center gap-2.5 min-w-0 cursor-pointer group active:scale-[0.98] transition-transform duration-150 ${
+                collapsed ? "lg:hidden" : ""
+              }`}
+              title="Ir para a Ficha"
+            >
               <img
                 src={demologiaLogoUrl}
-                alt="Logo Demologia"
-                className="w-5 h-5 object-cover rounded-none border border-[#2a2a34]"
+                alt="Demologia"
+                className="w-6 h-6 object-cover rounded-none border border-[#2a2a34] group-hover:border-[var(--op-red)] transition-colors duration-200 shrink-0"
               />
-              <span className="font-mono text-xs font-bold tracking-[0.2em] text-[#eeeeee] uppercase">
-                Menu
+              <span className="font-mono text-xs font-bold tracking-[0.18em] text-[#eeeeee] uppercase truncate">
+                Demologya
               </span>
-            </div>
+            </button>
 
-            <div className="flex items-center gap-2">
-              {isMestreAuth && onOpenModeModal ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenModeModal();
-                    setMenuOpen(false);
-                  }}
-                  className={`text-[9px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-none border transition-all cursor-pointer flex items-center gap-1 ${
-                    isRlMode
-                      ? "bg-purple-950/50 hover:bg-purple-900/70 text-purple-200 border-purple-400/50 shadow-[0_0_8px_rgba(168,85,247,0.25)]"
-                      : "bg-[var(--op-red)]/20 hover:bg-[var(--op-red)]/40 text-[var(--op-red-bright)] border-[var(--op-red)]/40"
-                  }`}
-                  title="Mestre: Clique para trocar tema / modo de jogo"
-                >
-                  <span>{isRlMode ? "Real L" : "Demologia"}</span>
-                  <span className="opacity-70 text-[8px]">⇄</span>
-                </button>
-              ) : (
-                <span
-                  className={`text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-none border ${
-                    isRlMode
-                      ? "bg-purple-950/40 text-purple-200 border-purple-400/50 shadow-[0_0_8px_rgba(168,85,247,0.25)]"
-                      : "bg-[var(--op-red)]/20 text-[var(--op-red-bright)] border-[var(--op-red)]/40"
-                  }`}
-                  title="Modo de Jogo Atual (Definido pelo Mestre)"
-                >
-                  {isRlMode ? "Real L" : "Demologia"}
-                </span>
-              )}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {!collapsed &&
+                (isMestreAuth && onOpenModeModal ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenModeModal();
+                      setMenuOpen(false);
+                    }}
+                    className={`min-h-[30px] text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-none border transition-all duration-150 active:scale-95 cursor-pointer flex items-center gap-1 ${
+                      isRlMode
+                        ? "bg-purple-950/50 hover:bg-purple-900/70 text-purple-200 border-purple-500/40"
+                        : "bg-[var(--op-red)]/15 hover:bg-[var(--op-red)]/30 text-[var(--op-red-bright)] border-[var(--op-red)]/35"
+                    }`}
+                    title="Alternar modo de jogo"
+                  >
+                    {isRlMode ? <EyeOff size={11} /> : <Flame size={11} />}
+                    <span>{isRlMode ? "RL" : "Demo"}</span>
+                  </button>
+                ) : null)}
 
+              {/* Botão colapsar (somente PC) */}
+              <button
+                type="button"
+                onClick={() => setCollapsed((prev) => !prev)}
+                className="hidden lg:flex w-9 h-9 items-center justify-center text-[#787988] hover:text-white hover:bg-white/[0.05] active:scale-95 rounded-none transition-all duration-150 cursor-pointer"
+                title={collapsed ? "Expandir menu" : "Recolher menu"}
+                aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+              >
+                {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+              </button>
+
+              {/* Botão fechar (somente Mobile) */}
               <button
                 type="button"
                 onClick={() => setMenuOpen(false)}
-                className="w-8 h-8 rounded-none flex items-center justify-center text-[#9ca3af] hover:text-white bg-[#121217] hover:bg-[#181820] border border-[#22222a] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] transition-all cursor-pointer"
+                className="lg:hidden min-w-[44px] min-h-[44px] rounded-none flex items-center justify-center text-[#9ca3af] hover:text-white active:scale-95 bg-[#121217] border border-[#22222a] transition-all duration-150 cursor-pointer touch-manipulation"
                 aria-label="Fechar menu"
-                title="Fechar (Esc)"
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
           </div>
 
-          {/* ITENS DE NAVEGAÇÃO COM ROLAGEM SUAVE TOUCH-FRIENDLY */}
-          <div className="flex-1 overflow-y-auto overscroll-contain pr-1 py-2 space-y-4">
-            {/* SEÇÃO: AGENTE */}
-            <div>
-              <span className="text-[10px] font-mono font-bold tracking-[0.2em] text-[#636471] uppercase px-1 block mb-2">
-                Agente
-              </span>
-              <nav className="flex flex-col space-y-1.5" aria-label="Rotas do Agente">
-                {agentNavItems.map(renderNavButton)}
-              </nav>
-            </div>
+          {/* LISTA PRINCIPAL DE NAVEGAÇÃO */}
+          <nav
+            className="flex-1 overflow-y-auto overscroll-contain space-y-1"
+            aria-label="Navegação Principal"
+          >
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const active = item.isActive;
 
-            {/* SEÇÃO: SISTEMA */}
-            <div>
-              <span className="text-[10px] font-mono font-bold tracking-[0.2em] text-[#636471] uppercase px-1 block mb-2">
-                Sistema
-              </span>
-              <nav className="flex flex-col space-y-1.5" aria-label="Rotas do Sistema">
-                {systemNavItems.map(renderNavButton)}
-              </nav>
-            </div>
+              return (
+                <div key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => handleNavClick(item.onClick)}
+                    aria-current={active ? "page" : undefined}
+                    title={collapsed ? item.label : undefined}
+                    className={`group relative w-full flex items-center ${
+                      collapsed ? "lg:justify-center lg:px-0" : "justify-between px-3"
+                    } py-2.5 min-h-[44px] rounded-none text-xs font-mono tracking-wider uppercase transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] cursor-pointer select-none touch-manipulation ${
+                      active
+                        ? isRlMode
+                          ? "bg-purple-950/40 text-white font-bold"
+                          : "bg-[rgba(181,42,48,0.16)] text-white font-bold"
+                        : "text-[#8e90a0] hover:text-white hover:bg-white/[0.03]"
+                    }`}
+                  >
+                    {/* Barra vertical dinâmica de item ativo */}
+                    <span
+                      className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] origin-center transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                        active
+                          ? isRlMode
+                            ? "bg-[#c084fc] shadow-[0_0_8px_#a855f7] opacity-100 scale-y-100"
+                            : "bg-[var(--op-red-bright)] shadow-[0_0_8px_#b81d24] opacity-100 scale-y-100"
+                          : "opacity-0 scale-y-0 group-hover:opacity-40 group-hover:scale-y-50 bg-white/40"
+                      }`}
+                    />
 
-            {/* SEÇÃO: DADOS DA FICHA / BACKUP */}
-            {(onExportData || onImportData || onResetData || onClearHistory) && (
-              <div>
-                <span className="text-[10px] font-mono font-bold tracking-[0.2em] text-[#636471] uppercase px-1 block mb-2">
-                  Dados & Backup
-                </span>
-                <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
-                  {onExportData && (
-                    <button
-                      type="button"
-                      onClick={onExportData}
-                      className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-none bg-[#111116] hover:bg-[#181822] text-[#c0c0cc] hover:text-white border border-[#22222c] hover:border-[#383848] transition-colors cursor-pointer text-center uppercase tracking-wider"
-                      title="Exportar dados da ficha em JSON"
+                    <div
+                      className={`flex items-center gap-3 min-w-0 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                        collapsed ? "" : "group-hover:translate-x-0.5"
+                      }`}
                     >
-                      <Download size={13} className="text-[#888898]" />
-                      <span>Exportar</span>
-                    </button>
-                  )}
-                  {onImportData && (
-                    <button
-                      type="button"
-                      onClick={onImportData}
-                      className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-none bg-[#111116] hover:bg-[#181822] text-[#c0c0cc] hover:text-white border border-[#22222c] hover:border-[#383848] transition-colors cursor-pointer text-center uppercase tracking-wider"
-                      title="Importar dados da ficha via JSON"
+                      <div className="relative flex items-center justify-center shrink-0 transition-transform duration-200 ease-out group-hover:scale-105 group-active:scale-95">
+                        <Icon
+                          size={17}
+                          className={
+                            active
+                              ? isRlMode
+                                ? "text-[#c084fc]"
+                                : "text-[var(--op-red-bright)]"
+                              : "text-[#7c7d8c] group-hover:text-white transition-colors duration-150"
+                          }
+                        />
+                        {item.statusDot && (
+                          <span
+                            className={`
+                              absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#0a0a0e]
+                              ${
+                                item.statusDot === "online"
+                                  ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
+                                  : "bg-[#555666]"
+                              }
+                            `}
+                          />
+                        )}
+                      </div>
+                      <span
+                        className={`truncate text-xs tracking-wider transition-opacity duration-150 ${
+                          collapsed ? "lg:hidden" : ""
+                        }`}
+                      >
+                        {item.label}
+                      </span>
+                    </div>
+                  </button>
+
+                  {/* Sub-atalhos dinâmicos da Ficha (aparecem apenas quando na Ficha e menu expandido) */}
+                  {item.id === "ficha" && active && (
+                    <div
+                      className={`grid grid-cols-3 gap-1 pt-1 pb-1.5 pl-3 pr-1 animate-subitems-in ${
+                        collapsed ? "lg:hidden" : ""
+                      }`}
                     >
-                      <Upload size={13} className="text-[#888898]" />
-                      <span>Importar</span>
-                    </button>
-                  )}
-                  {onClearHistory && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!confirmClear) {
-                          setConfirmClear(true);
-                          setTimeout(() => setConfirmClear(false), 3000);
-                        } else {
-                          onClearHistory();
-                          setConfirmClear(false);
-                        }
-                      }}
-                      className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-none bg-[#111116] hover:bg-[#181822] text-[#d97706] hover:text-[#fbbf24] border border-[#2a2215] hover:border-[#45331e] transition-colors cursor-pointer text-center uppercase tracking-wider"
-                      title="Limpar histórico de rolagens"
-                    >
-                      <Trash2 size={13} />
-                      <span>{confirmClear ? "Confirmar" : "Histórico"}</span>
-                    </button>
-                  )}
-                  {onResetData && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!confirmReset) {
-                          setConfirmReset(true);
-                          setTimeout(() => setConfirmReset(false), 3000);
-                        } else {
-                          onResetData();
-                          setConfirmReset(false);
-                        }
-                      }}
-                      className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-none bg-[#161012] hover:bg-[#201215] text-[#e11d48] hover:text-[#f43f5e] border border-[#38151c] hover:border-[#521c27] transition-colors cursor-pointer text-center uppercase tracking-wider"
-                      title="Resetar todos os dados da ficha"
-                    >
-                      <RotateCcw size={13} />
-                      <span>{confirmReset ? "Confirmar" : "Resetar"}</span>
-                    </button>
+                      {sheetQuickJumps.map((jump) => (
+                        <button
+                          key={jump.label}
+                          type="button"
+                          onClick={() =>
+                            handleNavClick(() => {
+                              scrollToSection(jump.selector);
+                            })
+                          }
+                          className="min-h-[32px] px-1.5 py-1 text-[10px] font-mono uppercase tracking-wider text-[#828392] hover:text-white bg-[#111117] hover:bg-[#191922] active:scale-95 border border-[#1e1e28] rounded-none transition-all duration-150 cursor-pointer text-center truncate touch-manipulation"
+                        >
+                          {jump.label}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
-              </div>
-            )}
-          </div>
+              );
+            })}
+          </nav>
         </div>
 
-        {/* PARTE INFERIOR: CITAÇÃO SUTIL & UTILITÁRIOS */}
-        <div className="pt-3.5 space-y-3 border-t border-[#1c1c24] shrink-0">
-          {/* Citação reflexiva */}
-          <div className="px-3 py-2.5 rounded-none bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820]">
-            <p className="text-[10px] font-mono text-[#828392] italic leading-relaxed text-center">
-              &ldquo;O mundo é cruel, mas ainda há pessoas que sorriem.&rdquo;
-            </p>
-          </div>
+        {/* RODAPÉ MINIMALISTA: Tela Cheia & Logs */}
+        <div
+          className={`pt-2.5 border-t border-[#181820] shrink-0 flex ${
+            collapsed ? "lg:flex-col" : "flex-row"
+          } gap-1.5`}
+        >
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="flex-1 flex items-center justify-center gap-1.5 min-h-[40px] px-2 rounded-none bg-[#101015] hover:bg-[#17171f] active:scale-95 text-[#828392] hover:text-white border border-[#1e1e26] transition-all cursor-pointer text-[11px] font-mono uppercase touch-manipulation"
+            title="Tela cheia"
+            aria-label="Alternar Tela Cheia"
+          >
+            <Maximize size={14} className="shrink-0" />
+            <span className={collapsed ? "lg:hidden" : ""}>Tela</span>
+          </button>
 
-          {/* Ações secundárias: Tela cheia e Logs */}
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              className="flex items-center justify-center gap-2 h-9 px-3 rounded-none bg-[#111116] hover:bg-[#16161d] text-[#9ca3af] hover:text-white border border-[#202028] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] transition-all cursor-pointer text-[11px] font-mono uppercase"
-              title="Alternar Tela Cheia"
-            >
-              <Maximize size={14} className="text-[#767786]" />
-              <span>Tela cheia</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setShowUpdateLog(true);
-                setMenuOpen(false);
-              }}
-              className="flex items-center justify-center gap-2 h-9 px-3 rounded-none bg-[#111116] hover:bg-[#16161d] text-[#9ca3af] hover:text-white border border-[#202028] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] transition-all cursor-pointer text-[11px] font-mono uppercase"
-              title="Ver Histórico de Atualizações"
-            >
-              <FileText size={14} className="text-[#767786]" />
-              <span>Logs</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setShowUpdateLog(true);
+              setMenuOpen(false);
+            }}
+            className="flex-1 flex items-center justify-center gap-1.5 min-h-[40px] px-2 rounded-none bg-[#101015] hover:bg-[#17171f] active:scale-95 text-[#828392] hover:text-white border border-[#1e1e26] transition-all cursor-pointer text-[11px] font-mono uppercase touch-manipulation"
+            title="Histórico de Atualizações"
+            aria-label="Histórico de Atualizações"
+          >
+            <FileText size={14} className="shrink-0" />
+            <span className={collapsed ? "lg:hidden" : ""}>Logs</span>
+          </button>
         </div>
       </div>
     </aside>

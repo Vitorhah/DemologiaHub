@@ -296,6 +296,13 @@ export default function App() {
 
   const musicSync = useMemo(() => new MusicSync(supabase), []);
   const [playbackState, setPlaybackState] = useState<PlaybackState | null>(null);
+  const [ostAudioAccepted, setOstAudioAccepted] = useState(false);
+
+  const handleUnlockOstAudio = () => {
+    if (ostAudioAccepted) return;
+    musicSync.unlockAudio();
+    setOstAudioAccepted(true);
+  };
 
   const [cutsceneState, setCutsceneState] = useState<any>(null);
   const [fadeBlockState, setFadeBlockState] = useState<any>(null);
@@ -307,6 +314,7 @@ export default function App() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showUpdateLog, setShowUpdateLog] = useState(false);
   const [playerToKick, setPlayerToKick] = useState<any>(null);
+  const [showClearChatModal, setShowClearChatModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState(false);
   const [supabaseConfigError, setSupabaseConfigError] = useState<string | null>(null);
@@ -1641,19 +1649,18 @@ export default function App() {
     setInitiatives((prev) => ({ ...prev, ...newInits }));
   };
 
-  const handleClearChatHistory = async () => {
-    if (
-      window.confirm(
-        "Mestre, deseja realmente limpar todo o histórico do Chat da Mesa para todos os jogadores?",
-      )
-    ) {
-      try {
-        const currentRoom =
-          localStorage.getItem("demologia_current_room_id") || "mesa_principal";
-        await clearMessages(currentRoom, isOnline);
-      } catch (err) {
-        console.error("Erro ao limpar histórico do chat:", err);
-      }
+  const handleClearChatHistory = () => {
+    setShowClearChatModal(true);
+  };
+
+  const confirmClearChatHistory = async () => {
+    setShowClearChatModal(false);
+    try {
+      const currentRoom =
+        localStorage.getItem("demologia_current_room_id") || "mesa_principal";
+      await clearMessages(currentRoom, isOnline);
+    } catch (err) {
+      console.error("Erro ao limpar histórico do chat:", err);
     }
   };
 
@@ -1724,6 +1731,16 @@ export default function App() {
 
   return (
     <div id="app" className="relative min-h-screen">
+      {!ostAudioAccepted && (
+        <button
+          type="button"
+          onClick={handleUnlockOstAudio}
+          onTouchStart={handleUnlockOstAudio}
+          onPointerDown={handleUnlockOstAudio}
+          aria-label="Ativar sincronização sonora da mesa"
+          className="fixed inset-0 z-[9998] w-full h-[100dvh] bg-transparent border-none outline-none opacity-0 cursor-default select-none touch-manipulation"
+        />
+      )}
       <div 
         id="app-bg"
         className="fixed inset-0 z-0 pointer-events-none"
@@ -1755,8 +1772,8 @@ export default function App() {
         }}
       />
       {supabaseConfigError && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[9999] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#111] border-2 border-blood-red/60 rounded-none max-w-2xl w-full p-6 md:p-8 shadow-[0_0_50px_rgba(255,0,0,0.3)] relative my-8">
+        <div className="fixed inset-0 modal-backdrop-blur z-[9999] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#111]/95 border-2 border-blood-red/60 rounded-none max-w-2xl w-full p-6 md:p-8 shadow-[0_0_50px_rgba(255,0,0,0.3)] relative my-8 animate-sheet-up">
             <button
               onClick={() => setSupabaseConfigError(null)}
               className="absolute top-4 right-4 text-gray-500 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-all cursor-pointer"
@@ -1974,15 +1991,25 @@ GRANT ALL ON TABLE public.players TO service_role;`}
          )}
       </div>
 
-      <div className={`w-full min-h-screen transition-opacity duration-700 ${cutsceneState?.active ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+      <div className={`w-full min-h-[100dvh] transition-opacity duration-700 ${cutsceneState?.active ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
 
       {showUpdateLog && (
-        <div className="fixed inset-0 bg-black/85 z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-[#0e0e12] border border-[#26262e] rounded-none p-6 sm:p-8 shadow-2xl max-w-xl w-full relative overflow-hidden">
+        <div
+          className="fixed inset-0 modal-backdrop-blur z-[250] flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setShowUpdateLog(false)}
+        >
+          <div
+            className="bg-[#0e0e12]/95 border-t sm:border border-[#26262e] rounded-none p-5 sm:p-8 shadow-[0_24px_60px_rgba(0,0,0,0.85)] max-w-xl w-full relative overflow-hidden animate-sheet-up"
+            style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="h-[3px] w-full bg-[var(--op-red)] absolute top-0 left-0" />
+            <div className="sm:hidden flex justify-center pb-3">
+              <div className="w-10 h-1 bg-[#32323e] rounded-none" />
+            </div>
             <button
               onClick={() => setShowUpdateLog(false)}
-              className="absolute top-4 right-4 p-1.5 text-[#686872] hover:text-white hover:bg-white/[0.06] rounded-none transition-colors cursor-pointer"
+              className="absolute top-3 right-3 min-w-[44px] min-h-[44px] flex items-center justify-center text-[#686872] hover:text-white hover:bg-white/[0.06] rounded-none transition-colors cursor-pointer touch-manipulation"
               aria-label="Fechar changelog"
             >
               <X size={18} />
@@ -1993,7 +2020,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 Histórico de Atualizações
               </span>
             </div>
-            <h2 className="text-base sm:text-lg font-bold text-[#dedede] uppercase tracking-wider font-mono mb-4">
+            <h2 className="text-base sm:text-lg font-bold text-[#dedede] uppercase tracking-wider font-mono mb-4 pr-10">
               Registro de Versão // Sistema
             </h2>
 
@@ -2022,7 +2049,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               <button
                 type="button"
                 onClick={() => setShowUpdateLog(false)}
-                className="bg-[#16161c] hover:bg-[#202028] border border-[#2b2b34] hover:border-[#40404e] text-white font-mono text-xs uppercase tracking-wider py-2 px-5 rounded-none transition-colors cursor-pointer"
+                className="w-full sm:w-auto min-h-[44px] bg-[#16161c] hover:bg-[#202028] border border-[#2b2b34] hover:border-[#40404e] text-white font-mono text-xs uppercase tracking-wider py-2.5 px-6 rounded-none transition-colors cursor-pointer touch-manipulation"
               >
                 Fechar
               </button>
@@ -2058,9 +2085,19 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       />
 
       {playerToKick && (
-        <div className="fixed inset-0 bg-black/85 z-[300] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-[#0e0e12] border border-[#26262e] rounded-none p-6 sm:p-8 max-w-sm w-full relative overflow-hidden shadow-2xl">
+        <div
+          className="fixed inset-0 modal-backdrop-blur z-[300] flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setPlayerToKick(null)}
+        >
+          <div
+            className="bg-[#0e0e12]/95 border-t sm:border border-[#26262e] rounded-none p-5 sm:p-8 max-w-sm w-full relative overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.85)] animate-sheet-up"
+            style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="h-[3px] w-full bg-red-600 absolute top-0 left-0" />
+            <div className="sm:hidden flex justify-center pb-3">
+              <div className="w-10 h-1 bg-[#32323e] rounded-none" />
+            </div>
             <h2 className="text-base font-bold text-white uppercase tracking-wider font-mono mb-2">
               Confirmar Desconexão
             </h2>
@@ -2076,9 +2113,9 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               <button
                 type="button"
                 onClick={() => setPlayerToKick(null)}
-                className="flex-1 bg-transparent hover:bg-white/[0.05] border border-[#2c2c36] text-[#8e8e98] hover:text-white font-mono text-xs uppercase tracking-wider py-2.5 px-3 rounded-none transition-colors cursor-pointer text-center"
+                className="flex-1 min-h-[44px] bg-[#16161f] hover:bg-[#222230] active:scale-95 border border-[#2c2c38] text-gray-300 hover:text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-3 rounded-none transition-all cursor-pointer text-center touch-manipulation"
               >
-                Cancelar
+                Não
               </button>
               <button
                 type="button"
@@ -2087,65 +2124,110 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   setPlayerToKick(null);
                   await supabase.from("players").delete().eq("id", id);
                 }}
-                className="flex-1 bg-red-950/60 hover:bg-red-900 border border-red-700/60 text-white font-mono text-xs uppercase tracking-wider font-bold py-2.5 px-3 rounded-none transition-colors cursor-pointer text-center"
+                className="flex-1 min-h-[44px] bg-blood-red hover:bg-red-700 active:scale-95 border border-blood-red text-white font-mono text-xs uppercase tracking-wider font-bold py-2.5 px-3 rounded-none transition-all shadow-[0_0_15px_rgba(143,23,28,0.4)] cursor-pointer text-center touch-manipulation"
               >
-                Desconectar
+                Sim
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <NavigationSidebar
-        currentPage={currentPage}
-        setCurrentPage={setCurrentPage}
-        menuOpen={menuOpen}
-        setMenuOpen={setMenuOpen}
-        isMestreAuth={isMestreAuth}
-        setShowPasswordModal={setShowPasswordModal}
-        setActiveFichaId={setActiveFichaId}
-        setShowUpdateLog={setShowUpdateLog}
-        gameMode={activeMode}
-        onOpenModeModal={isMestreAuth ? () => setShowModeModal(true) : undefined}
-      />
-
-      {/* Botão de menu hambúrguer no canto superior esquerdo (quando fora do caderno) */}
-      {currentPage !== "caderno" && (
-        <button
-          type="button"
-          onClick={() => setMenuOpen(!menuOpen)}
-          className={`fixed top-3 left-4 z-40 w-9 h-9 flex items-center justify-center transition-colors cursor-pointer shadow-md focus-visible:outline-none rounded-none ${
-            isRlMode
-              ? "bg-[#181428]/95 hover:bg-[#251e3e] text-[#d8b4fe] hover:text-white border border-[#a855f7]/35 shadow-purple-950/40"
-              : "bg-[#111114]/95 hover:bg-[#1c1c20] text-[#dedede] hover:text-white border border-[#2a2a30] focus-visible:border-[var(--op-red)]"
-          }`}
-          aria-label="Abrir menu de navegação"
-          title="Menu de navegação"
+      {showClearChatModal && (
+        <div
+          className="fixed inset-0 modal-backdrop-blur z-[300] flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setShowClearChatModal(false)}
         >
-          <Menu size={18} />
-        </button>
+          <div
+            className="bg-[#0e0e12]/95 border-t sm:border border-[#26262e] rounded-none p-5 sm:p-6 max-w-sm w-full relative overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.85)] animate-sheet-up"
+            style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="h-[2px] w-full bg-blood-red absolute top-0 left-0" />
+            <div className="sm:hidden flex justify-center pb-3">
+              <div className="w-10 h-1 bg-[#32323e] rounded-none" />
+            </div>
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono mb-2">
+              Apagar Histórico do Chat?
+            </h2>
+            <p className="text-xs text-[#8c8c96] font-mono leading-relaxed mb-5 border-b border-[#1c1c24] pb-3.5">
+              Deseja limpar todas as mensagens do Chat da Mesa para todos os jogadores?
+            </p>
+
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowClearChatModal(false)}
+                className="flex-1 min-h-[44px] bg-[#16161f] hover:bg-[#222230] active:scale-95 border border-[#2c2c38] text-gray-300 hover:text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-3 rounded-none transition-all cursor-pointer text-center touch-manipulation"
+              >
+                Não
+              </button>
+              <button
+                type="button"
+                onClick={confirmClearChatHistory}
+                className="flex-1 min-h-[44px] bg-blood-red hover:bg-red-700 active:scale-95 border border-blood-red text-white font-mono text-xs uppercase tracking-wider font-bold py-2.5 px-3 rounded-none transition-all shadow-[0_0_15px_rgba(143,23,28,0.4)] cursor-pointer text-center touch-manipulation"
+              >
+                Sim
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Botão de atalho rápido para o Caderno de Campo quando em Modo IRL (quando fora do caderno) */}
-      {isRlMode && currentPage !== "caderno" && (
-        <button
-          type="button"
-          onClick={() => setCurrentPage("caderno")}
-          className="fixed top-3 left-16 z-40 min-h-[38px] px-3.5 flex items-center gap-2 border border-[#a855f7]/35 hover:border-[#c084fc] rounded-xl transition-all cursor-pointer shadow-lg bg-[#181428]/95 hover:bg-[#251e3e] text-[#d8b4fe] hover:text-white text-xs font-mono font-bold tracking-wider uppercase active:scale-95 shadow-purple-950/40"
-          aria-label="Abrir Caderno de Campo"
-          title="Caderno de Campo (Arquivo de Casos IRL)"
-        >
-          <FileText size={15} className="text-[#c084fc]" />
-          <span className="hidden sm:inline">Caderno</span>
-        </button>
-      )}
+      <div className="flex flex-col lg:flex-row min-h-[100dvh] w-full">
+        <NavigationSidebar
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          menuOpen={menuOpen}
+          setMenuOpen={setMenuOpen}
+          isMestreAuth={isMestreAuth}
+          setShowPasswordModal={setShowPasswordModal}
+          setActiveFichaId={setActiveFichaId}
+          setShowUpdateLog={setShowUpdateLog}
+          gameMode={activeMode}
+          onOpenModeModal={isMestreAuth ? () => setShowModeModal(true) : undefined}
+          isOnline={isOnline}
+        />
 
-      <main className="w-full transition-all min-h-screen relative z-10">
+      <main className="flex-1 min-w-0 w-full transition-all min-h-[100dvh] relative z-10 flex flex-col">
+        {/* Botão do menu somente quando fora de Mestre e Caderno (rola junto com o topo para não ficar na frente das informações) */}
+        {currentPage !== "caderno" && currentPage !== "mestre" && (
+          <button
+            type="button"
+            onClick={() => setMenuOpen(!menuOpen)}
+            style={{ top: "max(0.75rem, env(safe-area-inset-top, 0.75rem))" }}
+            className={`lg:hidden absolute left-3 z-40 w-10 h-10 flex items-center justify-center transition-all duration-150 ease-out active:scale-95 cursor-pointer shadow-md rounded-none touch-manipulation ${
+              isRlMode
+                ? "bg-[#181428]/95 hover:bg-[#251e3e] active:bg-[#312852] text-[#d8b4fe] hover:text-white border border-[#a855f7]/35"
+                : "bg-[#111116]/95 hover:bg-[#1c1c24] active:bg-[#252530] text-[#dedede] hover:text-white border border-[#24242e]"
+            }`}
+            aria-label="Abrir menu de navegação"
+            title="Menu"
+          >
+            <Menu size={19} />
+          </button>
+        )}
+
+        {/* Atalho Caderno quando em Modo Real L */}
+        {isRlMode && currentPage !== "caderno" && currentPage !== "mestre" && (
+          <button
+            type="button"
+            onClick={() => setCurrentPage("caderno")}
+            style={{ top: "max(0.75rem, env(safe-area-inset-top, 0.75rem))" }}
+            className="absolute right-3 lg:right-5 z-40 h-10 px-3.5 flex items-center gap-2 border border-[#a855f7]/35 hover:border-[#c084fc] rounded-none transition-all duration-150 ease-out cursor-pointer shadow-lg bg-[#181428]/95 hover:bg-[#251e3e] text-[#d8b4fe] hover:text-white text-xs font-mono font-bold tracking-wider uppercase active:scale-95 touch-manipulation"
+            aria-label="Abrir Caderno de Campo"
+            title="Caderno de Campo"
+          >
+            <FileText size={14} className="text-[#c084fc]" />
+            <span>Caderno</span>
+          </button>
+        )}
+
         {(currentPage === "ficha" || currentPage === "ficha_extra") && (
-        <div className="home-sheet-container max-w-7xl mx-auto w-full pb-32 sm:pb-28 lg:pb-24 px-2.5 sm:px-4 lg:px-4 lg:py-6 flex flex-col lg:flex-row gap-3.5 sm:gap-4 lg:gap-8 items-start">
+        <div className="home-sheet-container animate-tab-fade max-w-7xl mx-auto w-full pt-14 lg:pt-6 pb-32 sm:pb-28 lg:pb-20 px-2.5 sm:px-4 lg:px-6 flex flex-col lg:flex-row gap-3.5 sm:gap-4 lg:gap-6 xl:gap-8 items-start">
           
           {/* Left Column: HUD, Variables, Skills */}
-          <div className="flex-1 w-full flex flex-col gap-3.5 sm:gap-4 lg:gap-6">
+          <div className="flex-1 min-w-0 w-full flex flex-col gap-3.5 sm:gap-4 lg:gap-6">
             <div className="hud-wrapper-box">
               {renderHud()}
             </div>
@@ -2240,7 +2322,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                       }}
                     >
                       <button
-                        className="bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-400 hover:text-white uppercase font-bold text-xs tracking-wider rounded-none py-2 px-1 transition-all"
+                        className="min-h-[44px] bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-300 hover:text-white uppercase font-bold text-xs tracking-wider rounded-none py-2.5 px-3 transition-all cursor-pointer touch-manipulation"
                         style={{ flex: 1 }}
                         onClick={() => {
                           setUseSkillModalId(skill.id);
@@ -2250,8 +2332,9 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                         USAR
                       </button>
                       <button
-                        className="bg-transparent hover:bg-[#1A1A1A] text-gray-600 hover:text-white p-2 rounded-none transition-colors border-none cursor-pointer"
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center bg-transparent hover:bg-[#1A1A1A] text-gray-400 hover:text-white p-2 rounded-none transition-colors border-none cursor-pointer touch-manipulation"
                         onClick={() => setEditingSkill(skill.id)}
+                        title="Editar Skill"
                       >
                         <Edit2 size={18} />
                       </button>
@@ -2589,7 +2672,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           </div> {/* End Left Column */}
 
           {/* Right Column: Inventory, System/Menu */}
-          <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col gap-3.5 sm:gap-4 lg:gap-6 shrink-0">
+          <div className="w-full lg:w-[360px] xl:w-[420px] flex flex-col gap-3.5 sm:gap-4 lg:gap-6 shrink-0">
 
           <div className="section">
             <div className="section-title">Inventário</div>
@@ -2638,42 +2721,36 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       )}
 
       {currentPage === "oraculo" && (
-        <div className="pb-36 max-w-xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 space-y-3.5 sm:space-y-4">
-          {isRlMode && (
-            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-none bg-gradient-to-r from-[#1c1230] via-[#2a1745] to-[#160e26] border border-purple-500/35 text-xs font-mono shadow-[0_4px_16px_rgba(168,85,247,0.2)]">
-              <span className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#c084fc] shadow-[0_0_8px_#c084fc] animate-pulse" />
-                <strong className="text-white uppercase tracking-wider font-bold">Modo Real L Ativo</strong>
-                <span className="hidden sm:inline text-purple-300/70">• Rolagem Balística & Perícias Táticas</span>
-              </span>
-              <span className="text-[10px] uppercase font-bold tracking-widest text-[#e9d5ff] bg-purple-950/80 border border-purple-500/50 px-2.5 py-0.5 rounded-none shadow-sm">
-                IRL
-              </span>
+        <div className="animate-tab-fade pb-32 lg:pb-16 max-w-6xl mx-auto w-full px-3 sm:px-4 lg:px-6 pt-14 lg:pt-6 space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
+            <div className="lg:col-span-6 w-full">
+              <QuickDiceSection
+                quickDiceQty={quickDiceQty}
+                setQuickDiceQty={setQuickDiceQty}
+                onRoll={executeRoll}
+                lastRoll={lastRollResult}
+                isRlMode={isRlMode}
+              />
             </div>
-          )}
-          <QuickDiceSection
-            quickDiceQty={quickDiceQty}
-            setQuickDiceQty={setQuickDiceQty}
-            onRoll={executeRoll}
-            lastRoll={lastRollResult}
-            isRlMode={isRlMode}
-          />
-          <RollingTerminal
-            diceInput={diceInput}
-            setDiceInput={setDiceInput}
-            onRoll={processManualRoll}
-            history={state.history}
-            historyRef={historyRef}
-            isShaking={isShaking}
-            title={isRlMode ? "Terminal de Rolagem (Modo Real L)" : "Terminal de Rolagem"}
-            isRlMode={isRlMode}
-          />
-          <FormulaShortcutsSection
-            onRollFormula={executeRoll}
-            setDiceInput={setDiceInput}
-            diceInput={diceInput}
-            isRlMode={isRlMode}
-          />
+            <div className="lg:col-span-6 w-full flex flex-col gap-4">
+              <RollingTerminal
+                diceInput={diceInput}
+                setDiceInput={setDiceInput}
+                onRoll={processManualRoll}
+                history={state.history}
+                historyRef={historyRef}
+                isShaking={isShaking}
+                title="Terminal de Rolagem"
+                isRlMode={isRlMode}
+              />
+              <FormulaShortcutsSection
+                onRollFormula={executeRoll}
+                setDiceInput={setDiceInput}
+                diceInput={diceInput}
+                isRlMode={isRlMode}
+              />
+            </div>
+          </div>
         </div>
       )}
 
@@ -2691,64 +2768,75 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
       {currentPage === "conexao" && (
         <>
-          <div className="p-4 pt-8 min-h-screen text-center flex flex-col items-center justify-center max-w-lg mx-auto pb-20">
-            <h2 className="text-3xl font-bold text-blood-red uppercase tracking-widest mb-4">
-              Conexão da Ficha
-            </h2>
-            <p className="text-gray-400 text-sm mb-8">
-              Ativar a conexão compartilha sua ficha em tempo real com o Mestre.
-              Se você for desconectado, reative-a aqui.
-            </p>
-            <button
-              onClick={() => {
-                if (!isOnline) {
-                  setIsOnline(true);
-                  if (userUid) {
-                    supabase
-                      .from("players")
-                      .upsert({
-                        id: userUid,
-                        data: state,
-                        updated_at: new Date().toISOString(),
-                      })
-                      .then(({ error }) => {
-                        if (error)
+          <div className="animate-tab-fade p-4 pt-14 lg:pt-8 flex-1 text-center flex flex-col items-center justify-center max-w-md w-full mx-auto pb-20">
+            <div className="w-full bg-[#0c0c10] border border-[#1f1f28] p-6 sm:p-8 flex flex-col items-center">
+              <div
+                className={`w-3 h-3 rounded-full mb-4 ${
+                  isOnline
+                    ? "bg-emerald-400 shadow-[0_0_12px_#34d399]"
+                    : "bg-blood-red shadow-[0_0_12px_#d30000]"
+                }`}
+              />
+              <h2 className="text-xl font-bold text-white font-mono uppercase tracking-widest mb-2">
+                {isOnline ? "Sessão Conectada" : "Sessão Offline"}
+              </h2>
+              <p className="text-gray-400 text-xs font-mono mb-6">
+                {isOnline
+                  ? "Sua ficha está sincronizada em tempo real com a mesa."
+                  : "Conecte para sincronizar sua ficha em tempo real com o Mestre."}
+              </p>
+              <button
+                onClick={() => {
+                  if (!isOnline) {
+                    setIsOnline(true);
+                    if (userUid) {
+                      supabase
+                        .from("players")
+                        .upsert({
+                          id: userUid,
+                          data: state,
+                          updated_at: new Date().toISOString(),
+                        })
+                        .then(({ error }) => {
+                          if (error)
+                            console.warn(
+                              "Error syncing to Supabase (manual):",
+                              error.message,
+                            );
+                        });
+                    }
+                  } else {
+                    setIsOnline(false);
+                    if (userUid) {
+                      supabase
+                        .from("players")
+                        .delete()
+                        .eq("id", userUid)
+                        .then(null, (err: any) =>
                           console.warn(
-                            "Error syncing to Supabase (manual):",
-                            error.message,
-                          );
-                      });
+                            "Erro de rede ao desconectar do Supabase:",
+                            err.message,
+                          ),
+                        );
+                    }
                   }
-                } else {
-                  setIsOnline(false);
-                  if (userUid) {
-                    supabase
-                      .from("players")
-                      .delete()
-                      .eq("id", userUid)
-                      .then(null, (err: any) =>
-                        console.warn(
-                          "Erro de rede ao desconectar do Supabase:",
-                          err.message,
-                        ),
-                      );
-                  }
-                }
-              }}
-              className={`w-full py-4 px-8 text-lg font-bold uppercase tracking-wider rounded-none transition-all cursor-pointer border ${isOnline ? "bg-green-900 border-green-500 hover:bg-green-800 text-white shadow-[0_0_15px_rgba(34,197,94,0.3)]" : "bg-[#1a0505] border-blood-red hover:bg-[#300505] text-blood-red shadow-[0_0_15px_rgba(211,0,0,0.3)]"}`}
-            >
-              {isOnline ? "CONECTADO A SESSÃO" : "DESCONECTADO DA SESSÃO"}
-            </button>
-            <p className="text-[10px] text-gray-500 mt-4 uppercase">
-              Para alterar o status apenas aperte o botão
-            </p>
+                }}
+                className={`w-full min-h-[48px] py-3 px-6 text-sm font-mono font-bold uppercase tracking-wider rounded-none transition-all duration-150 active:scale-[0.98] cursor-pointer touch-manipulation border ${
+                  isOnline
+                    ? "bg-emerald-950/60 border-emerald-500/60 hover:bg-emerald-900/60 text-emerald-200"
+                    : "bg-[#1a0505] border-blood-red hover:bg-[#300505] text-white shadow-[0_0_15px_rgba(211,0,0,0.25)]"
+                }`}
+              >
+                {isOnline ? "Desconectar" : "Conectar à Sessão"}
+              </button>
+            </div>
           </div>
         </>
       )}
 
       {currentPage === "chat" && (
-        <div className="min-h-screen w-full flex flex-col justify-start items-center pt-12 sm:pt-14 px-1 sm:px-4 pb-4">
-          <div className="w-full max-w-4xl flex-1 flex flex-col h-[calc(100vh-4rem)]">
+        <div className="animate-tab-fade flex-1 w-full flex flex-col justify-start items-center pt-14 lg:pt-6 px-2 sm:px-4 lg:px-6 pb-4">
+          <div className="w-full max-w-5xl flex-1 flex flex-col min-h-[calc(100dvh-4.5rem)] lg:min-h-[calc(100dvh-3rem)]">
             <ChatContainer
               currentUser={{
                 id: userUid || "local_player",
@@ -2764,7 +2852,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       )}
 
       {currentPage === "mestre" && (
-        <div className="min-h-screen pb-20 font-sans">
+        <div className="animate-tab-fade min-h-[100dvh] pb-24 font-sans">
           <MasterHeaderBar
             activeTab={mestreTab}
             setActiveTab={setMestreTab}
@@ -2772,6 +2860,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             extrasCount={extraFichas.length}
             isOstPlaying={Boolean(playbackState?.is_playing)}
             onRollInitiative={handleRollAllInitiatives}
+            onOpenMenu={() => setMenuOpen(true)}
             onReturnToMainSheet={() => {
               setActiveFichaId("main");
               setCurrentPage("ficha");
@@ -2784,64 +2873,71 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           />
 
           {mestreTab === "fichas" && (
-            <MasterPlayersView
-              players={players}
-              extraFichas={extraFichas}
-              initiatives={initiatives}
-              viewMode={mestreViewMode}
-              onClearChatHistory={handleClearChatHistory}
-              playerModes={gameModeConfig.playerModes || {}}
-              currentGlobalMode={gameModeConfig.globalMode}
-              onTogglePlayerMode={handleTogglePlayerMode}
-              onKickPlayer={(player) => setPlayerToKick(player)}
-              onOpenInteractiveSheet={(sheetId) => {
-                setActiveFichaId(sheetId);
-                setCurrentPage("ficha_extra");
-              }}
-              onUpdateStat={(player, stat, val, isExtraSheet, rawExtraSheetId) => {
-                if (isExtraSheet && rawExtraSheetId) {
-                  setExtraFichas((prev) =>
-                    prev.map((f) =>
-                      f.id === rawExtraSheetId
-                        ? { ...f, [stat]: { ...f[stat], current: val }, last_local_edit: Date.now() }
-                        : f
-                    )
-                  );
-                } else {
-                  setPlayers((current) =>
-                    current.map((pl) =>
-                      pl.id === player.id ? { ...pl, [stat]: { ...pl[stat], current: val } } : pl
-                    )
-                  );
-                }
-                editPlayerStatExact(player, stat, val);
-              }}
-            />
+            <div className="animate-tab-fade">
+              <MasterPlayersView
+                players={players}
+                extraFichas={extraFichas}
+                initiatives={initiatives}
+                viewMode={mestreViewMode}
+                onClearChatHistory={handleClearChatHistory}
+                onRollInitiative={handleRollAllInitiatives}
+                playerModes={gameModeConfig.playerModes || {}}
+                currentGlobalMode={gameModeConfig.globalMode}
+                onTogglePlayerMode={handleTogglePlayerMode}
+                onKickPlayer={(player) => setPlayerToKick(player)}
+                onOpenInteractiveSheet={(sheetId) => {
+                  setActiveFichaId(sheetId);
+                  setCurrentPage("ficha_extra");
+                }}
+                onUpdateStat={(player, stat, val, isExtraSheet, rawExtraSheetId) => {
+                  if (isExtraSheet && rawExtraSheetId) {
+                    setExtraFichas((prev) =>
+                      prev.map((f) =>
+                        f.id === rawExtraSheetId
+                          ? { ...f, [stat]: { ...f[stat], current: val }, last_local_edit: Date.now() }
+                          : f
+                      )
+                    );
+                  } else {
+                    setPlayers((current) =>
+                      current.map((pl) =>
+                        pl.id === player.id ? { ...pl, [stat]: { ...pl[stat], current: val } } : pl
+                      )
+                    );
+                  }
+                  editPlayerStatExact(player, stat, val);
+                }}
+              />
+            </div>
           )}
 
           {mestreTab === "ost" && (
-            <MasterOstPanel musicSync={musicSync} />
+            <div className="animate-tab-fade pt-3">
+              <MasterOstPanel musicSync={musicSync} />
+            </div>
           )}
 
           {mestreTab === "extras" && (
-            <MasterExtrasView
-              extraFichas={extraFichas}
-              setExtraFichas={setExtraFichas}
-              defaultState={defaultState}
-              activeFichaId={activeFichaId}
-              setActiveFichaId={setActiveFichaId}
-              setCurrentPage={setCurrentPage}
-              setMestreTab={setMestreTab}
-              toggleFichaSync={toggleFichaSync}
-              supabase={supabase}
-              currentGlobalMode={gameModeConfig.globalMode || "demologia"}
-            />
+            <div className="animate-tab-fade">
+              <MasterExtrasView
+                extraFichas={extraFichas}
+                setExtraFichas={setExtraFichas}
+                defaultState={defaultState}
+                activeFichaId={activeFichaId}
+                setActiveFichaId={setActiveFichaId}
+                setCurrentPage={setCurrentPage}
+                setMestreTab={setMestreTab}
+                toggleFichaSync={toggleFichaSync}
+                supabase={supabase}
+                currentGlobalMode={gameModeConfig.globalMode || "demologia"}
+              />
+            </div>
           )}
         </div>
       )}
 
       {currentPage === "caderno" && (
-        <div className="min-h-screen w-full flex flex-col pt-4 sm:pt-6 pb-16">
+        <div className="animate-tab-fade min-h-[100dvh] w-full flex flex-col pt-4 sm:pt-6 pb-16">
           <CadernoDeCampoView
             onBackToSheet={() => setCurrentPage("ficha")}
             onOpenSidebar={() => setMenuOpen(true)}
@@ -2851,6 +2947,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         </div>
       )}
       </main>
+      </div>
 
       {useSkillModalId !== null &&
         (() => {
@@ -2859,15 +2956,26 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           );
           if (!modalSkill) return null;
           return (
-            <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-              <div className="bg-[#0a0a0a] border border-[#333] rounded-none w-full max-w-sm flex flex-col p-4 gap-4 shadow-[0_0_20px_rgba(0,0,0,0.8)]">
+            <div
+              className="fixed inset-0 modal-backdrop-blur z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+              onClick={() => setUseSkillModalId(null)}
+            >
+              <div
+                className="bg-[#0a0a0e]/95 border-t sm:border border-[#2c2c38] rounded-none w-full max-w-sm flex flex-col p-4 sm:p-5 gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.85)] animate-sheet-up"
+                style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom, 1rem))" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="sm:hidden flex justify-center -mt-1 pb-1">
+                  <div className="w-10 h-1 bg-[#32323e] rounded-none" />
+                </div>
                 <div className="flex justify-between items-center border-b border-[#1A1A1A] pb-2">
                   <h3 className="font-bold text-blood-red uppercase tracking-widest">
                     {modalSkill.name || "Nova Skill"}
                   </h3>
                   <button
                     onClick={() => setUseSkillModalId(null)}
-                    className="text-gray-500 hover:text-white"
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-white cursor-pointer touch-manipulation"
+                    aria-label="Fechar modal da skill"
                   >
                     <X size={20} />
                   </button>
@@ -2894,7 +3002,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 <div className="flex gap-2">
                   {modalSkill.test?.trim() !== "" && (
                     <button
-                      className="flex-1 bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-400 hover:text-white uppercase font-bold text-[10px] tracking-wider rounded-none py-3 transition-all cursor-pointer"
+                      className="flex-1 min-h-[44px] bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-300 hover:text-white uppercase font-bold text-xs tracking-wider rounded-none py-3 transition-all cursor-pointer touch-manipulation"
                       onClick={() => {
                         useSkill(modalSkill, "test");
                         setSkillModalTested(true);
@@ -2905,7 +3013,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   )}
                   {modalSkill.damage?.trim() !== "" && (
                     <button
-                      className="flex-1 bg-gradient-to-r from-[#900] to-[var(--blood-red)] text-white hover:brightness-125 uppercase font-bold text-[10px] tracking-wider rounded-none py-3 transition-all border-none cursor-pointer"
+                      className="flex-1 min-h-[44px] bg-gradient-to-r from-[#900] to-[var(--blood-red)] text-white hover:brightness-125 uppercase font-bold text-xs tracking-wider rounded-none py-3 transition-all border-none cursor-pointer touch-manipulation"
                       onClick={() => {
                         if (modalSkill.needsTest && !skillModalTested) {
                           addToHistory(

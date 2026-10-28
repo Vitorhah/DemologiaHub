@@ -55,7 +55,10 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
   const canSend = text.trim().length > 0 && !isTooLong && !disabled;
 
   return (
-    <div className="w-full bg-[var(--op-bg-secondary)] border-t border-[var(--op-border)] p-3 sm:p-4 shrink-0 z-20 rounded-none">
+    <div
+      className="w-full bg-[var(--op-bg-secondary)] border-t border-[var(--op-border)] p-3 sm:p-4 shrink-0 z-20 rounded-none"
+      style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0.75rem))" }}
+    >
       <div className="max-w-5xl mx-auto flex items-end gap-2 sm:gap-3">
         {/* Campo de Texto Multilinha Expansível */}
         <div className="relative flex-1 bg-[var(--op-bg)] border border-[var(--op-border)] focus-within:border-[var(--op-red)] transition-all duration-150 rounded-none">
@@ -68,8 +71,8 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
             disabled={disabled}
             placeholder="Digite uma mensagem..."
             maxLength={MAX_MESSAGE_LENGTH + 50}
-            className="w-full bg-transparent text-[#ededf2] text-xs sm:text-sm font-mono placeholder:text-[#5d5e6e] px-3.5 py-2.5 outline-none resize-none overflow-y-auto custom-scrollbar leading-relaxed rounded-none"
-            style={{ minHeight: "42px", maxHeight: "140px" }}
+            className="w-full bg-transparent text-[#ededf2] text-base sm:text-sm font-mono placeholder:text-[#5d5e6e] px-3.5 py-2.5 outline-none resize-none overflow-y-auto custom-scrollbar leading-relaxed rounded-none"
+            style={{ minHeight: "44px", maxHeight: "140px" }}
           />
 
           {/* Indicador de limite de caracteres quando próximo do fim */}
@@ -89,7 +92,7 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
           type="button"
           onClick={handleSubmit}
           disabled={!canSend}
-          className={`h-[42px] px-3.5 sm:px-4 flex items-center justify-center gap-1.5 font-mono text-xs uppercase tracking-wider font-bold rounded-none border transition-all select-none shrink-0 ${
+          className={`min-h-[44px] min-w-[44px] px-3.5 sm:px-4 flex items-center justify-center gap-1.5 font-mono text-xs uppercase tracking-wider font-bold rounded-none border transition-all select-none touch-manipulation shrink-0 ${
             canSend
               ? "bg-[var(--op-red)] hover:bg-[var(--op-red-bright)] text-white border border-[var(--op-red-dark)] cursor-pointer shadow-[0_0_10px_rgba(181,42,48,0.4)] active:translate-y-0.5"
               : "bg-[var(--op-panel)] text-[#555666] border border-[var(--op-border)] cursor-not-allowed opacity-60"

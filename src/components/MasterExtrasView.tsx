@@ -198,33 +198,14 @@ export function MasterExtrasView({
                         <Copy size={13} />
                       </button>
 
-                      {deletingFichaId === ficha.id ? (
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteConfirm(ficha)}
-                            className="px-2 py-1 bg-red-700 hover:bg-red-600 text-white text-[10px] font-bold uppercase rounded-none"
-                          >
-                            Sim
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeletingFichaId(null)}
-                            className="px-2 py-1 bg-[#181820] text-[#828392] hover:text-white text-[10px] font-bold uppercase rounded-none border border-[#262634]"
-                          >
-                            Não
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setDeletingFichaId(ficha.id)}
-                          className="p-1.5 text-[#828392] hover:text-[var(--op-red-bright)] bg-[#121217] hover:bg-[#1a1215] border border-[#202028] hover:border-[var(--op-red)] outline outline-1 outline-[#181820] hover:outline-[var(--op-red-bright)]/40 rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
-                          title="Excluir ficha"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => setDeletingFichaId(ficha.id)}
+                        className="p-1.5 text-[#828392] hover:text-[var(--op-red-bright)] bg-[#121217] hover:bg-[#1a1215] border border-[#202028] hover:border-[var(--op-red)] outline outline-1 outline-[#181820] hover:outline-[var(--op-red-bright)]/40 rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
+                        title="Excluir ficha"
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   </div>
 
@@ -476,6 +457,67 @@ export function MasterExtrasView({
           })}
         </div>
       )}
+
+      {/* MODAL FLUTUANTE DE CONFIRMAÇÃO PARA EXCLUIR FICHA EXTRA (SIM / NÃO) */}
+      {deletingFichaId !== null &&
+        (() => {
+          const fichaToDelete = extraFichas.find((f) => f.id === deletingFichaId);
+          if (!fichaToDelete) return null;
+          return (
+            <div
+              className="fixed inset-0 z-[350] modal-backdrop-blur flex items-end sm:items-center justify-center p-0 sm:p-4"
+              onClick={() => setDeletingFichaId(null)}
+            >
+              <div
+                className="w-full sm:max-w-sm bg-[#101016]/95 border-t sm:border border-[#2b2b38] rounded-none p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] relative overflow-hidden animate-sheet-up"
+                style={{
+                  paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="h-[2px] w-full bg-[var(--op-red)] absolute top-0 left-0" />
+                <div className="sm:hidden flex justify-center -mt-1 pb-2.5">
+                  <div className="w-10 h-1 bg-[#323442]" />
+                </div>
+
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-red-950/40 border border-red-900/50 flex items-center justify-center text-red-400 shrink-0">
+                    <Trash2 size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                      Apagar Ficha Extra?
+                    </h3>
+                    <p className="text-xs text-gray-400 truncate mt-0.5">
+                      {fichaToDelete.name || "Ficha Extra"}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-[#9a9aa6] leading-relaxed mb-5 border-b border-[#1e1e28] pb-3.5 font-sans">
+                  Deseja realmente apagar esta ficha extra?
+                </p>
+
+                <div className="flex gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setDeletingFichaId(null)}
+                    className="flex-1 min-h-[44px] bg-[#16161f] hover:bg-[#222230] active:scale-95 border border-[#2c2c38] text-gray-300 hover:text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 transition-all cursor-pointer touch-manipulation"
+                  >
+                    Não
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteConfirm(fichaToDelete)}
+                    className="flex-1 min-h-[44px] bg-[var(--op-red)] hover:bg-red-700 active:scale-95 border border-[var(--op-red)] text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 transition-all shadow-[0_0_15px_rgba(143,23,28,0.4)] cursor-pointer touch-manipulation"
+                  >
+                    Sim
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
 }

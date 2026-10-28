@@ -169,238 +169,202 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
   const audioDuration = musicSync.getAudioDuration();
 
   return (
-    <div className="max-w-5xl mx-auto flex flex-col gap-5 px-3 sm:px-4 font-mono text-gray-200">
-      {/* CABEÇALHO DO MÓDULO */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#25252c] pb-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 flex items-center justify-center bg-black border border-blood-red text-blood-red shadow-[0_0_10px_rgba(143,23,28,0.4)]">
-            <Radio className="w-5 h-5 animate-pulse" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-white tracking-widest uppercase flex items-center gap-2">
-              Central de Áudio • OST Sincronizada
-            </h2>
-            <p className="text-[11px] text-gray-400 font-sans tracking-wide">
-              Controle mestre de frequências sonoras da mesa com transmissão em tempo real via PostgreSQL.
-            </p>
-          </div>
-        </div>
+    <div className="max-w-5xl mx-auto flex flex-col gap-4 px-3 sm:px-4 pb-12 font-mono text-gray-200">
+      {/* DECK PRINCIPAL DE TRANSMISSÃO SONORA */}
+      <div
+        className={`p-4 sm:p-5 bg-[#0b0b10] border transition-all relative overflow-hidden shadow-[0_14px_35px_rgba(0,0,0,0.85)] ${
+          isPlaying ? "border-blood-red/60" : "border-[#252530]"
+        }`}
+      >
+        <div
+          className={`absolute top-0 left-0 right-0 h-[2px] transition-opacity duration-300 ${
+            isPlaying
+              ? "bg-gradient-to-r from-transparent via-blood-red to-transparent opacity-100"
+              : "bg-[#252530] opacity-50"
+          }`}
+        />
 
-        {/* BOTÕES DE ADIÇÃO DE MÍDIA */}
-        <div className="flex items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="audio/mp3,audio/mpeg,audio/ogg,audio/wav,audio/m4a,.mp3,.ogg,.wav,.m4a"
-            onChange={handleFileUpload}
-            className="hidden"
-            id="master-audio-upload"
-          />
-
-          <label
-            htmlFor="master-audio-upload"
-            className={`cursor-pointer flex items-center gap-2 px-3 py-2 text-xs uppercase font-bold tracking-wider transition-all border ${
-              isUploading
-                ? "bg-blood-red/40 border-blood-red text-white cursor-not-allowed"
-                : "bg-[#141418] hover:bg-[#1f1f26] border-[#303038] hover:border-blood-red text-white"
-            }`}
-          >
-            {isUploading ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-blood-red" />
-                <span>Enviando...</span>
-              </>
-            ) : (
-              <>
-                <Upload className="w-3.5 h-3.5 text-blood-red" />
-                <span>Upload de Faixa</span>
-              </>
-            )}
-          </label>
-
-          <button
-            type="button"
-            onClick={() => setShowAddLink(!showAddLink)}
-            className="flex items-center gap-2 px-3 py-2 text-xs uppercase font-bold tracking-wider bg-[#141418] hover:bg-[#1f1f26] border border-[#303038] hover:border-gray-500 text-gray-300 hover:text-white transition-all"
-          >
-            <LinkIcon className="w-3.5 h-3.5 text-gray-400" />
-            <span>Link Direto</span>
-          </button>
-        </div>
-      </div>
-
-      {uploadError && (
-        <div className="p-3 bg-red-950/60 border border-blood-red text-red-200 text-xs flex items-center justify-between">
-          <span>{uploadError}</span>
-          <button onClick={() => setUploadError(null)} className="hover:text-white">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* FORMULÁRIO COLAPSÁVEL: ADICIONAR POR LINK DIRETO */}
-      {showAddLink && (
-        <form
-          onSubmit={handleAddLinkSubmit}
-          className="p-4 bg-[#111116] border border-dashed border-[#3a3a46] flex flex-col gap-3"
-        >
-          <div className="flex items-center justify-between text-xs text-gray-300 font-bold uppercase tracking-wider">
-            <span className="flex items-center gap-1.5">
-              <ExternalLink className="w-3.5 h-3.5 text-blood-red" />
-              Adicionar Faixa por Link Externo (.mp3, .ogg)
+        {/* Topo do Deck: Status + Ações Rápidas de Adição */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3.5 mb-4 border-b border-[#1c1c25]">
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border ${
+                isPlaying
+                  ? "bg-blood-red/20 border-blood-red/60 text-red-300"
+                  : "bg-[#14141c] border-[#2a2a36] text-gray-500"
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isPlaying
+                    ? "bg-red-500 animate-ping"
+                    : "bg-gray-600"
+                }`}
+              />
+              {isPlaying ? "NO AR" : "STANDBY"}
             </span>
+            <span className="text-[11px] uppercase font-bold tracking-widest text-gray-400">
+              OST • Mesa
+            </span>
+          </div>
+
+          {/* Botões de Adição de Mídia */}
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/mp3,audio/mpeg,audio/ogg,audio/wav,audio/m4a,.mp3,.ogg,.wav,.m4a"
+              onChange={handleFileUpload}
+              className="hidden"
+              id="master-audio-upload"
+            />
+
+            <label
+              htmlFor="master-audio-upload"
+              className={`min-h-[38px] px-3 py-1.5 text-[11px] uppercase font-bold tracking-wider transition-all border flex items-center gap-1.5 touch-manipulation ${
+                isUploading
+                  ? "bg-blood-red/30 border-blood-red text-white cursor-not-allowed"
+                  : "bg-[#14141c] hover:bg-[#1e1e2a] border-[#2e2e3a] hover:border-blood-red text-gray-200 hover:text-white cursor-pointer"
+              }`}
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blood-red" />
+                  <span>Enviando...</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-3.5 h-3.5 text-blood-red" />
+                  <span>Upload</span>
+                </>
+              )}
+            </label>
+
             <button
               type="button"
-              onClick={() => setShowAddLink(false)}
-              className="text-gray-400 hover:text-white"
+              onClick={() => setShowAddLink(!showAddLink)}
+              className={`min-h-[38px] px-3 py-1.5 text-[11px] uppercase font-bold tracking-wider border transition-all flex items-center gap-1.5 cursor-pointer touch-manipulation ${
+                showAddLink
+                  ? "bg-blood-red/20 border-blood-red text-white"
+                  : "bg-[#14141c] hover:bg-[#1e1e2a] border-[#2e2e3a] hover:border-gray-500 text-gray-300 hover:text-white"
+              }`}
             >
-              <X className="w-4 h-4" />
+              <LinkIcon className="w-3.5 h-3.5 text-blood-red" />
+              <span>Link</span>
             </button>
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] uppercase text-gray-400 block mb-1">
-                Nome da Trilha
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: Tensão - O Ritual Ancestral"
-                value={linkName}
-                onChange={(e) => setLinkName(e.target.value)}
-                className="w-full bg-[#08080b] border border-[#2b2b35] px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blood-red"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase text-gray-400 block mb-1">
-                URL do Áudio (HTTP/HTTPS)
-              </label>
-              <input
-                type="url"
-                required
-                placeholder="https://exemplo.com/audio.mp3"
-                value={linkUrl}
-                onChange={(e) => setLinkUrl(e.target.value)}
-                className="w-full bg-[#08080b] border border-[#2b2b35] px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blood-red"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => setShowAddLink(false)}
-              className="px-3 py-1.5 text-xs uppercase bg-[#181820] hover:bg-[#20202a] text-gray-400 border border-[#2b2b35]"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isAddingLink || !linkUrl.trim()}
-              className="px-4 py-1.5 text-xs uppercase font-bold bg-blood-red hover:bg-red-700 text-white border border-blood-red disabled:opacity-50"
-            >
-              {isAddingLink ? "Cadastrando..." : "Confirmar Faixa"}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* REPRODUTOR EM DESTAQUE (CONTROLES DO MESTRE) */}
-      <div className="p-4 bg-[#0e0e12] border border-[#282832] relative overflow-hidden shadow-2xl">
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-blood-red to-transparent opacity-80" />
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Visor Principal + Controles de Transporte */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Informações da Trilha Ativa */}
-          <div className="flex items-center gap-3.5 min-w-0">
-            <div className={`w-12 h-12 flex items-center justify-center border transition-all ${
-              isPlaying
-                ? "bg-blood-red/20 border-blood-red text-blood-red shadow-[0_0_15px_rgba(143,23,28,0.5)]"
-                : "bg-black border-[#2d2d38] text-gray-500"
-            }`}>
-              <Music className={`w-6 h-6 ${isPlaying ? "animate-bounce" : ""}`} />
+          <div className="flex items-center gap-3.5 min-w-0 flex-1">
+            <div
+              className={`w-12 h-12 sm:w-14 sm:h-14 flex-shrink-0 flex items-center justify-center border transition-all ${
+                isPlaying
+                  ? "bg-blood-red/15 border-blood-red text-blood-red shadow-[0_0_20px_rgba(143,23,28,0.4)]"
+                  : "bg-[#07070a] border-[#262632] text-gray-600"
+              }`}
+            >
+              {isPlaying ? (
+                <div className="flex items-end gap-1 h-5">
+                  <span className="w-1 bg-blood-red animate-[pulse_0.6s_ease-in-out_infinite] h-full" />
+                  <span className="w-1 bg-blood-red animate-[pulse_0.9s_ease-in-out_infinite] h-3" />
+                  <span className="w-1 bg-blood-red animate-[pulse_0.5s_ease-in-out_infinite] h-4" />
+                  <span className="w-1 bg-blood-red animate-[pulse_0.8s_ease-in-out_infinite] h-2.5" />
+                </div>
+              ) : (
+                <Radio className="w-6 h-6" />
+              )}
             </div>
 
-            <div className="min-w-0">
-              <span className="text-[10px] uppercase font-bold tracking-widest text-blood-red block">
-                {isPlaying ? "Transmissão Ativa • Mesa Sincronizada" : "Reprodução Parada"}
-              </span>
-              <h3 className="text-sm font-bold text-white truncate max-w-md">
-                {activeTrack?.name || (playbackState?.track_url ? "Trilha Remota Ativa" : "Nenhuma trilha selecionada")}
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm sm:text-base font-bold text-white truncate">
+                {activeTrack?.name ||
+                  (playbackState?.track_url
+                    ? "Trilha Remota Ativa"
+                    : "Nenhuma faixa selecionada")}
               </h3>
-              <div className="text-[11px] text-gray-400 flex items-center gap-2 mt-0.5">
-                <span>{formatTime(currentProgress)}</span>
-                <span>/</span>
+              <div className="text-xs text-gray-400 flex items-center gap-2 mt-1 tabular-nums">
+                <span className={isPlaying ? "text-white font-bold" : "text-gray-400"}>
+                  {formatTime(currentProgress)}
+                </span>
+                <span className="text-gray-600">/</span>
                 <span>{audioDuration > 0 ? formatTime(audioDuration) : "--:--"}</span>
                 {isLoop && (
-                  <span className="text-[10px] text-blood-red uppercase tracking-wider font-bold">
-                    • Loop Ativo
+                  <span className="ml-1 px-1.5 py-0.5 text-[9px] bg-blood-red/20 border border-blood-red/40 text-red-300 uppercase tracking-wider font-bold">
+                    LOOP
                   </span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Botões de Comando e Ajuste de Volume */}
-          <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-            {/* Play / Pause */}
-            {isPlaying ? (
+          {/* Controles de Transporte + Volume */}
+          <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-2.5 flex-wrap">
+            <div className="flex items-center gap-2">
+              {/* Play / Pause */}
+              {isPlaying ? (
+                <button
+                  type="button"
+                  onClick={() => musicSync.pause()}
+                  title="Pausar"
+                  className="w-11 h-11 flex items-center justify-center bg-blood-red hover:bg-red-700 border border-blood-red text-white transition-all shadow-[0_0_14px_rgba(143,23,28,0.45)] active:scale-95 cursor-pointer touch-manipulation"
+                >
+                  <Pause className="w-5 h-5 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!playbackState?.track_url && tracks.length === 0}
+                  onClick={() => {
+                    musicSync.unlockAudio();
+                    if (playbackState?.track_url) {
+                      musicSync.resume();
+                    } else if (tracks[0]) {
+                      musicSync.playTrack(tracks[0]);
+                    }
+                  }}
+                  title="Tocar"
+                  className="w-11 h-11 flex items-center justify-center bg-[#181822] hover:bg-blood-red border border-[#323242] hover:border-blood-red text-white transition-all active:scale-95 disabled:opacity-40 cursor-pointer touch-manipulation"
+                >
+                  <Play className="w-5 h-5 fill-current ml-0.5" />
+                </button>
+              )}
+
+              {/* Stop */}
               <button
                 type="button"
-                onClick={() => musicSync.pause()}
-                title="Pausar Reprodução"
-                className="w-10 h-10 flex items-center justify-center bg-[#191922] hover:bg-blood-red border border-[#363642] hover:border-blood-red text-white transition-all shadow-md active:scale-95"
+                disabled={!playbackState?.track_url && !isPlaying}
+                onClick={() => musicSync.stop()}
+                title="Parar"
+                className="w-11 h-11 flex items-center justify-center bg-[#14141d] hover:bg-[#222230] border border-[#2c2c3a] text-gray-300 hover:text-white transition-all active:scale-95 disabled:opacity-40 cursor-pointer touch-manipulation"
               >
-                <Pause className="w-5 h-5 fill-current" />
+                <Square className="w-4 h-4 fill-current" />
               </button>
-            ) : (
+
+              {/* Loop Toggle */}
               <button
                 type="button"
-                disabled={!playbackState?.track_url && tracks.length === 0}
-                onClick={() => {
-                  if (playbackState?.track_url) {
-                    musicSync.resume();
-                  } else if (tracks[0]) {
-                    musicSync.playTrack(tracks[0]);
-                  }
-                }}
-                title="Iniciar Reprodução"
-                className="w-10 h-10 flex items-center justify-center bg-blood-red hover:bg-red-700 border border-blood-red text-white transition-all shadow-md active:scale-95 disabled:opacity-40"
+                onClick={() => musicSync.setLoop(!isLoop)}
+                title={isLoop ? "Desativar Loop" : "Ativar Loop"}
+                className={`w-11 h-11 flex items-center justify-center border transition-all active:scale-95 cursor-pointer touch-manipulation ${
+                  isLoop
+                    ? "bg-blood-red/25 border-blood-red text-red-300 shadow-[0_0_10px_rgba(143,23,28,0.35)]"
+                    : "bg-[#14141d] hover:bg-[#222230] border-[#2c2c3a] text-gray-400 hover:text-white"
+                }`}
               >
-                <Play className="w-5 h-5 fill-current" />
+                <Repeat className="w-4 h-4" />
               </button>
-            )}
-
-            {/* Stop */}
-            <button
-              type="button"
-              disabled={!playbackState?.track_url && !isPlaying}
-              onClick={() => musicSync.stop()}
-              title="Parar e Reiniciar Posição"
-              className="w-10 h-10 flex items-center justify-center bg-[#191922] hover:bg-[#252532] border border-[#363642] text-gray-300 hover:text-white transition-all disabled:opacity-40"
-            >
-              <Square className="w-4 h-4 fill-current" />
-            </button>
-
-            {/* Loop Toggle */}
-            <button
-              type="button"
-              onClick={() => musicSync.setLoop(!isLoop)}
-              title={isLoop ? "Desativar Repetição" : "Ativar Repetição"}
-              className={`w-10 h-10 flex items-center justify-center border transition-all ${
-                isLoop
-                  ? "bg-blood-red/30 border-blood-red text-blood-red shadow-[0_0_8px_rgba(143,23,28,0.4)]"
-                  : "bg-[#191922] hover:bg-[#252532] border-[#363642] text-gray-400 hover:text-gray-200"
-              }`}
-            >
-              <Repeat className="w-4 h-4" />
-            </button>
+            </div>
 
             {/* Controle de Volume */}
-            <div className="flex items-center gap-2 bg-[#121217] border border-[#2b2b35] px-3 py-1.5 ml-1">
+            <div className="flex items-center gap-2.5 bg-[#07070b] border border-[#252532] px-3 h-11 flex-1 sm:flex-initial min-w-[165px]">
               <button
                 type="button"
                 onClick={() => musicSync.setVolume(currentVolume === 0 ? 0.8 : 0)}
-                className="text-gray-400 hover:text-white"
+                className="text-gray-400 hover:text-white p-1 cursor-pointer touch-manipulation"
+                title={currentVolume === 0 ? "Restaurar Volume" : "Mutar"}
               >
                 {currentVolume === 0 ? (
                   <VolumeX className="w-4 h-4 text-red-500" />
@@ -416,10 +380,10 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
                 step="0.05"
                 value={currentVolume}
                 onChange={(e) => musicSync.setVolume(parseFloat(e.target.value))}
-                className="w-20 accent-blood-red cursor-pointer"
+                className="w-full sm:w-24 accent-blood-red cursor-pointer"
                 title={`Volume: ${Math.round(currentVolume * 100)}%`}
               />
-              <span className="text-[10px] w-7 text-right font-bold text-gray-400">
+              <span className="text-[11px] w-8 text-right font-bold text-gray-300 tabular-nums">
                 {Math.round(currentVolume * 100)}%
               </span>
             </div>
@@ -427,52 +391,139 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
         </div>
 
         {/* Barra de Progresso Visual */}
-        <div className="mt-4 pt-3 border-t border-[#1e1e26]">
-          <div className="w-full bg-[#08080c] h-1.5 overflow-hidden border border-[#202028]">
+        <div className="mt-4">
+          <div className="w-full bg-[#060609] h-1.5 overflow-hidden border border-[#1d1d26]">
             <div
-              className="bg-blood-red h-full transition-all duration-200 shadow-[0_0_8px_#8f171c]"
+              className="bg-blood-red h-full transition-all duration-200 shadow-[0_0_10px_#8f171c]"
               style={{
-                width: audioDuration > 0
-                  ? `${Math.min(100, (currentProgress / audioDuration) * 100)}%`
-                  : isPlaying ? "100%" : "0%",
+                width:
+                  audioDuration > 0
+                    ? `${Math.min(100, (currentProgress / audioDuration) * 100)}%`
+                    : isPlaying
+                      ? "100%"
+                      : "0%",
               }}
             />
           </div>
         </div>
       </div>
 
+      {uploadError && (
+        <div className="p-3 bg-red-950/60 border border-blood-red text-red-200 text-xs flex items-center justify-between">
+          <span>{uploadError}</span>
+          <button
+            onClick={() => setUploadError(null)}
+            className="p-1 hover:text-white cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* MODAL FLUTUANTE: ADICIONAR POR LINK DIRETO */}
+      {showAddLink && (
+        <div
+          className="fixed inset-0 z-[350] modal-backdrop-blur flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setShowAddLink(false)}
+        >
+          <form
+            onSubmit={handleAddLinkSubmit}
+            onClick={(e) => e.stopPropagation()}
+            style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}
+            className="w-full sm:max-w-md p-5 bg-[#101016]/95 border-t sm:border border-[#2b2b38] flex flex-col gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.85)] animate-sheet-up relative"
+          >
+            <div className="h-[2px] w-full bg-blood-red absolute top-0 left-0" />
+            <div className="sm:hidden flex justify-center -mt-1 pb-1">
+              <div className="w-10 h-1 bg-[#323442]" />
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-white font-bold uppercase tracking-wider">
+              <span className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4 text-blood-red" />
+                Adicionar Link de Áudio
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAddLink(false)}
+                className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <input
+                type="text"
+                placeholder="Nome da trilha (ex: Combate Final)"
+                value={linkName}
+                onChange={(e) => setLinkName(e.target.value)}
+                autoFocus
+                className="w-full min-h-[44px] bg-[#08080c] border border-[#262632] px-3.5 py-2.5 text-base sm:text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blood-red"
+              />
+              <input
+                type="url"
+                required
+                placeholder="https://exemplo.com/trilha.mp3"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                className="w-full min-h-[44px] bg-[#08080c] border border-[#262632] px-3.5 py-2.5 text-base sm:text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blood-red"
+              />
+            </div>
+
+            <div className="flex gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowAddLink(false)}
+                className="flex-1 min-h-[44px] px-4 py-2 text-xs uppercase font-bold bg-[#16161f] hover:bg-[#20202c] text-gray-300 hover:text-white border border-[#2b2b36] cursor-pointer touch-manipulation"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isAddingLink || !linkUrl.trim()}
+                className="flex-1 min-h-[44px] px-4 py-2 text-xs uppercase font-bold bg-blood-red hover:bg-red-700 text-white border border-blood-red disabled:opacity-50 cursor-pointer touch-manipulation"
+              >
+                {isAddingLink ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* SEÇÃO: BIBLIOTECA DE FAIXAS */}
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
             <FileAudio className="w-4 h-4 text-blood-red" />
             <h3 className="text-xs uppercase font-bold tracking-widest text-white">
-              Biblioteca da Mesa ({tracks.length})
+              Trilhas ({tracks.length})
             </h3>
           </div>
 
           {/* Campo de Busca */}
-          <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Buscar faixa..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-[#0a0a0d] border border-[#252530] pl-8 pr-3 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-blood-red"
-            />
-          </div>
+          {tracks.length > 0 && (
+            <div className="relative w-full sm:w-64">
+              <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Filtrar trilhas..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full min-h-[38px] bg-[#0a0a0f] border border-[#242430] pl-8 pr-3 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-blood-red"
+              />
+            </div>
+          )}
         </div>
 
-        {/* LISTAGEM DE FAIXAS */}
+        {/* LISTAGEM DE FAIXAS (Grid de 2 colunas no PC, lista no celular) */}
         {filteredTracks.length === 0 ? (
-          <div className="p-8 text-center bg-[#0d0d11] border border-dashed border-[#262630] text-gray-500 text-xs">
+          <div className="p-8 text-center bg-[#0b0b10] border border-dashed border-[#242430] text-gray-500 text-xs">
             {searchTerm
-              ? "Nenhuma faixa encontrada com o termo informado."
-              : "Nenhuma música adicionada ainda. Envie arquivos ou informe links diretos acima."}
+              ? "Nenhuma trilha encontrada."
+              : "Nenhuma trilha cadastrada."}
           </div>
         ) : (
-          <div className="flex flex-col gap-1.5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
             {filteredTracks.map((track) => {
               const isThisTrackActive = playbackState?.track_url === track.url;
               const isThisTrackPlaying = isThisTrackActive && isPlaying;
@@ -484,15 +535,16 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
                   key={track.id}
                   className={`flex items-center justify-between p-2.5 transition-all border ${
                     isThisTrackActive
-                      ? "bg-[#141018] border-blood-red/80 shadow-[inset_3px_0_0_#8f171c]"
-                      : "bg-[#0f0f13] hover:bg-[#15151c] border-[#22222b]"
+                      ? "bg-[#150f16] border-blood-red/80 shadow-[inset_3px_0_0_#8f171c]"
+                      : "bg-[#0c0c12] hover:bg-[#13131c] border-[#20202a]"
                   }`}
                 >
-                  {/* Lado Esquerdo: Botão Play e Nome */}
+                  {/* Lado Esquerdo: Botão Play 44x44 e Nome */}
                   <div className="flex items-center gap-3 min-w-0 flex-1 mr-2">
                     <button
                       type="button"
                       onClick={() => {
+                        musicSync.unlockAudio();
                         if (isThisTrackPlaying) {
                           musicSync.pause();
                         } else if (isThisTrackActive) {
@@ -501,22 +553,23 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
                           musicSync.playTrack(track);
                         }
                       }}
-                      className={`w-7 h-7 flex-shrink-0 flex items-center justify-center border transition-all ${
+                      className={`w-10 h-10 flex-shrink-0 flex items-center justify-center border transition-all cursor-pointer touch-manipulation active:scale-95 ${
                         isThisTrackPlaying
-                          ? "bg-blood-red text-white border-blood-red shadow-[0_0_8px_rgba(143,23,28,0.5)]"
-                          : "bg-[#181820] hover:bg-blood-red/20 text-gray-300 hover:text-white border-[#30303c] hover:border-blood-red"
+                          ? "bg-blood-red text-white border-blood-red shadow-[0_0_12px_rgba(143,23,28,0.5)]"
+                          : "bg-[#161620] hover:bg-blood-red/20 text-gray-300 hover:text-white border-[#2c2c3a] hover:border-blood-red"
                       }`}
+                      aria-label={isThisTrackPlaying ? `Pausar ${track.name}` : `Tocar ${track.name}`}
                     >
                       {isThisTrackPlaying ? (
-                        <Pause className="w-3.5 h-3.5 fill-current" />
+                        <Pause className="w-4 h-4 fill-current" />
                       ) : (
-                        <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                        <Play className="w-4 h-4 fill-current ml-0.5" />
                       )}
                     </button>
 
                     {/* Nome ou Edição de Nome */}
                     {isEditing ? (
-                      <div className="flex items-center gap-1.5 flex-1 max-w-sm">
+                      <div className="flex items-center gap-1.5 flex-1">
                         <input
                           type="text"
                           value={editingName}
@@ -525,40 +578,40 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
                             if (e.key === "Enter") handleSaveRename(track.id);
                             if (e.key === "Escape") setEditingTrackId(null);
                           }}
-                          className="w-full bg-[#08080b] border border-blood-red px-2 py-0.5 text-xs text-white focus:outline-none"
+                          className="w-full bg-[#07070a] border border-blood-red px-2.5 py-1.5 text-xs text-white focus:outline-none"
                           autoFocus
                         />
                         <button
                           type="button"
                           onClick={() => handleSaveRename(track.id)}
-                          className="p-1 text-green-400 hover:text-green-300"
+                          className="w-8 h-8 flex items-center justify-center text-green-400 hover:text-green-300 bg-[#14141d] border border-[#2a2a36] cursor-pointer"
                         >
-                          <Check className="w-3.5 h-3.5" />
+                          <Check className="w-4 h-4" />
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditingTrackId(null)}
-                          className="p-1 text-gray-400 hover:text-white"
+                          className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white bg-[#14141d] border border-[#2a2a36] cursor-pointer"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-4 h-4" />
                         </button>
                       </div>
                     ) : (
                       <div className="min-w-0 flex-1">
                         <span
                           className={`text-xs font-bold truncate block ${
-                            isThisTrackActive ? "text-white" : "text-gray-300"
+                            isThisTrackActive ? "text-white" : "text-gray-200"
                           }`}
                         >
                           {track.name}
                         </span>
-                        <div className="flex items-center gap-2 text-[10px] text-gray-500 font-sans">
-                          <span className="uppercase">
-                            {track.source === "upload" ? "Storage" : "Link Externo"}
+                        <div className="flex items-center gap-2 text-[10px] text-gray-500 font-sans mt-0.5">
+                          <span className="uppercase tracking-wider">
+                            {track.source === "upload" ? "Storage" : "Link"}
                           </span>
                           {isThisTrackPlaying && (
-                            <span className="text-blood-red font-mono font-bold uppercase tracking-wider">
-                              • Tocando Agora
+                            <span className="text-blood-red font-mono font-bold uppercase tracking-wider flex items-center gap-1">
+                              • Tocando
                             </span>
                           )}
                         </div>
@@ -569,46 +622,27 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
                   {/* Lado Direito: Ações (Renomear e Excluir) */}
                   <div className="flex items-center gap-1">
                     {!isEditing && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingTrackId(track.id);
-                          setEditingName(track.name);
-                        }}
-                        title="Renomear Faixa"
-                        className="p-1.5 text-gray-400 hover:text-white hover:bg-[#1c1c24]"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-
-                    {isDeleting ? (
-                      <div className="flex items-center gap-1 bg-red-950/80 border border-blood-red px-2 py-0.5 text-[10px]">
-                        <span className="text-red-200">Excluir?</span>
+                      <>
                         <button
                           type="button"
-                          onClick={() => handleDeleteTrack(track)}
-                          className="font-bold text-white hover:underline px-1"
+                          onClick={() => {
+                            setEditingTrackId(track.id);
+                            setEditingName(track.name);
+                          }}
+                          title="Renomear"
+                          className="w-9 h-9 flex items-center justify-center text-gray-500 hover:text-white hover:bg-[#1a1a24] transition-colors cursor-pointer touch-manipulation"
                         >
-                          Sim
+                          <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
-                          onClick={() => setDeleteConfirmId(null)}
-                          className="text-gray-300 hover:text-white px-1"
+                          onClick={() => setDeleteConfirmId(track.id)}
+                          title="Remover"
+                          className="w-9 h-9 flex items-center justify-center text-gray-500 hover:text-red-400 hover:bg-[#1a1a24] transition-colors cursor-pointer touch-manipulation"
                         >
-                          Não
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirmId(track.id)}
-                        title="Remover Faixa"
-                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-[#1c1c24]"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -617,6 +651,67 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
           </div>
         )}
       </div>
+
+      {/* MODAL FLUTUANTE DE CONFIRMAÇÃO PARA EXCLUIR OST (SIM / NÃO) */}
+      {deleteConfirmId !== null &&
+        (() => {
+          const trackToDelete = tracks.find((t) => t.id === deleteConfirmId);
+          if (!trackToDelete) return null;
+          return (
+            <div
+              className="fixed inset-0 z-[350] modal-backdrop-blur flex items-end sm:items-center justify-center p-0 sm:p-4"
+              onClick={() => setDeleteConfirmId(null)}
+            >
+              <div
+                className="w-full sm:max-w-sm bg-[#101016]/95 border-t sm:border border-[#2b2b38] rounded-none p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] relative overflow-hidden animate-sheet-up"
+                style={{
+                  paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="h-[2px] w-full bg-blood-red absolute top-0 left-0" />
+                <div className="sm:hidden flex justify-center -mt-1 pb-2.5">
+                  <div className="w-10 h-1 bg-[#323442]" />
+                </div>
+
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-red-950/40 border border-blood-red/50 flex items-center justify-center text-red-400 shrink-0">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                      Apagar Trilha?
+                    </h3>
+                    <p className="text-xs text-gray-400 truncate mt-0.5">
+                      {trackToDelete.name}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-[#9a9aa6] leading-relaxed mb-5 border-b border-[#1e1e28] pb-3.5 font-sans">
+                  Deseja realmente apagar esta trilha da biblioteca da mesa?
+                </p>
+
+                <div className="flex gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmId(null)}
+                    className="flex-1 min-h-[44px] bg-[#16161f] hover:bg-[#222230] active:scale-95 border border-[#2c2c38] text-gray-300 hover:text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 transition-all cursor-pointer touch-manipulation"
+                  >
+                    Não
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteTrack(trackToDelete)}
+                    className="flex-1 min-h-[44px] bg-blood-red hover:bg-red-700 active:scale-95 border border-blood-red text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 transition-all shadow-[0_0_15px_rgba(143,23,28,0.4)] cursor-pointer touch-manipulation"
+                  >
+                    Sim
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
 }

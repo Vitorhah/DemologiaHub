@@ -124,7 +124,7 @@ export function QuickDiceSection({
   isRlMode = false,
 }: QuickDiceSectionProps) {
   return (
-    <div className="w-full max-w-xl mx-auto">
+    <div className="w-full max-w-xl lg:max-w-none mx-auto">
       {/* VISOR DE RESULTADO DO DADO (SE HOUVER ROLAGEM RECENTE) */}
       {lastRoll && (
         <div
@@ -160,7 +160,7 @@ export function QuickDiceSection({
 
           <div className="text-center py-1">
             <div
-              className={`text-5xl sm:text-6xl font-black text-white font-mono tracking-tight select-none ${
+              className={`text-5xl sm:text-6xl font-black text-white font-mono tabular-nums tracking-tight select-none ${
                 isRlMode
                   ? "drop-shadow-[0_0_20px_rgba(192,132,252,0.9)]"
                   : "drop-shadow-[0_0_20px_rgba(184,29,36,0.8)]"
@@ -207,11 +207,11 @@ export function QuickDiceSection({
       >
         {/* CABEÇALHO */}
         <div
-          className={`pb-3 mb-3 sm:pb-3.5 sm:mb-3.5 border-b ${
+          className={`flex items-center justify-between pb-2.5 mb-3 border-b ${
             isRlMode ? "border-purple-500/25" : "border-[var(--op-border)]"
           }`}
         >
-          <h2 className="text-xs sm:text-sm font-mono font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em] text-[var(--op-white)] flex items-center gap-2">
+          <h2 className="text-xs sm:text-sm font-mono font-bold uppercase tracking-[0.18em] text-[var(--op-white)] flex items-center gap-2">
             <span
               className={`w-2 h-2 rounded-none ${
                 isRlMode
@@ -219,17 +219,17 @@ export function QuickDiceSection({
                   : "bg-[var(--op-red)] shadow-[0_0_6px_#8f171c]"
               }`}
             />
-            {isRlMode ? "DADOS RÁPIDOS • REAL L" : "DADOS RÁPIDOS"}
+            DADOS RÁPIDOS
           </h2>
-          <p
-            className={`text-[10px] sm:text-[11px] font-mono mt-0.5 ${
-              isRlMode ? "text-purple-300/70" : "text-[var(--op-text-muted)]"
+          <span
+            className={`text-xs font-mono font-bold tabular-nums px-2 py-0.5 border ${
+              isRlMode
+                ? "bg-purple-950/50 text-purple-200 border-purple-500/35"
+                : "bg-[#1a090c] text-[#ff8085] border-[#6b1419]"
             }`}
           >
-            {isRlMode
-              ? "Geometria balística e probabilidade calculada"
-              : "Formas geométricas sagradas de invocação"}
-          </p>
+            {quickDiceQty}x
+          </span>
         </div>
 
         {/* GRADE DOS DADOS */}
@@ -310,36 +310,16 @@ export function QuickDiceSection({
               }`}
             />
 
-            <div className="relative flex flex-col sm:flex-row items-center justify-between gap-3">
-              {/* Lado Esquerdo: Identificação e Stepper Rápido */}
+            <div className="relative flex flex-col sm:flex-row items-center justify-between gap-2.5">
+              {/* Lado Esquerdo: Stepper Rápido */}
               <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-start">
-                <div>
-                  <div
-                    className={`text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-[0.18em] sm:tracking-[0.2em] flex items-center gap-1.5 ${
-                      isRlMode ? "text-[#d8b4fe]" : "text-[#ff8085]"
-                    }`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                        isRlMode
-                          ? "bg-[#c084fc] shadow-[0_0_6px_#c084fc]"
-                          : "bg-[#ff3b45] shadow-[0_0_6px_#ff3b45]"
-                      }`}
-                    />
-                    QUANTIDADE DE DADOS
-                  </div>
-                  <div
-                    className={`text-[11px] sm:text-xs font-mono mt-0.5 ${
-                      isRlMode ? "text-[#e9d5ff]" : "text-[#e5b3b6]"
-                    }`}
-                  >
-                    Multiplicador:{" "}
-                    <strong className="text-white text-sm font-black tracking-wide">
-                      {quickDiceQty}x
-                    </strong>{" "}
-                    {quickDiceQty === 1 ? "dado" : "dados"}
-                  </div>
-                </div>
+                <span
+                  className={`text-[11px] font-mono font-bold uppercase tracking-wider ${
+                    isRlMode ? "text-[#d8b4fe]" : "text-[#ff8085]"
+                  }`}
+                >
+                  Quantidade
+                </span>
 
                 {/* Controles de incremento / decremento rápido */}
                 <div
@@ -353,7 +333,7 @@ export function QuickDiceSection({
                     type="button"
                     onClick={() => setQuickDiceQty(Math.max(1, quickDiceQty - 1))}
                     disabled={quickDiceQty <= 1}
-                    className={`w-10 h-10 sm:w-8 sm:h-8 rounded-none flex items-center justify-center font-mono font-black text-base sm:text-sm text-white active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer touch-manipulation select-none ${
+                    className={`w-11 h-11 sm:w-9 sm:h-9 rounded-none flex items-center justify-center font-mono font-black text-base sm:text-sm text-white active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer touch-manipulation select-none ${
                       isRlMode
                         ? "bg-[#281342] hover:bg-[#3b1c60]"
                         : "bg-[#300a0d] hover:bg-[#521016]"
@@ -362,14 +342,14 @@ export function QuickDiceSection({
                   >
                     -
                   </button>
-                  <span className="w-7 sm:w-8 text-center font-mono font-black text-base sm:text-sm text-white select-none">
+                  <span className="w-8 text-center font-mono font-black text-base sm:text-sm text-white tabular-nums select-none">
                     {quickDiceQty}
                   </span>
                   <button
                     type="button"
                     onClick={() => setQuickDiceQty(Math.min(20, quickDiceQty + 1))}
                     disabled={quickDiceQty >= 20}
-                    className={`w-10 h-10 sm:w-8 sm:h-8 rounded-none flex items-center justify-center font-mono font-black text-base sm:text-sm text-white active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer touch-manipulation select-none ${
+                    className={`w-11 h-11 sm:w-9 sm:h-9 rounded-none flex items-center justify-center font-mono font-black text-base sm:text-sm text-white active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer touch-manipulation select-none ${
                       isRlMode
                         ? "bg-[#581c87] hover:bg-[#7e22ce] shadow-[0_0_10px_rgba(168,85,247,0.5)]"
                         : "bg-[#521016] hover:bg-[#7a181e] shadow-[0_0_8px_rgba(184,29,36,0.5)]"
@@ -390,7 +370,7 @@ export function QuickDiceSection({
                       key={qty}
                       type="button"
                       onClick={() => setQuickDiceQty(qty)}
-                      className={`h-9 sm:h-8 px-2 sm:px-2.5 rounded-none text-xs font-mono font-bold transition-all duration-150 cursor-pointer flex items-center justify-center touch-manipulation select-none ${
+                      className={`min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 rounded-none text-xs font-mono font-bold tabular-nums transition-all duration-150 cursor-pointer flex items-center justify-center touch-manipulation select-none ${
                         isRlMode
                           ? isActive
                             ? "bg-gradient-to-b from-[#c084fc] to-[#7e22ce] text-white shadow-[0_0_14px_rgba(192,132,252,0.8)] border border-[#e9d5ff] scale-105"

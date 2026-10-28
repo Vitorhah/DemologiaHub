@@ -108,7 +108,7 @@ export function FormulaShortcutsSection({
 
   return (
     <div
-      className={`w-full max-w-xl mx-auto rounded-none p-4 sm:p-6 shadow-xl relative overflow-hidden border transition-colors ${
+      className={`w-full max-w-xl lg:max-w-none mx-auto rounded-none p-4 sm:p-6 shadow-xl relative overflow-hidden border transition-colors ${
         isRlMode
           ? "bg-gradient-to-b from-[#151224] to-[#0c0a14] border-purple-500/30"
           : "bg-[var(--op-panel)] border-[var(--op-border)]"
@@ -116,57 +116,48 @@ export function FormulaShortcutsSection({
     >
       {/* CABEÇALHO DA SEÇÃO DE ATALHOS */}
       <div
-        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 sm:pb-4 mb-4 sm:mb-5 border-b ${
+        className={`flex items-center justify-between gap-3 pb-3 mb-4 border-b ${
           isRlMode ? "border-purple-500/25" : "border-[var(--op-border)]"
         }`}
       >
-        <div>
-          <div className="flex items-center gap-2 sm:gap-2.5">
-            <span
-              className={`w-2.5 h-2.5 rounded-none ${
-                isRlMode
-                  ? "bg-[#c084fc] shadow-[0_0_8px_#c084fc]"
-                  : "bg-[var(--op-red-bright)] shadow-[0_0_8px_#b81d24]"
-              }`}
-            />
-            <h2 className="text-sm sm:text-base font-mono font-bold uppercase tracking-[0.16em] sm:tracking-[0.2em] text-[var(--op-white)]">
-              ATALHOS DE FÓRMULA
-            </h2>
-            <span
-              className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full border ${
-                shortcuts.length >= MAX_SHORTCUTS
-                  ? isRlMode
-                    ? "bg-[#341147] text-[#f3e8ff] border-purple-500/60"
-                    : "bg-[#330f13] text-[#ff8085] border-[#7a181e]"
-                  : isRlMode
-                  ? "bg-[#181128] text-purple-200/80 border-purple-500/30"
-                  : "bg-[#14141a] text-[var(--op-text-muted)] border-[var(--op-border)]"
-              }`}
-            >
-              {shortcuts.length} / {MAX_SHORTCUTS}
-            </span>
-          </div>
-          <p
-            className={`text-[11px] sm:text-xs font-mono mt-1 ${
-              isRlMode ? "text-purple-300/70" : "text-[var(--op-text-muted)]"
+        <div className="flex items-center gap-2">
+          <span
+            className={`w-2 h-2 rounded-none ${
+              isRlMode
+                ? "bg-[#c084fc] shadow-[0_0_8px_#c084fc]"
+                : "bg-[var(--op-red-bright)] shadow-[0_0_8px_#b81d24]"
+            }`}
+          />
+          <h2 className="text-xs sm:text-sm font-mono font-bold uppercase tracking-[0.18em] text-[var(--op-white)]">
+            ATALHOS
+          </h2>
+          <span
+            className={`text-[11px] font-mono font-bold tabular-nums px-2 py-0.5 rounded-none border ${
+              shortcuts.length >= MAX_SHORTCUTS
+                ? isRlMode
+                  ? "bg-[#341147] text-[#f3e8ff] border-purple-500/60"
+                  : "bg-[#330f13] text-[#ff8085] border-[#7a181e]"
+                : isRlMode
+                ? "bg-[#181128] text-purple-200/80 border-purple-500/30"
+                : "bg-[#14141a] text-[var(--op-text-muted)] border-[var(--op-border)]"
             }`}
           >
-            Grave suas fórmulas frequentes para rolagens imediatas com um toque
-          </p>
+            {shortcuts.length}/{MAX_SHORTCUTS}
+          </span>
         </div>
 
         {shortcuts.length < MAX_SHORTCUTS && !isFormOpen && (
           <button
             type="button"
             onClick={handleOpenCreate}
-            className={`w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-none font-mono font-bold text-xs uppercase tracking-wider text-white active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[42px] touch-manipulation select-none border ${
+            className={`px-3.5 py-2 rounded-none font-mono font-bold text-xs uppercase tracking-wider text-white active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[40px] touch-manipulation select-none border ${
               isRlMode
-                ? "bg-gradient-to-r from-[#7e22ce] to-[#581c87] hover:from-[#9333ea] hover:to-[#6b21a8] border-purple-400/50 shadow-[0_0_14px_rgba(168,85,247,0.35)]"
-                : "bg-gradient-to-r from-[#99151b] to-[#6e0f14] hover:from-[#b81d24] hover:to-[#851218] border-[#b81d24]/60 shadow-[0_0_12px_rgba(184,29,36,0.35)]"
+                ? "bg-gradient-to-r from-[#7e22ce] to-[#581c87] hover:from-[#9333ea] hover:to-[#6b21a8] border-purple-400/50"
+                : "bg-gradient-to-r from-[#99151b] to-[#6e0f14] hover:from-[#b81d24] hover:to-[#851218] border-[#b81d24]/60"
             }`}
           >
-            <Plus size={15} className="text-white" />
-            <span>Novo Atalho</span>
+            <Plus size={14} className="text-white" />
+            <span>Adicionar</span>
           </button>
         )}
       </div>
@@ -201,7 +192,8 @@ export function FormulaShortcutsSection({
                 setIsFormOpen(false);
                 setEditingId(null);
               }}
-              className="p-1.5 rounded-none text-[var(--op-text-muted)] hover:text-white hover:bg-white/10 transition-colors touch-manipulation"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-none text-[var(--op-text-muted)] hover:text-white hover:bg-white/10 transition-colors touch-manipulation cursor-pointer"
+              aria-label="Fechar formulário"
             >
               <X size={16} />
             </button>
@@ -261,7 +253,7 @@ export function FormulaShortcutsSection({
                 setIsFormOpen(false);
                 setEditingId(null);
               }}
-              className={`px-4 py-2.5 sm:py-2 text-xs font-mono uppercase tracking-wider rounded-none border transition-colors cursor-pointer text-center min-h-[42px] touch-manipulation select-none ${
+              className={`px-4 py-2.5 sm:py-2 text-xs font-mono uppercase tracking-wider rounded-none border transition-colors cursor-pointer text-center min-h-[44px] touch-manipulation select-none ${
                 isRlMode
                   ? "text-purple-200/70 hover:text-white bg-[#160f25] hover:bg-[#25183d] border-purple-500/30"
                   : "text-[var(--op-text-muted)] hover:text-white bg-[#14141a] hover:bg-[#20202a] border-[var(--op-border)]"
@@ -272,7 +264,7 @@ export function FormulaShortcutsSection({
             <button
               type="submit"
               disabled={!formFormula.trim()}
-              className={`px-5 py-2.5 sm:py-2 text-xs font-mono font-bold uppercase tracking-wider text-white rounded-none border disabled:opacity-40 transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[42px] touch-manipulation select-none ${
+              className={`px-5 py-2.5 sm:py-2 text-xs font-mono font-bold uppercase tracking-wider text-white rounded-none border disabled:opacity-40 transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[44px] touch-manipulation select-none ${
                 isRlMode
                   ? "bg-gradient-to-r from-[#7e22ce] to-[#581c87] hover:from-[#9333ea] hover:to-[#6b21a8] border-purple-400/50 shadow-[0_0_14px_rgba(168,85,247,0.4)]"
                   : "bg-gradient-to-r from-[#b81d24] to-[#7a1015] hover:from-[#d1242c] hover:to-[#96141a] border-[#b81d24] shadow-[0_0_14px_rgba(184,29,36,0.5)]"
@@ -288,42 +280,30 @@ export function FormulaShortcutsSection({
       {/* ESTADO VAZIO */}
       {shortcuts.length === 0 ? (
         <div
-          className={`py-8 sm:py-10 px-4 border border-dashed rounded-none text-center flex flex-col items-center justify-center ${
+          className={`py-6 px-4 border border-dashed rounded-none text-center flex flex-col items-center justify-center ${
             isRlMode
               ? "border-purple-500/30 bg-[#120c1f]/50"
               : "border-[var(--op-border)] bg-[#0d0d12]/50"
           }`}
         >
-          <div
-            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-none border flex items-center justify-center mb-3 ${
-              isRlMode
-                ? "bg-[#24133d] border-purple-500/40 text-[#c084fc] shadow-[0_0_16px_rgba(168,85,247,0.3)]"
-                : "bg-[#1c080b] border-[#541217] text-[var(--op-red-bright)] shadow-[0_0_16px_rgba(184,29,36,0.25)]"
-            }`}
-          >
-            <Dices size={26} />
-          </div>
-          <h3 className="text-xs sm:text-sm font-mono font-bold text-white uppercase tracking-wider">
-            Nenhum atalho criado ainda
-          </h3>
           <p
-            className={`text-[11px] sm:text-xs font-mono max-w-sm mt-1.5 mb-4 sm:mb-5 leading-relaxed ${
+            className={`text-xs font-mono mb-3 ${
               isRlMode ? "text-purple-300/70" : "text-[var(--op-text-muted)]"
             }`}
           >
-            Personalize até 8 botões rápidos com as fórmulas mais usadas da sua ficha para rolar com agilidade.
+            Nenhum atalho salvo.
           </p>
           <button
             type="button"
             onClick={handleOpenCreate}
-            className={`w-full sm:w-auto px-5 py-3 sm:py-2.5 rounded-none font-mono font-bold text-xs uppercase tracking-wider text-white active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[44px] touch-manipulation select-none border ${
+            className={`px-4 py-2 rounded-none font-mono font-bold text-xs uppercase tracking-wider text-white active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[42px] touch-manipulation select-none border ${
               isRlMode
-                ? "bg-gradient-to-r from-[#7e22ce] to-[#581c87] hover:from-[#9333ea] hover:to-[#6b21a8] border-purple-400/50 shadow-[0_0_16px_rgba(168,85,247,0.4)]"
-                : "bg-gradient-to-r from-[#b81d24] to-[#7a1015] hover:from-[#d1242c] hover:to-[#96141a] border-[#b81d24] shadow-[0_0_16px_rgba(184,29,36,0.4)]"
+                ? "bg-gradient-to-r from-[#7e22ce] to-[#581c87] hover:from-[#9333ea] hover:to-[#6b21a8] border-purple-400/50"
+                : "bg-gradient-to-r from-[#b81d24] to-[#7a1015] hover:from-[#d1242c] hover:to-[#96141a] border-[#b81d24]"
             }`}
           >
-            <Plus size={16} />
-            <span>Criar Primeiro Atalho</span>
+            <Plus size={15} />
+            <span>Criar Atalho</span>
           </button>
         </div>
       ) : (
@@ -383,7 +363,7 @@ export function FormulaShortcutsSection({
                   type="button"
                   onClick={(e) => handleInsert(sc.formula, e)}
                   title="Copiar fórmula para o terminal"
-                  className="w-10 h-10 sm:w-8 sm:h-8 flex items-center justify-center rounded-none hover:bg-white/10 active:bg-white/20 text-[var(--op-text-muted)] hover:text-white transition-colors cursor-pointer touch-manipulation"
+                  className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-none hover:bg-white/10 active:bg-white/20 text-[var(--op-text-muted)] hover:text-white transition-colors cursor-pointer touch-manipulation"
                 >
                   <ArrowUpRight size={16} />
                 </button>
@@ -391,7 +371,7 @@ export function FormulaShortcutsSection({
                   type="button"
                   onClick={(e) => handleOpenEdit(sc, e)}
                   title="Editar atalho"
-                  className="w-10 h-10 sm:w-8 sm:h-8 flex items-center justify-center rounded-none hover:bg-white/10 active:bg-white/20 text-[var(--op-text-muted)] hover:text-white transition-colors cursor-pointer touch-manipulation"
+                  className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-none hover:bg-white/10 active:bg-white/20 text-[var(--op-text-muted)] hover:text-white transition-colors cursor-pointer touch-manipulation"
                 >
                   <Edit2 size={15} />
                 </button>
@@ -399,7 +379,7 @@ export function FormulaShortcutsSection({
                   type="button"
                   onClick={(e) => handleDelete(sc.id, e)}
                   title="Excluir atalho"
-                  className={`w-10 h-10 sm:w-8 sm:h-8 flex items-center justify-center rounded-none transition-colors cursor-pointer touch-manipulation ${
+                  className={`min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-none transition-colors cursor-pointer touch-manipulation ${
                     isRlMode
                       ? "hover:bg-purple-950/60 active:bg-purple-900 text-[var(--op-text-muted)] hover:text-purple-300"
                       : "hover:bg-red-950/60 active:bg-red-900 text-[var(--op-text-muted)] hover:text-red-400"
@@ -410,20 +390,6 @@ export function FormulaShortcutsSection({
               </div>
             </div>
           ))}
-        </div>
-      )}
-
-      {/* RODAPÉ INFORMATIVO */}
-      {shortcuts.length > 0 && (
-        <div
-          className={`mt-3.5 sm:mt-4 pt-3 border-t flex items-center justify-between text-[11px] sm:text-xs font-mono ${
-            isRlMode ? "border-purple-500/25 text-purple-300/60" : "border-[var(--op-border)] text-[var(--op-text-muted)]"
-          }`}
-        >
-          <span>Toque no atalho para rolar.</span>
-          <span className={isRlMode ? "text-purple-400/80" : "text-[#777]"}>
-            {shortcuts.length} de {MAX_SHORTCUTS}
-          </span>
         </div>
       )}
     </div>

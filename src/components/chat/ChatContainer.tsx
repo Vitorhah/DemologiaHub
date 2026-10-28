@@ -99,7 +99,7 @@ export function ChatContainer({
   return (
     <section
       aria-label="Chat Coletivo da Mesa"
-      className="chat-container w-full flex flex-col bg-[var(--op-bg)] text-[#f1f1f4] min-h-[calc(100vh-16px)] sm:min-h-screen border border-[var(--op-border)] rounded-none shadow-2xl relative"
+      className="chat-container w-full flex-1 flex flex-col bg-[var(--op-bg)] text-[#f1f1f4] min-h-[calc(100dvh-4.5rem)] lg:min-h-[calc(100dvh-3rem)] border border-[var(--op-border)] rounded-none shadow-2xl relative"
     >
       {/* 1. Header do Chat limpo e minimalista */}
       <ChatHeader

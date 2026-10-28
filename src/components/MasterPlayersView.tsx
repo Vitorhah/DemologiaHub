@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Flame,
   EyeOff,
+  Dices,
 } from "lucide-react";
 import { GameMode } from "../types";
 import { StatMathInput } from "./StatMathInput";
@@ -30,6 +31,7 @@ export interface MasterPlayersViewProps {
   ) => void;
   viewMode?: "grid" | "list";
   onClearChatHistory?: () => void;
+  onRollInitiative?: () => void;
   playerModes?: Record<string, GameMode>;
   currentGlobalMode?: GameMode;
   onTogglePlayerMode?: (playerId: string) => void;
@@ -44,10 +46,32 @@ export function MasterPlayersView({
   onUpdateStat,
   viewMode = "grid",
   onClearChatHistory,
+  onRollInitiative,
   playerModes = {},
   currentGlobalMode = "demologia",
   onTogglePlayerMode,
 }: MasterPlayersViewProps) {
+  const isRlGlobal = currentGlobalMode === "rl";
+
+  const renderFloatingInitiativeButton = () => {
+    if (!onRollInitiative) return null;
+    return (
+      <button
+        type="button"
+        onClick={onRollInitiative}
+        style={{ bottom: "max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.25rem))" }}
+        className={`fixed right-5 sm:right-7 z-40 w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-90 hover:scale-105 touch-manipulation select-none group ${
+          isRlGlobal
+            ? "bg-gradient-to-br from-[#9333ea] via-[#7e22ce] to-[#4c1d95] text-white border-2 border-purple-300/70 shadow-[0_6px_28px_rgba(168,85,247,0.65)] hover:shadow-[0_8px_34px_rgba(192,132,252,0.85)]"
+            : "bg-gradient-to-br from-[#d1242c] via-[#99151b] to-[#520b0f] text-white border-2 border-[#ff8085]/70 shadow-[0_6px_28px_rgba(184,29,36,0.65)] hover:shadow-[0_8px_34px_rgba(220,38,38,0.85)]"
+        }`}
+        title="Rolar Iniciativa de Todos (1d20 + AGL)"
+        aria-label="Rolar Iniciativa de Todos"
+      >
+        <Dices size={26} className="transition-transform duration-200 group-hover:rotate-12 group-active:rotate-45" />
+      </button>
+    );
+  };
   const syncedExtrasAsPlayers = extraFichas
     .filter((f) => f.synchronized)
     .map((f) => ({
@@ -99,6 +123,7 @@ export function MasterPlayersView({
             </button>
           </div>
         )}
+        {renderFloatingInitiativeButton()}
       </div>
     );
   }
@@ -334,31 +359,7 @@ export function MasterPlayersView({
             </tbody>
           </table>
         </div>
-
-        {onClearChatHistory && (
-          <div className="mt-6 p-3.5 bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] flex flex-col sm:flex-row items-center justify-between gap-3 font-mono">
-            <div className="flex items-center gap-2.5">
-              <MessageSquare size={16} className="text-[var(--op-red-bright)] shrink-0" />
-              <div>
-                <div className="text-xs font-bold text-white uppercase tracking-wider">
-                  Chat da Mesa Coletivo
-                </div>
-                <div className="text-[11px] text-[#828392]">
-                  Histórico sincronizado em tempo real entre jogadores e mestre.
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onClearChatHistory}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#121218] hover:bg-red-950/50 text-[#9ca3af] hover:text-red-400 border border-[#262632] hover:border-red-900/60 outline outline-1 outline-[#181820] text-xs uppercase tracking-wider transition-all cursor-pointer"
-              title="Apagar mensagens do chat da mesa"
-            >
-              <Trash2 size={13} className="text-red-500" />
-              <span>Limpar Histórico do Chat</span>
-            </button>
-          </div>
-        )}
+        {renderFloatingInitiativeButton()}
       </div>
     );
   }
@@ -603,31 +604,7 @@ export function MasterPlayersView({
         );
       })}
       </div>
-
-      {onClearChatHistory && (
-        <div className="mt-8 p-3.5 bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] flex flex-col sm:flex-row items-center justify-between gap-3 font-mono">
-          <div className="flex items-center gap-2.5">
-            <MessageSquare size={16} className="text-[var(--op-red-bright)] shrink-0" />
-            <div>
-              <div className="text-xs font-bold text-white uppercase tracking-wider">
-                Chat da Mesa Coletivo
-              </div>
-              <div className="text-[11px] text-[#828392]">
-                Histórico sincronizado em tempo real entre jogadores e mestre.
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClearChatHistory}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-[#121218] hover:bg-red-950/50 text-[#9ca3af] hover:text-red-400 border border-[#262632] hover:border-red-900/60 outline outline-1 outline-[#181820] text-xs uppercase tracking-wider transition-all cursor-pointer"
-            title="Apagar mensagens do chat da mesa"
-          >
-            <Trash2 size={13} className="text-red-500" />
-            <span>Limpar Histórico do Chat</span>
-          </button>
-        </div>
-      )}
+      {renderFloatingInitiativeButton()}
     </div>
   );
 }

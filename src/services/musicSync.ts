@@ -387,6 +387,62 @@ export class MusicSync {
   }
 
   /**
+   * Desbloqueia proativamente o elemento HTMLAudioElement no primeiro toque/clique
+   * do usuário na tela inicial, garantindo que futuras transmissões via Realtime
+   * toquem imediatamente sem bloqueio de autoplay do navegador/WebView.
+   */
+  public unlockAudio(): void {
+    if (this.isDestroyed) return;
+    this.removeAutoplayListeners();
+
+    const activeState = this.pendingPlayState || this.currentState;
+    if (activeState && activeState.is_playing && activeState.track_url) {
+      this.pendingPlayState = null;
+      this.applyPlaybackState(activeState);
+      return;
+    }
+
+    try {
+      const prevVolume = this.audio.volume;
+      const prevSrc = this.audio.src;
+      const silentWav =
+        'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
+      this.audio.muted = true;
+      if (!prevSrc) {
+        this.audio.src = silentWav;
+      }
+
+      const playPromise = this.audio.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            if (!this.currentState?.is_playing) {
+              this.audio.pause();
+              if (!prevSrc && !this.currentState?.track_url) {
+                this.audio.removeAttribute('src');
+                this.audio.load();
+              } else if (this.currentState?.track_url && this.audio.src !== this.currentState.track_url) {
+                this.audio.src = this.currentState.track_url;
+                this.audio.currentTime = this.currentState.paused_position || 0;
+              }
+            }
+            this.audio.muted = false;
+            this.audio.volume = this.currentState?.volume ?? prevVolume;
+          })
+          .catch(() => {
+            this.audio.muted = false;
+            this.audio.volume = this.currentState?.volume ?? prevVolume;
+          });
+      } else {
+        this.audio.muted = false;
+      }
+    } catch {
+      this.audio.muted = false;
+    }
+  }
+
+  /**
    * Pré-carrega uma faixa de áudio em segundo plano para transição instantânea.
    */
   public preloadTrack(url: string): void {
