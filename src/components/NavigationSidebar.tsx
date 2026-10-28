@@ -30,7 +30,7 @@ export interface NavigationSidebarProps {
   isOnline?: boolean;
 }
 
-export function NavigationSidebar({
+export const NavigationSidebar = React.memo(function NavigationSidebar({
   currentPage,
   setCurrentPage,
   menuOpen,
@@ -421,4 +421,4 @@ export function NavigationSidebar({
       </div>
     </aside>
   );
-}
+});

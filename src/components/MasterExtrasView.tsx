@@ -83,8 +83,8 @@ export function MasterExtrasView({
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-4 px-3 sm:px-4 font-mono my-4">
-      {/* Cabeçalho Limpo */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-3.5 sm:p-4">
+      {/* Cabeçalho */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-[#0c0c10] border border-[#202028] rounded-none p-4">
         <div>
           <h2 className="text-sm font-bold text-white uppercase tracking-wider">
             Fichas Extras e NPCs
@@ -97,22 +97,22 @@ export function MasterExtrasView({
         <button
           type="button"
           onClick={handleAddNew}
-          className="inline-flex items-center gap-1.5 px-3 py-2 bg-[var(--op-red)] hover:bg-red-700 text-white text-xs font-mono font-bold uppercase tracking-wider rounded-none border border-red-950 transition-colors cursor-pointer shrink-0 min-h-[36px]"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--op-red)] hover:bg-[var(--op-red-bright)] active:scale-95 text-white text-xs font-mono font-bold uppercase tracking-wider rounded-none transition-all cursor-pointer shrink-0 min-h-[44px] touch-manipulation border border-[#ff8085]/30"
         >
-          <Plus size={14} />
+          <Plus size={15} />
           <span>Nova Ficha Extra</span>
         </button>
       </div>
 
       {/* Grid de Fichas Extras */}
       {extraFichas.length === 0 ? (
-        <div className="py-14 text-center flex flex-col items-center justify-center bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] rounded-none">
+        <div className="py-14 text-center flex flex-col items-center justify-center bg-[#0c0c10] border border-[#202028] rounded-none">
           <Files size={32} className="text-[#626475] mb-2.5 opacity-60" />
           <h4 className="text-sm font-bold text-white uppercase tracking-wider">
             Nenhuma ficha extra cadastrada
           </h4>
           <p className="text-xs text-[#828392] max-w-xs mt-1">
-            Clique no botão acima para adicionar uma ficha de NPC ou personagem secundário.
+            Toque no botão acima para adicionar uma ficha de NPC ou personagem secundário.
           </p>
         </div>
       ) : (
@@ -136,10 +136,10 @@ export function MasterExtrasView({
             return (
               <div
                 key={ficha.id}
-                className={`bg-[#0c0c10] border rounded-none p-3.5 sm:p-4 flex flex-col justify-between transition-all ${
+                className={`bg-[#0c0c10] border rounded-none p-4 flex flex-col justify-between transition-all ${
                   ficha.synchronized
-                    ? "border-[var(--op-red)] outline outline-1 outline-[var(--op-red-bright)]/40"
-                    : "border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a]"
+                    ? "border-[var(--op-red)]/60"
+                    : "border-[#202028] hover:border-[#2c2c38]"
                 }`}
               >
                 <div>
@@ -148,7 +148,7 @@ export function MasterExtrasView({
                     <div className="flex-1 min-w-0">
                       {ficha.synchronized && (
                         <span className="inline-flex items-center gap-1.5 text-[10px] text-[var(--op-red-bright)] font-bold uppercase tracking-wider mb-1">
-                          <span className="w-1.5 h-1.5 bg-[var(--op-red-bright)] rounded-none" />
+                          <span className="w-1.5 h-1.5 bg-[var(--op-red-bright)] rounded-full" />
                           Sincronizado
                         </span>
                       )}
@@ -170,7 +170,7 @@ export function MasterExtrasView({
                             ),
                           );
                         }}
-                        className="bg-transparent text-white font-bold text-sm border-b border-transparent focus:border-[var(--op-red)] outline-none w-full min-w-0 pb-0.5 uppercase tracking-wider"
+                        className="bg-transparent text-white font-bold text-sm border-b border-transparent focus:border-[var(--op-red)] outline-none w-full min-w-0 pb-1 uppercase tracking-wider"
                         placeholder="Nome da ficha..."
                       />
                     </div>
@@ -180,52 +180,52 @@ export function MasterExtrasView({
                         type="button"
                         onClick={() => toggleFichaSync(ficha)}
                         title={ficha.synchronized ? "Desativar sincronização" : "Sincronizar com a sessão"}
-                        className={`p-1.5 rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center ${
+                        className={`p-2 rounded-none transition-all cursor-pointer min-h-[38px] min-w-[38px] flex items-center justify-center active:scale-95 border ${
                           ficha.synchronized
-                            ? "text-[var(--op-red-bright)] bg-[rgba(181,42,48,0.2)] border border-[var(--op-red)] outline outline-1 outline-[var(--op-red-bright)]/40"
-                            : "text-[#828392] hover:text-white bg-[#121217] hover:bg-[#181820] border border-[#202028] outline outline-1 outline-[#181820]"
+                            ? "text-[#ff8085] bg-[#1e0a0d] border-[var(--op-red)]/60"
+                            : "text-[#828392] hover:text-white bg-[#14141c] border-[#242430]"
                         }`}
                       >
-                        {ficha.synchronized ? <Cloud size={13} /> : <CloudOff size={13} />}
+                        {ficha.synchronized ? <Cloud size={14} /> : <CloudOff size={14} />}
                       </button>
 
                       <button
                         type="button"
                         onClick={() => handleDuplicate(ficha)}
                         title="Duplicar ficha"
-                        className="p-1.5 text-[#828392] hover:text-white bg-[#121217] hover:bg-[#181820] border border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
+                        className="p-2 text-[#828392] hover:text-white bg-[#14141c] border border-[#242430] rounded-none transition-all cursor-pointer min-h-[38px] min-w-[38px] flex items-center justify-center active:scale-95"
                       >
-                        <Copy size={13} />
+                        <Copy size={14} />
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setDeletingFichaId(ficha.id)}
-                        className="p-1.5 text-[#828392] hover:text-[var(--op-red-bright)] bg-[#121217] hover:bg-[#1a1215] border border-[#202028] hover:border-[var(--op-red)] outline outline-1 outline-[#181820] hover:outline-[var(--op-red-bright)]/40 rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
+                        className="p-2 text-[#828392] hover:text-red-400 bg-[#14141c] hover:bg-red-950/35 border border-[#242430] hover:border-red-900/50 rounded-none transition-all cursor-pointer min-h-[38px] min-w-[38px] flex items-center justify-center active:scale-95"
                         title="Excluir ficha"
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   </div>
 
-                  {/* HP & Status Condicional (PE em Demologia, SN em Real L) */}
+                  {/* HP & Status Condicional */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                     {/* HP */}
-                    <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2">
+                    <div className="bg-[#111117] border border-[#1e1e28] rounded-none p-2.5">
                       <div className="flex items-center justify-between text-[10px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
                         <span className="text-[var(--op-red-bright)] flex items-center gap-1">
                           <Heart size={10} /> HP
                         </span>
                         <span>{hpCurrent}/{hpMax}</span>
                       </div>
-                      <div className="h-1.5 bg-[#181820] border border-[#242430] overflow-hidden mb-2">
+                      <div className="h-1.5 bg-[#181820] rounded-none overflow-hidden mb-2">
                         <div
                           className="h-full bg-[var(--op-red)] transition-all duration-200"
                           style={{ width: `${hpPct}%` }}
                         />
                       </div>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1.5">
                         <div className="w-1/2">
                           <StatMathInput
                             value={hpCurrent}
@@ -242,7 +242,7 @@ export function MasterExtrasView({
                                 ),
                               );
                             }}
-                            className="w-full bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                            className="w-full min-h-[34px] bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-white text-xs text-center py-1 rounded-none outline-none font-bold"
                             placeholder="Atual"
                           />
                         </div>
@@ -262,29 +262,28 @@ export function MasterExtrasView({
                                 ),
                               );
                             }}
-                            className="w-full bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                            className="w-full min-h-[34px] bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-[#828392] text-xs text-center py-1 rounded-none outline-none font-bold"
                             placeholder="Máx"
                           />
                         </div>
                       </div>
                     </div>
 
-                    {/* Modo RL: Exibe SN abaixo de HP */}
                     {currentGlobalMode === "rl" ? (
-                      <div className="bg-[#140b20] border border-purple-500/30 outline outline-1 outline-purple-500/20 rounded-none p-2">
+                      <div className="bg-[#140b20] border border-purple-500/30 rounded-none p-2.5">
                         <div className="flex items-center justify-between text-[10px] text-[#c084fc] mb-1 font-bold uppercase tracking-wider">
                           <span className="text-purple-400 flex items-center gap-1">
                             <Brain size={10} /> SN
                           </span>
                           <span>{smCurrent}/{smMax}</span>
                         </div>
-                        <div className="h-1.5 bg-[#181820] border border-purple-900/40 overflow-hidden mb-2">
+                        <div className="h-1.5 bg-[#181820] rounded-none overflow-hidden mb-2">
                           <div
                             className="h-full bg-purple-600 transition-all duration-200"
                             style={{ width: `${smPct}%` }}
                           />
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1.5">
                           <div className="w-1/2">
                             <StatMathInput
                               value={smCurrent}
@@ -302,7 +301,7 @@ export function MasterExtrasView({
                                   ),
                                 );
                               }}
-                              className="w-full bg-[#0c0c10] border border-purple-500/40 focus:border-purple-400 text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                              className="w-full min-h-[34px] bg-[#0c0c10] border border-purple-500/40 focus:border-purple-400 text-white text-xs text-center py-1 rounded-none outline-none font-bold"
                               placeholder="Atual"
                             />
                           </div>
@@ -323,28 +322,27 @@ export function MasterExtrasView({
                                   ),
                                 );
                               }}
-                              className="w-full bg-[#0c0c10] border border-purple-500/40 focus:border-purple-400 text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                              className="w-full min-h-[34px] bg-[#0c0c10] border border-purple-500/40 focus:border-purple-400 text-[#828392] text-xs text-center py-1 rounded-none outline-none font-bold"
                               placeholder="Máx"
                             />
                           </div>
                         </div>
                       </div>
                     ) : (
-                      /* Modo Demologia: Exibe PE abaixo de HP */
-                      <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2">
+                      <div className="bg-[#111117] border border-[#1e1e28] rounded-none p-2.5">
                         <div className="flex items-center justify-between text-[10px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
                           <span className="text-yellow-500 flex items-center gap-1">
                             <Zap size={10} /> PE
                           </span>
                           <span>{peCurrent}/{peMax}</span>
                         </div>
-                        <div className="h-1.5 bg-[#181820] border border-[#242430] overflow-hidden mb-2">
+                        <div className="h-1.5 bg-[#181820] rounded-none overflow-hidden mb-2">
                           <div
                             className="h-full bg-yellow-500 transition-all duration-200"
                             style={{ width: `${pePct}%` }}
                           />
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1.5">
                           <div className="w-1/2">
                             <StatMathInput
                               value={peCurrent}
@@ -361,7 +359,7 @@ export function MasterExtrasView({
                                   ),
                                 );
                               }}
-                              className="w-full bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-white text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                              className="w-full min-h-[34px] bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-white text-xs text-center py-1 rounded-none outline-none font-bold"
                               placeholder="Atual"
                             />
                           </div>
@@ -381,7 +379,7 @@ export function MasterExtrasView({
                                   ),
                                 );
                               }}
-                              className="w-full bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-[#828392] text-xs text-center py-0.5 rounded-none outline-none font-bold"
+                              className="w-full min-h-[34px] bg-[#0c0c10] border border-[#202028] focus:border-yellow-500 text-[#828392] text-xs text-center py-1 rounded-none outline-none font-bold"
                               placeholder="Máx"
                             />
                           </div>
@@ -392,7 +390,7 @@ export function MasterExtrasView({
 
                   {/* Resumo */}
                   <div className="grid grid-cols-2 gap-2 mb-2.5">
-                    <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none py-1 text-center">
+                    <div className="bg-[#111117] border border-[#1e1e28] rounded-none py-1.5 text-center">
                       <span className="text-xs font-bold text-white block">
                         {skillsCount}
                       </span>
@@ -400,7 +398,7 @@ export function MasterExtrasView({
                         Habilidades
                       </span>
                     </div>
-                    <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none py-1 text-center">
+                    <div className="bg-[#111117] border border-[#1e1e28] rounded-none py-1.5 text-center">
                       <span className="text-xs font-bold text-white block">
                         {variablesCount}
                       </span>
@@ -411,7 +409,7 @@ export function MasterExtrasView({
                   </div>
 
                   {/* Notas */}
-                  <div className="pt-2 border-t border-[#1a1a24]">
+                  <div className="pt-2 border-t border-[#1e1e28]">
                     <div className="text-[10px] text-[#828392] font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
                       <FileText size={11} /> Anotações:
                     </div>
@@ -432,7 +430,7 @@ export function MasterExtrasView({
                         );
                       }}
                       rows={2}
-                      className="w-full bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] outline-none rounded-none p-2 text-xs text-[#9ca3af] resize-none"
+                      className="w-full bg-[#111117] border border-[#1e1e28] focus:border-[var(--op-red)] outline-none rounded-none p-2.5 text-xs text-[#c4c5d0] resize-none"
                       placeholder="Observações do mestre..."
                     />
                   </div>
@@ -446,9 +444,9 @@ export function MasterExtrasView({
                       setCurrentPage("ficha_extra");
                       setMestreTab("fichas");
                     }}
-                    className="flex-1 py-2 bg-[#121217] hover:bg-[#181820] border border-[#202028] hover:border-[#32323e] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] text-[#60a5fa] rounded-none text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer min-h-[36px]"
+                    className="flex-1 min-h-[44px] py-2 bg-[#121218] hover:bg-[#191922] active:scale-95 border border-[#22222c] hover:border-[#343444] text-[#60a5fa] rounded-none text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation"
                   >
-                    <Maximize2 size={13} />
+                    <Maximize2 size={14} />
                     <span>Abrir ficha completa</span>
                   </button>
                 </div>
@@ -458,7 +456,7 @@ export function MasterExtrasView({
         </div>
       )}
 
-      {/* MODAL FLUTUANTE DE CONFIRMAÇÃO PARA EXCLUIR FICHA EXTRA (SIM / NÃO) */}
+      {/* MODAL DE CONFIRMAÇÃO PARA EXCLUIR FICHA EXTRA */}
       {deletingFichaId !== null &&
         (() => {
           const fichaToDelete = extraFichas.find((f) => f.id === deletingFichaId);
@@ -469,20 +467,20 @@ export function MasterExtrasView({
               onClick={() => setDeletingFichaId(null)}
             >
               <div
-                className="w-full sm:max-w-sm bg-[#101016]/95 border-t sm:border border-[#2b2b38] rounded-none p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] relative overflow-hidden animate-sheet-up"
+                className="w-full sm:max-w-sm bg-[#0c0c10]/95 border-t sm:border border-[#2b2b36] rounded-none p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.9)] relative overflow-hidden animate-sheet-up"
                 style={{
                   paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))",
                 }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="h-[2px] w-full bg-[var(--op-red)] absolute top-0 left-0" />
-                <div className="sm:hidden flex justify-center -mt-1 pb-2.5">
-                  <div className="w-10 h-1 bg-[#323442]" />
+                <div className="sm:hidden flex justify-center -mt-1 pb-3">
+                  <div className="w-10 h-1 bg-[#32323e] rounded-none" />
                 </div>
 
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-red-950/40 border border-red-900/50 flex items-center justify-center text-red-400 shrink-0">
-                    <Trash2 size={16} />
+                  <div className="w-10 h-10 bg-red-950/60 border border-red-800/60 flex items-center justify-center text-red-400 shrink-0">
+                    <Trash2 size={18} />
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-white uppercase tracking-wider">
@@ -494,7 +492,7 @@ export function MasterExtrasView({
                   </div>
                 </div>
 
-                <p className="text-xs text-[#9a9aa6] leading-relaxed mb-5 border-b border-[#1e1e28] pb-3.5 font-sans">
+                <p className="text-xs text-[#9ca3af] leading-relaxed mb-5 border-b border-[#1c1c26] pb-3.5 font-sans">
                   Deseja realmente apagar esta ficha extra?
                 </p>
 
@@ -502,14 +500,14 @@ export function MasterExtrasView({
                   <button
                     type="button"
                     onClick={() => setDeletingFichaId(null)}
-                    className="flex-1 min-h-[44px] bg-[#16161f] hover:bg-[#222230] active:scale-95 border border-[#2c2c38] text-gray-300 hover:text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 transition-all cursor-pointer touch-manipulation"
+                    className="flex-1 min-h-[44px] bg-[#16161e] hover:bg-[#20202b] active:scale-95 border border-[#2c2c38] text-gray-300 hover:text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-none transition-all cursor-pointer touch-manipulation"
                   >
                     Não
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDeleteConfirm(fichaToDelete)}
-                    className="flex-1 min-h-[44px] bg-[var(--op-red)] hover:bg-red-700 active:scale-95 border border-[var(--op-red)] text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 transition-all shadow-[0_0_15px_rgba(143,23,28,0.4)] cursor-pointer touch-manipulation"
+                    className="flex-1 min-h-[44px] bg-gradient-to-r from-[#b52a30] to-[#7a1015] hover:brightness-110 active:scale-95 border border-[#ff8085]/40 text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-none shadow-[0_0_16px_rgba(181,42,48,0.4)] transition-all cursor-pointer touch-manipulation"
                   >
                     Sim
                   </button>

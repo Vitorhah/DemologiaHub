@@ -103,7 +103,7 @@ interface DossierVariablesSectionProps {
   onRollTest?: (variableKey: string) => void;
 }
 
-export function DossierVariablesSection({
+export const DossierVariablesSection = React.memo(function DossierVariablesSection({
   variables,
   updateVariable,
   renameVariable,
@@ -329,4 +329,4 @@ export function DossierVariablesSection({
       </button>
     </div>
   );
-}
+});

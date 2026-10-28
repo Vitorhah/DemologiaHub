@@ -35,6 +35,7 @@ import {
   Activity,
   Layers,
   Menu,
+  Copy,
 } from 'lucide-react';
 import demologiaLogoUrl from '../assets/demologia_logo.png';
 
@@ -87,6 +88,8 @@ export const CadernoDeCampoView: React.FC<CadernoDeCampoViewProps> = ({
   const [syncStateText, setSyncStateText] = useState<string>('Salvo localmente');
   const [isSyncingWithCloud, setIsSyncingWithCloud] = useState<boolean>(false);
   const [isMobileEditing, setIsMobileEditing] = useState<boolean>(false);
+  const [caseToDeleteId, setCaseToDeleteId] = useState<string | null>(null);
+  const [exportJsonModal, setExportJsonModal] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -111,9 +114,7 @@ export const CadernoDeCampoView: React.FC<CadernoDeCampoViewProps> = ({
   const saveToLocalStorage = (updatedCases: CadernoCase[]) => {
     try {
       localStorage.setItem(CADERNO_LOCAL_STORAGE_KEY, JSON.stringify(updatedCases));
-    } catch (e) {
-      console.warn('Erro ao salvar no localStorage:', e);
-    }
+    } catch {}
   };
 
   // Broadcast and persist to Supabase
@@ -347,15 +348,15 @@ export const CadernoDeCampoView: React.FC<CadernoDeCampoViewProps> = ({
     setSearchQuery('');
   };
 
-  // Delete current case
+  // Request delete confirmation
   const handleDeleteCase = (idToDelete: string) => {
-    if (
-      !window.confirm(
-        'Excluir este caso permanentemente? Essa ação não pode ser desfeita.'
-      )
-    ) {
-      return;
-    }
+    setCaseToDeleteId(idToDelete);
+  };
+
+  const confirmDeleteCase = () => {
+    if (!caseToDeleteId) return;
+    const idToDelete = caseToDeleteId;
+    setCaseToDeleteId(null);
 
     setCases((prev) => {
       const nextCases = prev.filter((c) => c.id !== idToDelete);
@@ -405,19 +406,17 @@ export const CadernoDeCampoView: React.FC<CadernoDeCampoViewProps> = ({
     }));
   };
 
-  // Export JSON
-  const handleExportJSON = () => {
-    const blob = new Blob([JSON.stringify(cases, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `demologia-caderno-rl-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  // Export JSON via Sheet + Clipboard
+  const handleExportJSON = async () => {
+    const jsonString = JSON.stringify(cases, null, 2);
+    setExportJsonModal(jsonString);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(jsonString);
+      }
+    } catch {
+      // Fallback handled inside modal
+    }
   };
 
   // Import JSON
@@ -432,7 +431,6 @@ export const CadernoDeCampoView: React.FC<CadernoDeCampoViewProps> = ({
         const importedData = JSON.parse(content);
 
         if (!Array.isArray(importedData)) {
-          alert('Arquivo inválido. Formato esperado: lista JSON de casos.');
           return;
         }
 
@@ -483,11 +481,10 @@ export const CadernoDeCampoView: React.FC<CadernoDeCampoViewProps> = ({
           );
           saveToLocalStorage(merged);
           persistToCloud(merged);
-          alert(`${importedCount} novo(s) caso(s) importado(s) com sucesso.`);
           return merged;
         });
       } catch (err) {
-        alert('Falha ao processar arquivo JSON. Verifique a integridade do arquivo.');
+        console.warn('Falha ao processar arquivo JSON:', err);
       } finally {
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
@@ -1072,6 +1069,104 @@ export const CadernoDeCampoView: React.FC<CadernoDeCampoViewProps> = ({
           )}
         </main>
       </div>
+
+      {/* M3 DIALOG / BOTTOM SHEET: CONFIRMAR EXCLUSÃO DE CASO */}
+      {caseToDeleteId && (
+        <div
+          className="fixed inset-0 z-[350] modal-backdrop-blur flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setCaseToDeleteId(null)}
+        >
+          <div
+            className="w-full sm:max-w-sm bg-[#161129] border-t sm:border border-[#a855f7]/35 rounded-t-[28px] sm:rounded-[28px] p-6 shadow-2xl animate-sheet-up"
+            style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 1.5rem))' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sm:hidden flex justify-center -mt-2 pb-3">
+              <div className="w-8 h-1 rounded-full bg-[#a855f7]/40" />
+            </div>
+            <h3 className="text-base font-bold text-white uppercase tracking-wider mb-2">
+              Excluir Caso?
+            </h3>
+            <p className="text-xs text-[#b8b2ce] leading-relaxed mb-6">
+              Deseja excluir este caso permanentemente? Essa ação não pode ser desfeita.
+            </p>
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setCaseToDeleteId(null)}
+                className="flex-1 min-h-[48px] rounded-full border border-[#a855f7]/35 bg-[#20183a] text-[#e2e8f0] text-xs font-bold uppercase tracking-wider active:scale-95 transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteCase}
+                className="flex-1 min-h-[48px] rounded-full bg-red-700 text-white text-xs font-bold uppercase tracking-wider active:scale-95 transition-all cursor-pointer"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DIALOG / BOTTOM SHEET: EXPORTAR / COPIAR JSON */}
+      {exportJsonModal && (
+        <div
+          className="fixed inset-0 z-[350] modal-backdrop-blur flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setExportJsonModal(null)}
+        >
+          <div
+            className="w-full sm:max-w-lg bg-[#161129] border-t sm:border border-[#a855f7]/35 rounded-t-[28px] sm:rounded-[28px] p-6 shadow-2xl animate-sheet-up flex flex-col gap-4"
+            style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 1.5rem))' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sm:hidden flex justify-center -mt-2 pb-1">
+              <div className="w-8 h-1 rounded-full bg-[#a855f7]/40" />
+            </div>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                Exportar Casos (JSON)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setExportJsonModal(null)}
+                className="w-11 h-11 rounded-full flex items-center justify-center text-[#b8b2ce] active:bg-white/10"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <textarea
+              readOnly
+              value={exportJsonModal}
+              rows={7}
+              onClick={(e) => e.currentTarget.select()}
+              className="w-full bg-[#0d0a18] border border-[#a855f7]/30 rounded-[12px] p-3 text-xs font-mono text-[#e2e8f0] focus:outline-none"
+            />
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setExportJsonModal(null)}
+                className="flex-1 min-h-[48px] rounded-full border border-[#a855f7]/35 bg-[#20183a] text-[#e2e8f0] text-xs font-bold uppercase tracking-wider active:scale-95 transition-all cursor-pointer"
+              >
+                Fechar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(exportJsonModal);
+                  } catch {}
+                }}
+                className="flex-1 min-h-[48px] rounded-full bg-[#9333ea] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+              >
+                <Copy size={15} />
+                <span>Copiar JSON</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

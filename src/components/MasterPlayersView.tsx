@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import {
   Users,
   Trash2,
@@ -54,22 +55,32 @@ export function MasterPlayersView({
   const isRlGlobal = currentGlobalMode === "rl";
 
   const renderFloatingInitiativeButton = () => {
-    if (!onRollInitiative) return null;
-    return (
+    if (!onRollInitiative || typeof document === "undefined") return null;
+    return createPortal(
       <button
         type="button"
-        onClick={onRollInitiative}
-        style={{ bottom: "max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.25rem))" }}
-        className={`fixed right-5 sm:right-7 z-40 w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-90 hover:scale-105 touch-manipulation select-none group ${
+        onClick={() => {
+          if (typeof navigator !== "undefined" && navigator.vibrate) {
+            try {
+              navigator.vibrate(15);
+            } catch {}
+          }
+          onRollInitiative();
+        }}
+        style={{
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 1.5rem)",
+        }}
+        className={`fixed right-5 sm:right-7 z-[90] w-14 h-14 rounded-full flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-90 hover:scale-105 touch-manipulation select-none ${
           isRlGlobal
-            ? "bg-gradient-to-br from-[#9333ea] via-[#7e22ce] to-[#4c1d95] text-white border-2 border-purple-300/70 shadow-[0_6px_28px_rgba(168,85,247,0.65)] hover:shadow-[0_8px_34px_rgba(192,132,252,0.85)]"
-            : "bg-gradient-to-br from-[#d1242c] via-[#99151b] to-[#520b0f] text-white border-2 border-[#ff8085]/70 shadow-[0_6px_28px_rgba(184,29,36,0.65)] hover:shadow-[0_8px_34px_rgba(220,38,38,0.85)]"
+            ? "bg-gradient-to-br from-[#9333ea] to-[#581c87] hover:from-[#a855f7] hover:to-[#6b21a8] text-white border border-purple-300/60 shadow-[0_8px_28px_rgba(147,51,234,0.65)]"
+            : "bg-gradient-to-br from-[#b52a30] to-[#641015] hover:from-[#d13239] hover:to-[#7a1319] text-white border border-[#ff8085]/50 shadow-[0_8px_28px_rgba(181,42,48,0.65)]"
         }`}
         title="Rolar Iniciativa de Todos (1d20 + AGL)"
         aria-label="Rolar Iniciativa de Todos"
       >
-        <Dices size={26} className="transition-transform duration-200 group-hover:rotate-12 group-active:rotate-45" />
-      </button>
+        <Dices size={24} className="transition-transform duration-200 active:rotate-45" />
+      </button>,
+      document.body
     );
   };
   const syncedExtrasAsPlayers = extraFichas

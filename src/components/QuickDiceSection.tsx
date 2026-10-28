@@ -116,7 +116,7 @@ export const DICE_CONFIG = [
   { sides: 100, label: "D%", subtitle: "Percentil" },
 ];
 
-export function QuickDiceSection({
+export const QuickDiceSection = React.memo(function QuickDiceSection({
   quickDiceQty,
   setQuickDiceQty,
   onRoll,
@@ -391,4 +391,4 @@ export function QuickDiceSection({
       </div>
     </div>
   );
-}
+});

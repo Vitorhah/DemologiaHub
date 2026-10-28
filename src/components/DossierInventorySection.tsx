@@ -28,7 +28,7 @@ function extractDiceFormula(text: string): string | null {
   return match ? match[0].replace(/\s+/g, "") : null;
 }
 
-export function DossierInventorySection({
+export const DossierInventorySection = React.memo(function DossierInventorySection({
   inventory,
   updateInventory,
   onRollFormula,
@@ -266,4 +266,4 @@ export function DossierInventorySection({
       )}
     </div>
   );
-}
+});

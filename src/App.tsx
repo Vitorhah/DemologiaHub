@@ -157,8 +157,19 @@ export default function App() {
     } catch (e) {}
     return [];
   });
+  const extraFichasSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const extraFichasLatestRef = useRef<any[]>(extraFichas);
   useEffect(() => {
-    localStorage.setItem("local_extra_fichas", JSON.stringify(extraFichas));
+    extraFichasLatestRef.current = extraFichas;
+    if (extraFichasSaveTimerRef.current) clearTimeout(extraFichasSaveTimerRef.current);
+    extraFichasSaveTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem("local_extra_fichas", JSON.stringify(extraFichas));
+      } catch (e) {}
+    }, 250);
+    return () => {
+      if (extraFichasSaveTimerRef.current) clearTimeout(extraFichasSaveTimerRef.current);
+    };
   }, [extraFichas]);
 
   const [activeFichaId, setActiveFichaId] = useState("main"); // 'main' or the ID of an extra ficha
@@ -441,14 +452,19 @@ export default function App() {
     }
   };
 
-  // Synchronize extra sheets to Supabase
+  const extraSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Synchronize extra sheets to Supabase (debounced to prevent per-keystroke network & double-render lag)
   useEffect(() => {
     if (!userUid || !isOnline) return;
 
-    extraFichas.forEach((ficha) => {
-      if (ficha.synchronized && ficha.last_local_edit) {
+    const dirtyFichas = extraFichas.filter((f) => f.synchronized && f.last_local_edit);
+    if (dirtyFichas.length === 0) return;
+
+    if (extraSyncTimerRef.current) clearTimeout(extraSyncTimerRef.current);
+    extraSyncTimerRef.current = setTimeout(() => {
+      dirtyFichas.forEach((ficha) => {
         const { last_local_edit, ...pureData } = ficha;
-        // Clear flag immediately to dodge loop
         setExtraFichas((prev) =>
           prev.map((f) => (f.id === ficha.id ? { ...f, last_local_edit: undefined } : f))
         );
@@ -464,8 +480,12 @@ export default function App() {
               console.warn("Erro ao atualizar ficha extra sincronizada:", error.message);
             }
           });
-      }
-    });
+      });
+    }, 350);
+
+    return () => {
+      if (extraSyncTimerRef.current) clearTimeout(extraSyncTimerRef.current);
+    };
   }, [extraFichas, userUid, isOnline]);
 
   // Real-time active extra sheet listener (for both master and players)
@@ -512,10 +532,30 @@ export default function App() {
 
   const pendingUpdatesRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const localSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const mainStateLatestRef = useRef<any>(mainState);
   const globalChannelRef = useRef<any>(null);
 
+  // Garante persistência imediata caso o navegador seja fechado antes do debounce de 250ms
   useEffect(() => {
-    localStorage.setItem("rpgSheetState", JSON.stringify(mainState));
+    const flushLocalStorage = () => {
+      try {
+        localStorage.setItem("rpgSheetState", JSON.stringify(mainStateLatestRef.current));
+        localStorage.setItem("local_extra_fichas", JSON.stringify(extraFichasLatestRef.current));
+      } catch (e) {}
+    };
+    window.addEventListener("beforeunload", flushLocalStorage);
+    return () => window.removeEventListener("beforeunload", flushLocalStorage);
+  }, []);
+
+  useEffect(() => {
+    mainStateLatestRef.current = mainState;
+    if (localSaveTimerRef.current) clearTimeout(localSaveTimerRef.current);
+    localSaveTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem("rpgSheetState", JSON.stringify(mainState));
+      } catch (e) {}
+    }, 250);
 
     if (
       userUid &&

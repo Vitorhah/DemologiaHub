@@ -65,18 +65,21 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
     };
   }, [musicSync]);
 
-  // Atualização em tempo real da barra de progresso (a cada 250ms)
+  // Atualização em tempo real da barra de progresso (somente enquanto estiver reproduzindo)
   useEffect(() => {
+    if (!playbackState?.is_playing) {
+      setCurrentProgress(playbackState?.paused_position || 0);
+      return;
+    }
+
+    setCurrentProgress(musicSync.getCurrentAudioTime());
     const timer = setInterval(() => {
-      if (playbackState?.is_playing) {
-        setCurrentProgress(musicSync.getCurrentAudioTime());
-      } else {
-        setCurrentProgress(playbackState?.paused_position || 0);
-      }
-    }, 250);
+      const nextTime = musicSync.getCurrentAudioTime();
+      setCurrentProgress((prev) => (Math.abs(prev - nextTime) >= 0.2 ? nextTime : prev));
+    }, 350);
 
     return () => clearInterval(timer);
-  }, [playbackState, musicSync]);
+  }, [playbackState?.is_playing, playbackState?.paused_position, playbackState?.track_url, musicSync]);
 
   // Faixa atualmente em reprodução
   const activeTrack = useMemo(() => {
