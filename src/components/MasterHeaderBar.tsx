@@ -10,14 +10,19 @@ import {
   Flame,
   EyeOff,
   Menu,
+  FolderOpen,
+  Wrench,
 } from "lucide-react";
 import { GameMode } from "../types";
+import { motion } from "motion/react";
+import { SNAPPY_SPRING } from "./MotionPrimitives";
 
 export interface MasterHeaderBarProps {
-  activeTab: "fichas" | "ost" | "extras";
-  setActiveTab: (tab: "fichas" | "ost" | "extras") => void;
+  activeTab: "fichas" | "ost" | "extras" | "handouts" | "utilities";
+  setActiveTab: (tab: "fichas" | "ost" | "extras" | "handouts" | "utilities") => void;
   playersCount: number;
   extrasCount: number;
+  handoutsCount?: number;
   isOstPlaying: boolean;
   onRollInitiative?: () => void;
   onReturnToMainSheet: () => void;
@@ -34,6 +39,7 @@ export function MasterHeaderBar({
   setActiveTab,
   playersCount,
   extrasCount,
+  handoutsCount,
   isOstPlaying,
   onReturnToMainSheet,
   onOpenMenu,
@@ -61,6 +67,17 @@ export function MasterHeaderBar({
       label: "Extras",
       icon: Files,
       count: extrasCount,
+    },
+    {
+      id: "handouts" as const,
+      label: "Handouts",
+      icon: FolderOpen,
+      count: handoutsCount,
+    },
+    {
+      id: "utilities" as const,
+      label: "Utilities",
+      icon: Wrench,
     },
   ];
 
@@ -139,11 +156,13 @@ export function MasterHeaderBar({
                       </span>
                     )}
 
-                    <span
-                      className={`absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--op-red-bright)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] origin-center ${
-                        isActive ? "scale-x-100" : "scale-x-0"
-                      }`}
-                    />
+                    {isActive && (
+                      <motion.span
+                        layoutId="mestre-tab-indicator"
+                        transition={SNAPPY_SPRING}
+                        className="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--op-red-bright)]"
+                      />
+                    )}
                   </button>
                 );
               })}

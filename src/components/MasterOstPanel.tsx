@@ -20,6 +20,8 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { MusicSync, Track, PlaybackState } from "../services/musicSync";
+import { AnimatePresence } from "motion/react";
+import { MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
 
 export interface MasterOstPanelProps {
   musicSync: MusicSync;
@@ -424,21 +426,25 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
       )}
 
       {/* MODAL FLUTUANTE: ADICIONAR POR LINK DIRETO */}
-      {showAddLink && (
-        <div
-          className="fixed inset-0 z-[350] modal-backdrop-blur flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={() => setShowAddLink(false)}
-        >
-          <form
-            onSubmit={handleAddLinkSubmit}
-            onClick={(e) => e.stopPropagation()}
-            style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}
-            className="w-full sm:max-w-md p-5 bg-[#101016]/95 border-t sm:border border-[#2b2b38] flex flex-col gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.85)] animate-sheet-up relative"
+      <AnimatePresence>
+        {showAddLink && (
+          <MotionModalBackdrop
+            className="fixed inset-0 z-[350] flex items-end sm:items-center justify-center p-0 sm:p-4"
+            onClick={() => setShowAddLink(false)}
           >
-            <div className="h-[2px] w-full bg-blood-red absolute top-0 left-0" />
-            <div className="sm:hidden flex justify-center -mt-1 pb-1">
-              <div className="w-10 h-1 bg-[#323442]" />
-            </div>
+            <MotionSheetPanel
+              onClick={(e) => e.stopPropagation()}
+              className="w-full sm:max-w-md bg-[#101016]/95 border-t sm:border border-[#2b2b38] shadow-[0_24px_60px_rgba(0,0,0,0.85)] relative"
+            >
+              <form
+                onSubmit={handleAddLinkSubmit}
+                style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}
+                className="p-5 flex flex-col gap-4 relative"
+              >
+                <div className="h-[2px] w-full bg-blood-red absolute top-0 left-0" />
+                <div className="sm:hidden flex justify-center -mt-1 pb-1">
+                  <div className="w-10 h-1 bg-[#323442]" />
+                </div>
 
             <div className="flex items-center justify-between text-xs text-white font-bold uppercase tracking-wider">
               <span className="flex items-center gap-2">
@@ -489,9 +495,11 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
                 {isAddingLink ? "Salvando..." : "Salvar"}
               </button>
             </div>
-          </form>
-        </div>
-      )}
+              </form>
+            </MotionSheetPanel>
+          </MotionModalBackdrop>
+        )}
+      </AnimatePresence>
 
       {/* SEÇÃO: BIBLIOTECA DE FAIXAS */}
       <div className="flex flex-col gap-3">
@@ -656,65 +664,67 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
       </div>
 
       {/* MODAL FLUTUANTE DE CONFIRMAÇÃO PARA EXCLUIR OST (SIM / NÃO) */}
-      {deleteConfirmId !== null &&
-        (() => {
-          const trackToDelete = tracks.find((t) => t.id === deleteConfirmId);
-          if (!trackToDelete) return null;
-          return (
-            <div
-              className="fixed inset-0 z-[350] modal-backdrop-blur flex items-end sm:items-center justify-center p-0 sm:p-4"
-              onClick={() => setDeleteConfirmId(null)}
-            >
-              <div
-                className="w-full sm:max-w-sm bg-[#101016]/95 border-t sm:border border-[#2b2b38] rounded-none p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] relative overflow-hidden animate-sheet-up"
-                style={{
-                  paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))",
-                }}
-                onClick={(e) => e.stopPropagation()}
+      <AnimatePresence>
+        {deleteConfirmId !== null &&
+          (() => {
+            const trackToDelete = tracks.find((t) => t.id === deleteConfirmId);
+            if (!trackToDelete) return null;
+            return (
+              <MotionModalBackdrop
+                className="fixed inset-0 z-[350] flex items-end sm:items-center justify-center p-0 sm:p-4"
+                onClick={() => setDeleteConfirmId(null)}
               >
-                <div className="h-[2px] w-full bg-blood-red absolute top-0 left-0" />
-                <div className="sm:hidden flex justify-center -mt-1 pb-2.5">
-                  <div className="w-10 h-1 bg-[#323442]" />
-                </div>
-
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-red-950/40 border border-blood-red/50 flex items-center justify-center text-red-400 shrink-0">
-                    <Trash2 className="w-4 h-4" />
+                <MotionSheetPanel
+                  className="w-full sm:max-w-sm bg-[#101016]/95 border-t sm:border border-[#2b2b38] rounded-none p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] relative overflow-hidden"
+                  style={{
+                    paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="h-[2px] w-full bg-blood-red absolute top-0 left-0" />
+                  <div className="sm:hidden flex justify-center -mt-1 pb-2.5">
+                    <div className="w-10 h-1 bg-[#323442]" />
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                      Apagar Trilha?
-                    </h3>
-                    <p className="text-xs text-gray-400 truncate mt-0.5">
-                      {trackToDelete.name}
-                    </p>
+
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-red-950/40 border border-blood-red/50 flex items-center justify-center text-red-400 shrink-0">
+                      <Trash2 className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                        Apagar Trilha?
+                      </h3>
+                      <p className="text-xs text-gray-400 truncate mt-0.5">
+                        {trackToDelete.name}
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <p className="text-xs text-[#9a9aa6] leading-relaxed mb-5 border-b border-[#1e1e28] pb-3.5 font-sans">
-                  Deseja realmente apagar esta trilha da biblioteca da mesa?
-                </p>
+                  <p className="text-xs text-[#9a9aa6] leading-relaxed mb-5 border-b border-[#1e1e28] pb-3.5 font-sans">
+                    Deseja realmente apagar esta trilha da biblioteca da mesa?
+                  </p>
 
-                <div className="flex gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setDeleteConfirmId(null)}
-                    className="flex-1 min-h-[44px] bg-[#16161f] hover:bg-[#222230] active:scale-95 border border-[#2c2c38] text-gray-300 hover:text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 transition-all cursor-pointer touch-manipulation"
-                  >
-                    Não
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteTrack(trackToDelete)}
-                    className="flex-1 min-h-[44px] bg-blood-red hover:bg-red-700 active:scale-95 border border-blood-red text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 transition-all shadow-[0_0_15px_rgba(143,23,28,0.4)] cursor-pointer touch-manipulation"
-                  >
-                    Sim
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+                  <div className="flex gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteConfirmId(null)}
+                      className="flex-1 min-h-[44px] bg-[#16161f] hover:bg-[#222230] active:scale-95 border border-[#2c2c38] text-gray-300 hover:text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 transition-all cursor-pointer touch-manipulation"
+                    >
+                      Não
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTrack(trackToDelete)}
+                      className="flex-1 min-h-[44px] bg-blood-red hover:bg-red-700 active:scale-95 border border-blood-red text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 transition-all shadow-[0_0_15px_rgba(143,23,28,0.4)] cursor-pointer touch-manipulation"
+                    >
+                      Sim
+                    </button>
+                  </div>
+                </MotionSheetPanel>
+              </MotionModalBackdrop>
+            );
+          })()}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Menu,
   X,
@@ -19,9 +19,12 @@ import {
   Users,
   User,
   Radio,
+  RefreshCw,
+  ArrowLeft,
 } from "lucide-react";
 import { supabase, supabaseUrl, supabaseAnonKey } from "./lib/supabase";
 import { MusicSync, PlaybackState } from "./services/musicSync";
+import { useHandoutsSync } from "./services/useHandoutsSync";
 import { PasswordAuthModal } from "./components/PasswordAuthModal";
 import { MasterHeaderBar } from "./components/MasterHeaderBar";
 import { MasterOstPanel } from "./components/MasterOstPanel";
@@ -30,8 +33,54 @@ import { MasterExtrasView } from "./components/MasterExtrasView";
 import { MasterGameModeModal } from "./components/MasterGameModeModal";
 import { ModeTransitionEffect } from "./components/ModeTransitionEffect";
 import { CadernoDeCampoView } from "./components/CadernoDeCampoView";
-import { GameMode, GameModeConfig } from "./types";
-import demologiaLogoUrl from "./assets/demologia_logo.png";
+import { StatMathInput } from "./components/StatMathInput";
+import { TabletopGrid } from "./components/TabletopGrid";
+import { QuickDiceSection } from "./components/QuickDiceSection";
+import { RollingTerminal } from "./components/RollingTerminal";
+import { FormulaShortcutsSection } from "./components/FormulaShortcutsSection";
+import { DossierVariablesSection } from "./components/DossierVariablesSection";
+import { DossierInventorySection } from "./components/DossierInventorySection";
+import { NavigationSidebar } from "./components/NavigationSidebar";
+import { ChatContainer, clearMessages } from "./components/chat";
+import { HandoutsView } from "./components/HandoutsView";
+import { HandoutViewerModal } from "./components/HandoutViewerModal";
+import { HandoutNotificationToast } from "./components/HandoutNotificationToast";
+import { RollNotificationToast, RollToastData } from "./components/RollNotificationToast";
+import { StatusPostIt } from "./components/StatusPostIts";
+import { isSystemRecordId } from "./utils/handoutsLogic";
+import { splitStatusEffectsForHud, StatusEffect } from "./utils/statusEffects";
+import {
+  evaluateDiceFormula,
+  getDefaultAttributeRollFormula,
+  normalizeCustomFormulas,
+  CustomRollFormula,
+} from "./utils/diceFormula";
+import {
+  isOcultistaSheetName,
+  shouldAutoSyncMainSheet,
+  shouldAutoSyncExtraSheet,
+  findOcultistaPlayerRecordIds,
+} from "./utils/sheetSync";
+import {
+  isDefaultStatusKey,
+  canRemoveStatusVariable,
+  canRenameStatusVariable,
+} from "./utils/statusVariables";
+import { MasterUtilitiesView } from "./components/MasterUtilitiesView";
+import { useMinigamesSync } from "./services/useMinigamesSync";
+import { PlayerMinigameOverlay } from "./components/minigames/PlayerMinigameOverlay";
+import { MasterMinigameNotificationToast } from "./components/minigames/MasterMinigameNotificationToast";
+import { GameMode, GameModeConfig, HandoutItem } from "./types";
+import { DEMOLOGIA_LOGO_URL } from "./constants/branding";
+import { MotionConfig, AnimatePresence } from "motion/react";
+import {
+  MotionModalBackdrop,
+  MotionSheetPanel,
+  MotionAccordion,
+  MotionTabSwitch,
+} from "./components/MotionPrimitives";
+
+const MestreStatInput = StatMathInput;
 
 const TypewriterText = ({ text, className, style, speed = 50 }: { text: string, className?: string, style?: any, speed?: number }) => {
   const [displayedText, setDisplayedText] = useState("");
@@ -126,25 +175,27 @@ const defaultState = {
   },
   inventory: ["", "", "", "", "", ""],
   history: [] as string[],
+  statusEffects: [] as StatusEffect[],
+  customFormulas: [] as CustomRollFormula[],
 };
-
-import { StatMathInput } from "./components/StatMathInput";
-const MestreStatInput = StatMathInput;
-
-import { TabletopGrid } from "./components/TabletopGrid";
-import { QuickDiceSection } from "./components/QuickDiceSection";
-import { RollingTerminal } from "./components/RollingTerminal";
-import { FormulaShortcutsSection } from "./components/FormulaShortcutsSection";
-import { DossierVariablesSection } from "./components/DossierVariablesSection";
-import { DossierInventorySection } from "./components/DossierInventorySection";
-import { NavigationSidebar } from "./components/NavigationSidebar";
-import { ChatContainer, clearMessages } from "./components/chat";
 
 export default function App() {
   const [mainState, setMainState] = useState(() => {
     try {
       const item = localStorage.getItem("rpgSheetState");
-      return item ? JSON.parse(item) : defaultState;
+      if (item) {
+        const parsed = JSON.parse(item);
+        if (parsed && parsed.customFormulas === undefined) {
+          try {
+            const legacy = localStorage.getItem("op_custom_formula_shortcuts");
+            if (legacy) {
+              parsed.customFormulas = normalizeCustomFormulas(JSON.parse(legacy));
+            }
+          } catch {}
+        }
+        return parsed;
+      }
+      return defaultState;
     } catch {
       return defaultState;
     }
@@ -213,6 +264,8 @@ export default function App() {
     inventory: rawState.inventory || defaultState.inventory,
     history: rawState.history || defaultState.history,
     tributo: rawState.tributo || defaultState.tributo,
+    statusEffects: Array.isArray(rawState.statusEffects) ? rawState.statusEffects : [],
+    customFormulas: normalizeCustomFormulas(rawState.customFormulas),
   };
 
   const setState = (updater: any) => {
@@ -247,9 +300,14 @@ export default function App() {
                   f.san?.max ??
                   defaultState.sm.max,
               },
+              statusEffects: Array.isArray(f.statusEffects) ? f.statusEffects : [],
+              customFormulas: normalizeCustomFormulas(f.customFormulas),
             };
             const next =
               typeof updater === "function" ? updater(fullF) : updater;
+            if (next.name !== f.name && isOcultistaSheetName(next.name)) {
+              next.manualOcultistaSync = false;
+            }
             if (next.synchronized) {
               next.last_local_edit = Date.now();
             }
@@ -274,6 +332,21 @@ export default function App() {
     critical?: "crit" | "fumble" | "normal";
   } | null>(null);
   const [quickDiceQty, setQuickDiceQty] = useState<number>(1);
+  const [diceInNormalSheet, setDiceInNormalSheet] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("op_dice_in_sheet_normal") === "true";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "op_dice_in_sheet_normal",
+        diceInNormalSheet ? "true" : "false",
+      );
+    } catch {}
+  }, [diceInNormalSheet]);
   const historyRef = useRef<HTMLDivElement>(null);
   const [isShaking, setIsShaking] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -289,8 +362,11 @@ export default function App() {
   const [isMestreAuth, setIsMestreAuth] = useState(false);
   const [initiatives, setInitiatives] = useState<Record<string, number>>({});
   const [mestreTab, setMestreTab] = useState<
-    "fichas" | "ost" | "extras"
+    "fichas" | "ost" | "extras" | "handouts" | "utilities"
   >("fichas");
+  const [rollToast, setRollToast] = useState<RollToastData | null>(null);
+  const dismissRollToast = useCallback(() => setRollToast(null), []);
+  const [quickViewHandout, setQuickViewHandout] = useState<HandoutItem | null>(null);
   const [mestreViewMode, setMestreViewMode] = useState<"grid" | "list">("grid");
   const [globalGridState, setGlobalGridState] = useState<any>({ objects: [] });
   const [deletingFichaId, setDeletingFichaId] = useState<string | null>(null);
@@ -408,10 +484,37 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(() => {
     return localStorage.getItem("rpgIsOnline") !== "false";
   });
+  const [ocultistaManualSync, setOcultistaManualSync] = useState<boolean>(false);
+  const [manualSyncFeedback, setManualSyncFeedback] = useState<{
+    type: "success" | "error" | "syncing";
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
     localStorage.setItem("rpgIsOnline", isOnline.toString());
   }, [isOnline]);
+
+  const handoutsSync = useHandoutsSync({
+    userUid,
+    isMestreAuth,
+    isOnline,
+    players,
+  });
+
+  const minigamesSync = useMinigamesSync({
+    userUid,
+    playerName: state?.name || "Agente",
+    isMestreAuth,
+    isOnline,
+  });
+
+  const activeQuickViewHandout = useMemo(() => {
+    if (!quickViewHandout) return null;
+    return (
+      handoutsSync.handouts.find((h) => h.id === quickViewHandout.id) ||
+      quickViewHandout
+    );
+  }, [quickViewHandout, handoutsSync.handouts]);
 
   const toggleFichaSync = async (ficha: any) => {
     if (!userUid) {
@@ -421,7 +524,11 @@ export default function App() {
     const isNowSynced = !ficha.synchronized;
     if (isNowSynced) {
       const { last_local_edit, ...pureData } = ficha;
-      const updatedFicha = { ...pureData, synchronized: true };
+      const updatedFicha = {
+        ...pureData,
+        synchronized: true,
+        ...(isOcultistaSheetName(ficha.name) ? { manualOcultistaSync: true } : {}),
+      };
       setExtraFichas((prev) =>
         prev.map((f) => (f.id === ficha.id ? updatedFicha : f))
       );
@@ -437,7 +544,12 @@ export default function App() {
         handleSupabaseError(error, "Sincronizar Ficha Extra");
       }
     } else {
-      const updatedFicha = { ...ficha, synchronized: false, last_local_edit: undefined };
+      const updatedFicha = {
+        ...ficha,
+        synchronized: false,
+        manualOcultistaSync: false,
+        last_local_edit: undefined,
+      };
       setExtraFichas((prev) =>
         prev.map((f) => (f.id === ficha.id ? updatedFicha : f))
       );
@@ -458,7 +570,7 @@ export default function App() {
   useEffect(() => {
     if (!userUid || !isOnline) return;
 
-    const dirtyFichas = extraFichas.filter((f) => f.synchronized && f.last_local_edit);
+    const dirtyFichas = extraFichas.filter((f) => shouldAutoSyncExtraSheet(f));
     if (dirtyFichas.length === 0) return;
 
     if (extraSyncTimerRef.current) clearTimeout(extraSyncTimerRef.current);
@@ -558,10 +670,13 @@ export default function App() {
     }, 250);
 
     if (
-      userUid &&
-      isOnline &&
-      currentPage !== "mestre" &&
-      currentPage !== "ficha_extra"
+      shouldAutoSyncMainSheet({
+        name: mainState.name,
+        userUid,
+        isOnline,
+        currentPage,
+        manualOcultistaSync: ocultistaManualSync,
+      })
     ) {
       pendingUpdatesRef.current = true;
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -592,8 +707,54 @@ export default function App() {
             },
           );
       }, 1000);
+    } else {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      pendingUpdatesRef.current = false;
     }
-  }, [mainState, userUid, isOnline, currentPage]);
+  }, [mainState, userUid, isOnline, currentPage, ocultistaManualSync]);
+
+  const handleManualSyncOcultista = async (activateAutoAfter = false) => {
+    if (!userUid) {
+      setManualSyncFeedback({
+        type: "error",
+        text: "Identificador de sessão indisponível. Verifique sua conexão.",
+      });
+      return;
+    }
+    setManualSyncFeedback({
+      type: "syncing",
+      text: "Sincronizando ficha Ocultista...",
+    });
+    if (!isOnline) setIsOnline(true);
+    if (activateAutoAfter) setOcultistaManualSync(true);
+
+    try {
+      const { error } = await supabase.from("players").upsert({
+        id: userUid,
+        data: mainStateLatestRef.current,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) {
+        setManualSyncFeedback({
+          type: "error",
+          text: `Erro ao sincronizar: ${error.message}`,
+        });
+        handleSupabaseError(error, "Sincronização Manual Ocultista");
+        return;
+      }
+      setManualSyncFeedback({
+        type: "success",
+        text: activateAutoAfter
+          ? "Sincronização manual ativada e ficha Ocultista sincronizada."
+          : "Ficha Ocultista sincronizada manualmente com sucesso.",
+      });
+    } catch (err: any) {
+      setManualSyncFeedback({
+        type: "error",
+        text: `Falha de rede ao sincronizar: ${err?.message || "Erro desconhecido"}`,
+      });
+    }
+  };
 
   useEffect(() => {
     const initAuth = async () => {
@@ -650,7 +811,7 @@ export default function App() {
         .from("players")
         .select("data")
         .eq("id", userUid)
-        .single()
+        .maybeSingle()
         .then(
           ({ data, error }) => {
             if (error) {
@@ -662,19 +823,27 @@ export default function App() {
                 const newHp = data.data.hp;
                 const newPe = data.data.pe;
                 const newSm = data.data.sm;
+                const newStatusEffects = Array.isArray(data.data.statusEffects)
+                  ? data.data.statusEffects
+                  : prev.statusEffects || [];
+                const statusChanged =
+                  JSON.stringify(prev.statusEffects || []) !==
+                  JSON.stringify(newStatusEffects);
                 if (
                   prev.hp.current !== newHp.current ||
                   prev.pe.current !== newPe.current ||
                   (newSm && prev.sm?.current !== newSm.current) ||
                   prev.hp.max !== newHp.max ||
                   prev.pe.max !== newPe.max ||
-                  (newSm && prev.sm?.max !== newSm.max)
+                  (newSm && prev.sm?.max !== newSm.max) ||
+                  statusChanged
                 ) {
                   return {
                     ...prev,
                     hp: newHp,
                     pe: newPe,
                     sm: newSm || prev.sm,
+                    statusEffects: newStatusEffects,
                   };
                 }
                 return prev;
@@ -704,19 +873,27 @@ export default function App() {
               const newHp = payload.new.data.hp;
               const newPe = payload.new.data.pe;
               const newSm = payload.new.data.sm;
+              const newStatusEffects = Array.isArray(payload.new.data.statusEffects)
+                ? payload.new.data.statusEffects
+                : prev.statusEffects || [];
+              const statusChanged =
+                JSON.stringify(prev.statusEffects || []) !==
+                JSON.stringify(newStatusEffects);
               if (
                 prev.hp.current !== newHp.current ||
                 prev.pe.current !== newPe.current ||
                 (newSm && prev.sm?.current !== newSm.current) ||
                 prev.hp.max !== newHp.max ||
                 prev.pe.max !== newPe.max ||
-                (newSm && prev.sm?.max !== newSm.max)
+                (newSm && prev.sm?.max !== newSm.max) ||
+                statusChanged
               ) {
                 return {
                   ...prev,
                   hp: newHp,
                   pe: newPe,
                   sm: newSm || prev.sm,
+                  statusEffects: newStatusEffects,
                 };
               }
               return prev;
@@ -759,7 +936,7 @@ export default function App() {
         .from("players")
         .select("data")
         .eq("id", "MASTER_STATE")
-        .single()
+        .maybeSingle()
         .then(
           ({ data, error }) => {
             if (error) {
@@ -786,7 +963,7 @@ export default function App() {
         .from("players")
         .select("data")
         .eq("id", "TABLETOP_GRID")
-        .single()
+        .maybeSingle()
         .then(
           ({ data, error }) => {
             if (!error && data?.data) {
@@ -854,6 +1031,25 @@ export default function App() {
               return payload;
             return prev;
           });
+        }
+      })
+      .on("broadcast", { event: "status_effects_update" }, ({ payload }) => {
+        if (!payload || !payload.playerId) return;
+        const incomingEffects: StatusEffect[] = Array.isArray(payload.statusEffects)
+          ? payload.statusEffects
+          : [];
+        if (payload.playerId === userUidRef.current) {
+          setMainState((prev: any) => ({
+            ...prev,
+            statusEffects: incomingEffects,
+          }));
+        } else if (String(payload.playerId).startsWith("EXTRA_FICHA_")) {
+          const sheetId = String(payload.playerId).replace("EXTRA_FICHA_", "");
+          setExtraFichas((prev) =>
+            prev.map((f) =>
+              f.id === sheetId ? { ...f, statusEffects: incomingEffects } : f
+            )
+          );
         }
       })
       .subscribe();
@@ -953,15 +1149,22 @@ export default function App() {
   }, [userUid, isOnline]);
 
   useEffect(() => {
-    if (currentPage === "mestre" && userUid) {
+    if ((currentPage === "mestre" || isMestreAuth) && userUid) {
       const fetchPlayersList = () => {
         supabase
           .from("players")
           .select("id, data")
           .not("id", "like", "OST_FILE_%")
           .not("id", "like", "EXTRA_FICHA_%")
+          .not("id", "like", "HANDOUTS_INDIV_%")
+          .not("id", "like", "MINIGAME_%")
+          .not("id", "like", "CHAT_%")
           .not("id", "eq", "MASTER_STATE")
           .not("id", "eq", "MASTER_EVENTS")
+          .not("id", "eq", "HANDOUTS_MASTER")
+          .not("id", "eq", "HANDOUTS_SHARED")
+          .not("id", "eq", "TABLETOP_GRID")
+          .not("id", "eq", "CADERNO_CAMPO_SHARED")
           .then(
             ({ data, error }) => {
               if (error) {
@@ -979,10 +1182,12 @@ export default function App() {
                 handleSupabaseError(error, "Buscar Lista de Jogadores");
               } else if (data) {
                 setPlayers((current) => {
-                  const mapped = data.map((d) => ({
-                    id: d.id,
-                    ...(d.data || {}),
-                  }));
+                  const mapped = data
+                    .filter((d) => !isSystemRecordId(d.id))
+                    .map((d) => ({
+                      id: d.id,
+                      ...(d.data || {}),
+                    }));
                   if (JSON.stringify(current) !== JSON.stringify(mapped))
                     return mapped;
                   return current;
@@ -1008,12 +1213,7 @@ export default function App() {
             const oldRec = payload.old as any;
             const eventId = newRec?.id || oldRec?.id;
 
-            if (
-              eventId?.startsWith("OST_FILE_") ||
-              eventId?.startsWith("EXTRA_FICHA_") ||
-              eventId === "MASTER_STATE" ||
-              eventId === "MASTER_EVENTS"
-            ) {
+            if (!eventId || isSystemRecordId(eventId)) {
               return;
             }
 
@@ -1038,7 +1238,7 @@ export default function App() {
         supabase.removeChannel(channel);
       };
     }
-  }, [currentPage, userUid]);
+  }, [currentPage, isMestreAuth, userUid]);
 
   const vibrate = (ms: number | number[] = 50) => {
     if (navigator.vibrate) navigator.vibrate(ms as any);
@@ -1048,53 +1248,8 @@ export default function App() {
     formula: string,
     customVars?: Record<string, number>,
   ) => {
-    if (!formula) return null;
-    let logDetails: string[] = [];
-    let stringToEval = formula.toUpperCase();
-
-    // Sort to match longer variables first (e.g. VARIABLE before VAR)
     const varsToUse = customVars || state.variables;
-    const sortedVars = Object.entries(varsToUse).sort(
-      (a, b) => b[0].length - a[0].length,
-    );
-    sortedVars.forEach(([key, value]) => {
-      const regex = new RegExp(`\\b${key}\\b`, "g");
-      if (regex.test(stringToEval)) {
-        logDetails.push(`${key}(${value})`);
-        stringToEval = stringToEval.replace(regex, String(value));
-      }
-    });
-
-    const diceRegex = /(\d+)D(\d+)/g;
-    stringToEval = stringToEval.replace(diceRegex, (match, count, sides) => {
-      let sum = 0;
-      let rolls = [];
-      for (let i = 0; i < parseInt(count); i++) {
-        let r = Math.floor(Math.random() * parseInt(sides)) + 1;
-        sum += r;
-        rolls.push(r);
-      }
-      logDetails.push(`${match}[${rolls.join(",")}]`);
-      return String(sum);
-    });
-
-    try {
-      let safeMath = stringToEval.replace(/[^0-9+\-*/(). ]/g, "");
-      if (safeMath.trim() === "") return null;
-      // Add implicit multiplication for parenthesis like 2(3+4) -> 2*(3+4)
-      safeMath = safeMath
-        .replace(/\)(?=\d|\()/g, ")*")
-        .replace(/(\d)(?=\()/g, "$1*");
-      // eslint-disable-next-line
-      const result = new Function("return " + safeMath)();
-      return {
-        result: Math.floor(result),
-        details: logDetails.length > 0 ? logDetails.join(" | ") : "Valor fixo",
-        formula,
-      };
-    } catch {
-      return null;
-    }
+    return evaluateDiceFormula(formula, varsToUse);
   };
 
   const triggerShake = () => {
@@ -1109,22 +1264,21 @@ export default function App() {
     }));
   };
 
-  const executeRoll = (formulaToRoll: string) => {
+  const executeRoll = (formulaToRoll: string, label?: string) => {
     vibrate(50);
-    const trimmed = formulaToRoll.trim();
-    if (!trimmed) return;
-    const normalized = trimmed.replace(/(^|[^0-9])d(\d+)/gi, "$11d$2");
-    const roll = parseAndRoll(normalized);
+    const roll = parseAndRoll(formulaToRoll);
     if (roll) {
-      let critical: "crit" | "fumble" | "normal" = "normal";
-      const upper = normalized.toUpperCase();
-      if (upper.includes("1D20") && roll.details.includes("1D20")) {
-        if (roll.details.includes("[20]")) critical = "crit";
-        else if (roll.details.includes("[1]")) critical = "fumble";
-      }
-      setLastRollResult({ ...roll, critical });
+      const displayFormula = label ? `${label} (${roll.formula})` : roll.formula;
+      setLastRollResult({ ...roll, formula: displayFormula });
+      setRollToast({
+        id: Date.now(),
+        formula: displayFormula,
+        result: roll.result,
+        details: roll.details,
+        critical: roll.critical,
+      });
       addToHistory(
-        `Rolou: <b>${roll.formula}</b> <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
+        `Rolou: <b>${displayFormula}</b> <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
       );
       triggerShake();
     } else {
@@ -1132,6 +1286,25 @@ export default function App() {
         '<span style="color: #ffaa00;">Fórmula manual inválida.</span>',
       );
     }
+  };
+
+  // Executa fórmulas personalizadas apresentando o resultado EXCLUSIVAMENTE via notificação (sem histórico)
+  const executeCustomFormulaRoll = (
+    formulaToRoll: string,
+    label?: string,
+  ): boolean => {
+    const roll = parseAndRoll(formulaToRoll);
+    if (!roll) return false;
+    vibrate(50);
+    const displayFormula = label ? `${label} (${roll.formula})` : roll.formula;
+    setRollToast({
+      id: Date.now(),
+      formula: displayFormula,
+      result: roll.result,
+      details: roll.details,
+      critical: roll.critical,
+    });
+    return true;
   };
 
   const processManualRoll = () => {
@@ -1177,6 +1350,7 @@ export default function App() {
   };
 
   const removeVariable = (key: string) => {
+    if (!canRemoveStatusVariable(key)) return;
     setState((prev: any) => {
       const newVars = { ...prev.variables };
       delete newVars[key];
@@ -1192,6 +1366,7 @@ export default function App() {
   };
 
   const renameVariable = (oldKey: string, newKeyRaw: string) => {
+    if (!canRenameStatusVariable(oldKey)) return;
     const newKey = newKeyRaw.trim().toUpperCase();
     if (newKey !== oldKey && newKey !== "") {
       setState((prev: any) => {
@@ -1339,11 +1514,19 @@ export default function App() {
     const roll = parseAndRoll(formula);
     if (roll) {
       const tipoStr = type === "test" ? "Teste" : "Dano";
+      const rollLabel = `${skill.name || "Habilidade"} (${tipoStr})`;
       setLastRollResult({
-        formula: `${skill.name || "Habilidade"} (${tipoStr})`,
+        formula: rollLabel,
         result: roll.result,
         details: roll.details,
-        critical: "normal",
+        critical: roll.critical,
+      });
+      setRollToast({
+        id: Date.now(),
+        formula: rollLabel,
+        result: roll.result,
+        details: roll.details,
+        critical: roll.critical,
       });
       addToHistory(
         `<b>${skill.name || "Habilidade"}</b> (${tipoStr}) <br>Fórmula: ${roll.formula} <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
@@ -1508,6 +1691,140 @@ export default function App() {
     await supabase.from("players").update({ data: dataToSave }).eq("id", p.id);
   };
 
+  const updatePlayerStatusEffects = async (
+    p: any,
+    nextEffects: StatusEffect[],
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => {
+    if (isExtraSheet && rawExtraSheetId) {
+      setExtraFichas((prev) =>
+        prev.map((f) =>
+          f.id === rawExtraSheetId
+            ? { ...f, statusEffects: nextEffects, last_local_edit: Date.now() }
+            : f
+        )
+      );
+    } else {
+      setPlayers((current) =>
+        current.map((pl) =>
+          pl.id === p.id ? { ...pl, statusEffects: nextEffects } : pl
+        )
+      );
+      const newData = { ...p, statusEffects: nextEffects };
+      delete newData.id;
+      delete newData.isExtraSheet;
+      delete newData.rawExtraSheetId;
+      await supabase.from("players").update({ data: newData }).eq("id", p.id);
+    }
+
+    try {
+      globalChannelRef.current?.send({
+        type: "broadcast",
+        event: "status_effects_update",
+        payload: {
+          playerId:
+            isExtraSheet && rawExtraSheetId
+              ? `EXTRA_FICHA_${rawExtraSheetId}`
+              : p.id,
+          statusEffects: nextEffects,
+        },
+      });
+    } catch (err) {
+      console.warn("Erro ao enviar broadcast status_effects_update:", err);
+    }
+  };
+
+  const handleDisconnectDefaultSheets = async (): Promise<{
+    removedCount: number;
+    error?: string;
+  }> => {
+    const { data: remoteRows, error: fetchError } = await supabase
+      .from("players")
+      .select("id, data");
+
+    if (fetchError) {
+      return {
+        removedCount: 0,
+        error: `Falha ao consultar fichas conectadas: ${fetchError.message}`,
+      };
+    }
+
+    const candidateRows = [
+      ...(remoteRows || []),
+      ...players.map((p) => ({ id: p.id, name: p.name })),
+    ];
+
+    const idsToDelete = findOcultistaPlayerRecordIds(
+      candidateRows,
+      isSystemRecordId,
+    );
+
+    const extraOcultistas = extraFichas.filter((f) =>
+      isOcultistaSheetName(f.name),
+    );
+    for (const ef of extraOcultistas) {
+      if (ef.synchronized) {
+        const extraId = `EXTRA_FICHA_${ef.id}`;
+        if (!idsToDelete.includes(extraId)) {
+          idsToDelete.push(extraId);
+        }
+      }
+    }
+
+    if (idsToDelete.length > 0) {
+      const { error: deleteError } = await supabase
+        .from("players")
+        .delete()
+        .in("id", idsToDelete);
+
+      if (deleteError) {
+        return {
+          removedCount: 0,
+          error: `Falha ao remover fichas "Ocultista": ${deleteError.message}`,
+        };
+      }
+
+      const deleteSet = new Set(idsToDelete);
+      setPlayers((current) => current.filter((p) => !deleteSet.has(p.id)));
+    }
+
+    if (extraOcultistas.length > 0) {
+      setExtraFichas((prev) =>
+        prev.map((f) =>
+          isOcultistaSheetName(f.name) && f.synchronized
+            ? { ...f, synchronized: false, manualOcultistaSync: false }
+            : f,
+        ),
+      );
+    }
+
+    let disconnectedOwn = 0;
+    if (
+      isOcultistaSheetName(mainState?.name) &&
+      (isOnline || ocultistaManualSync)
+    ) {
+      setOcultistaManualSync(false);
+      setIsOnline(false);
+      setManualSyncFeedback(null);
+      if (userUid && !idsToDelete.includes(userUid)) {
+        const { error: ownDeleteError } = await supabase
+          .from("players")
+          .delete()
+          .eq("id", userUid);
+        if (ownDeleteError) {
+          return {
+            removedCount: idsToDelete.length,
+            error: `Falha ao desconectar ficha padrão local: ${ownDeleteError.message}`,
+          };
+        }
+        disconnectedOwn = 1;
+      }
+    }
+
+    return { removedCount: idsToDelete.length + disconnectedOwn };
+  };
+
   const hpPercent =
     Math.max(0, Math.min(100, (state.hp.current / state.hp.max) * 100)) || 0;
 
@@ -1518,25 +1835,54 @@ export default function App() {
     Math.max(0, Math.min(100, (state.sm.current / state.sm.max) * 100)) || 0;
   const icons = ["X", "O", "∆", "□"];
 
-  const renderHud = () => (
-    <div className="hud-container relative pointer-events-auto">
-      <img
-        className="eye-logo"
-        src={demologiaLogoUrl}
-        alt={isRlMode ? "Símbolo Real L" : "Símbolo Demologia"}
-      />
-      <div className="status-numbers relative">
+  const renderHud = () => {
+    const { leftEffects, rightEffects } = splitStatusEffectsForHud(
+      state.statusEffects || []
+    );
+
+    return (
+      <div className="hud-container relative pointer-events-auto">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 sm:gap-4 w-full px-2 sm:px-4 mb-1">
+          <div className="flex flex-col items-end justify-center gap-3 min-w-0">
+            {leftEffects.map((eff, idx) => (
+              <StatusPostIt key={eff.id} effect={eff} index={idx} compact />
+            ))}
+          </div>
+
+          <div className="shrink-0 flex justify-center">
+            <img
+              className="eye-logo"
+              src={DEMOLOGIA_LOGO_URL}
+              alt={isRlMode ? "Símbolo Real L" : "Símbolo Demologia"}
+            />
+          </div>
+
+          <div className="flex flex-col items-start justify-center gap-3 min-w-0">
+            {rightEffects.map((eff, idx) => (
+              <StatusPostIt
+                key={eff.id}
+                effect={eff}
+                index={idx + leftEffects.length}
+                compact
+              />
+            ))}
+          </div>
+        </div>
+        <div className="status-numbers relative">
         <input
-          className="bg-transparent text-white font-bold text-center text-[29px] sm:text-[35px] md:text-[41px] uppercase outline-none w-full drop-shadow-[0_0_10px_rgba(211,0,0,0.6)] px-2"
+          className="character-name-input bg-transparent text-white font-bold text-center text-[29px] sm:text-[35px] md:text-[41px] uppercase outline-none w-full px-2"
           style={{
-            textShadow: "2px 2px 0px #500",
-            marginBottom: "-10px",
             zIndex: 10,
           }}
           value={state.name || ""}
-          onChange={(e) =>
-            setState((prev: any) => ({ ...prev, name: e.target.value }))
-          }
+          onChange={(e) => {
+            const newName = e.target.value;
+            if (activeFichaId === "main" && isOcultistaSheetName(newName)) {
+              setOcultistaManualSync(false);
+            }
+            setManualSyncFeedback(null);
+            setState((prev: any) => ({ ...prev, name: newName }));
+          }}
           placeholder="NOME"
         />
         {!isRlMode ? (
@@ -1670,7 +2016,8 @@ export default function App() {
         )}
       </div>
     </div>
-  );
+    );
+  };
 
   const handleRollAllInitiatives = () => {
     const syncedExtras = extraFichas
@@ -1770,6 +2117,7 @@ export default function App() {
   };
 
   return (
+    <MotionConfig reducedMotion="user">
     <div id="app" className="relative min-h-screen">
       {!ostAudioAccepted && (
         <button
@@ -1811,9 +2159,10 @@ export default function App() {
           backfaceVisibility: 'hidden',
         }}
       />
+      <AnimatePresence>
       {supabaseConfigError && (
-        <div className="fixed inset-0 modal-backdrop-blur z-[9999] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#111]/95 border-2 border-blood-red/60 rounded-none max-w-2xl w-full p-6 md:p-8 shadow-[0_0_50px_rgba(255,0,0,0.3)] relative my-8 animate-sheet-up">
+        <MotionModalBackdrop className="fixed inset-0 z-[9999] flex items-center justify-center p-4 overflow-y-auto">
+          <MotionSheetPanel className="bg-[#111]/95 border-2 border-blood-red/60 rounded-none max-w-2xl w-full p-6 md:p-8 shadow-[0_0_50px_rgba(255,0,0,0.3)] relative my-8">
             <button
               onClick={() => setSupabaseConfigError(null)}
               className="absolute top-4 right-4 text-gray-500 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-all cursor-pointer"
@@ -1956,9 +2305,10 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 Entendi, Usar Offline
               </button>
             </div>
-          </div>
-        </div>
+          </MotionSheetPanel>
+        </MotionModalBackdrop>
       )}
+      </AnimatePresence>
       {isVideoBackground(customStyle.backgroundUrl) && (
         <div 
           className="fixed inset-0 z-[-10] w-full h-full pointer-events-none overflow-hidden bg-black object-cover"
@@ -2033,13 +2383,14 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
       <div className={`w-full min-h-[100dvh] transition-opacity duration-700 ${cutsceneState?.active ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
 
+      <AnimatePresence>
       {showUpdateLog && (
-        <div
-          className="fixed inset-0 modal-backdrop-blur z-[250] flex items-end sm:items-center justify-center p-0 sm:p-4"
+        <MotionModalBackdrop
+          className="fixed inset-0 z-[250] flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={() => setShowUpdateLog(false)}
         >
-          <div
-            className="bg-[#0e0e12]/95 border-t sm:border border-[#26262e] rounded-none p-5 sm:p-8 shadow-[0_24px_60px_rgba(0,0,0,0.85)] max-w-xl w-full relative overflow-hidden animate-sheet-up"
+          <MotionSheetPanel
+            className="bg-[#0e0e12]/95 border-t sm:border border-[#26262e] rounded-none p-5 sm:p-8 shadow-[0_24px_60px_rgba(0,0,0,0.85)] max-w-xl w-full relative overflow-hidden"
             style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -2094,9 +2445,10 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 Fechar
               </button>
             </div>
-          </div>
-        </div>
+          </MotionSheetPanel>
+        </MotionModalBackdrop>
       )}
+      </AnimatePresence>
 
       <PasswordAuthModal
         isOpen={showPasswordModal}
@@ -2124,13 +2476,14 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         onApplyMode={handleApplyGameMode}
       />
 
+      <AnimatePresence>
       {playerToKick && (
-        <div
-          className="fixed inset-0 modal-backdrop-blur z-[300] flex items-end sm:items-center justify-center p-0 sm:p-4"
+        <MotionModalBackdrop
+          className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={() => setPlayerToKick(null)}
         >
-          <div
-            className="bg-[#0e0e12]/95 border-t sm:border border-[#26262e] rounded-none p-5 sm:p-8 max-w-sm w-full relative overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.85)] animate-sheet-up"
+          <MotionSheetPanel
+            className="bg-[#0e0e12]/95 border-t sm:border border-[#26262e] rounded-none p-5 sm:p-8 max-w-sm w-full relative overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.85)]"
             style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -2169,17 +2522,19 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 Sim
               </button>
             </div>
-          </div>
-        </div>
+          </MotionSheetPanel>
+        </MotionModalBackdrop>
       )}
+      </AnimatePresence>
 
+      <AnimatePresence>
       {showClearChatModal && (
-        <div
-          className="fixed inset-0 modal-backdrop-blur z-[300] flex items-end sm:items-center justify-center p-0 sm:p-4"
+        <MotionModalBackdrop
+          className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={() => setShowClearChatModal(false)}
         >
-          <div
-            className="bg-[#0e0e12]/95 border-t sm:border border-[#26262e] rounded-none p-5 sm:p-6 max-w-sm w-full relative overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.85)] animate-sheet-up"
+          <MotionSheetPanel
+            className="bg-[#0e0e12]/95 border-t sm:border border-[#26262e] rounded-none p-5 sm:p-6 max-w-sm w-full relative overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.85)]"
             style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -2210,11 +2565,18 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 Sim
               </button>
             </div>
-          </div>
-        </div>
+          </MotionSheetPanel>
+        </MotionModalBackdrop>
       )}
+      </AnimatePresence>
 
-      <div className="flex flex-col lg:flex-row min-h-[100dvh] w-full">
+      <div
+        aria-hidden={Boolean(minigamesSync.activeAssignment)}
+        inert={Boolean(minigamesSync.activeAssignment)}
+        className={`flex flex-col lg:flex-row min-h-[100dvh] w-full ${
+          minigamesSync.activeAssignment ? "pointer-events-none select-none" : ""
+        }`}
+      >
         <NavigationSidebar
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
@@ -2227,6 +2589,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           gameMode={activeMode}
           onOpenModeModal={isMestreAuth ? () => setShowModeModal(true) : undefined}
           isOnline={isOnline}
+          unreadHandoutsCount={handoutsSync.unreadCount}
         />
 
       <main className="flex-1 min-w-0 w-full transition-all min-h-[100dvh] relative z-10 flex flex-col">
@@ -2248,24 +2611,49 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           </button>
         )}
 
-        {/* Atalho Caderno quando em Modo Real L */}
-        {isRlMode && currentPage !== "caderno" && currentPage !== "mestre" && (
-          <button
-            type="button"
-            onClick={() => setCurrentPage("caderno")}
-            style={{ top: "max(0.75rem, env(safe-area-inset-top, 0.75rem))" }}
-            className="absolute right-3 lg:right-5 z-40 h-10 px-3.5 flex items-center gap-2 border border-[#a855f7]/35 hover:border-[#c084fc] rounded-none transition-all duration-150 ease-out cursor-pointer shadow-lg bg-[#181428]/95 hover:bg-[#251e3e] text-[#d8b4fe] hover:text-white text-xs font-mono font-bold tracking-wider uppercase active:scale-95 touch-manipulation"
-            aria-label="Abrir Caderno de Campo"
-            title="Caderno de Campo"
-          >
-            <FileText size={14} className="text-[#c084fc]" />
-            <span>Caderno</span>
-          </button>
-        )}
-
+        <MotionTabSwitch
+          viewKey={currentPage === "ficha_extra" ? `ficha_extra:${activeFichaId}` : currentPage}
+          className="flex-1 flex flex-col w-full min-w-0"
+        >
         {(currentPage === "ficha" || currentPage === "ficha_extra") && (
-        <div className="home-sheet-container animate-tab-fade max-w-7xl mx-auto w-full pt-14 lg:pt-6 pb-32 sm:pb-28 lg:pb-20 px-2.5 sm:px-4 lg:px-6 flex flex-col lg:flex-row gap-3.5 sm:gap-4 lg:gap-6 xl:gap-8 items-start">
-          
+        <div className="home-sheet-container max-w-7xl mx-auto w-full pt-14 lg:pt-6 pb-32 sm:pb-28 lg:pb-20 px-2.5 sm:px-4 lg:px-6 flex flex-col gap-3.5 sm:gap-4 lg:gap-6">
+          {currentPage === "ficha_extra" && activeFichaId !== "main" && (
+            <div className="w-full bg-[#0d0d13]/95 border border-[#262634] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 font-mono">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[10px] uppercase tracking-widest px-1.5 py-0.5 bg-blue-950/50 text-blue-300 border border-blue-500/40 shrink-0">
+                  Ficha Extra
+                </span>
+                <span className="text-xs sm:text-sm font-bold text-white truncate">
+                  {state.name || "Sem Nome"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage("oraculo")}
+                  className="min-h-[38px] px-3 py-1.5 bg-[#1a090c] hover:bg-[#2c0d12] border border-[var(--op-red)]/50 text-white text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Dices size={14} />
+                  <span>Rolar Dados & Fórmulas</span>
+                </button>
+                {isMestreAuth && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveFichaId("main");
+                      setCurrentPage("mestre");
+                    }}
+                    className="min-h-[38px] px-3 py-1.5 bg-[#14141c] hover:bg-[#1e1e2a] border border-[#2a2a36] text-[#c4c5d0] hover:text-white text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <ArrowLeft size={14} />
+                    <span>Mestre</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="w-full flex flex-col lg:flex-row gap-3.5 sm:gap-4 lg:gap-6 xl:gap-8 items-start">
           {/* Left Column: HUD, Variables, Skills */}
           <div className="flex-1 min-w-0 w-full flex flex-col gap-3.5 sm:gap-4 lg:gap-6">
             <div className="hud-wrapper-box">
@@ -2274,35 +2662,104 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
             <div className="section">
               <div className="section-title">Variáveis de Status</div>
-              <div className="var-grid">
-              {Object.entries(state.variables).map(([key, value]) => (
-                <div className="var-box" key={key}>
-                  <button
-                    className="btn-remove-var"
-                    onClick={() => removeVariable(key)}
-                  >
-                    X
-                  </button>
-                  <input
-                    type="text"
-                    defaultValue={key}
-                    onBlur={(e) => renameVariable(key, e.target.value)}
-                    onKeyDown={(e) =>
-                      e.key === "Enter" && e.currentTarget.blur()
-                    }
-                  />
-                  <MestreStatInput
-                    value={(value as number) || 0}
-                    onSave={(val) => updateVariable(key, val)}
-                    className="w-12 bg-transparent text-center text-white font-mono outline-none border-b border-dashed border-[#555] focus:border-blood-red"
-                  />
-                </div>
-              ))}
+              <div className="flex flex-col gap-2.5">
+                {Object.entries(state.variables).map(([key, value]) => {
+                  const numVal = (value as number) || 0;
+                  const isDefaultStatus = isDefaultStatusKey(key);
+                  return (
+                    <div
+                      key={key}
+                      className={`var-list-row flex items-center justify-between gap-2 sm:gap-3 px-3 py-2 min-h-[48px] border rounded-none transition-colors ${
+                        isRlMode
+                          ? "bg-[#141022]/85 border-purple-500/25 focus-within:border-purple-400"
+                          : "bg-[#101016]/90 border-[#242430] hover:border-[#343444] focus-within:border-[var(--op-red)]"
+                      }`}
+                    >
+                      <input
+                        type="text"
+                        defaultValue={key}
+                        readOnly={isDefaultStatus}
+                        aria-label={`Nome da variável ${key}`}
+                        title={
+                          isDefaultStatus
+                            ? "Atributo padrão do sistema"
+                            : "Clique para renomear variável"
+                        }
+                        className={`flex-1 min-w-[56px] bg-transparent font-mono font-bold text-sm uppercase tracking-wider outline-none focus:outline-none focus-visible:outline-none border-b border-transparent py-1 ${
+                          isRlMode
+                            ? "text-purple-200 focus:border-purple-400"
+                            : "text-[var(--op-red-bright)] focus:border-[var(--op-red)]"
+                        }`}
+                        style={{ outline: "none" }}
+                        onBlur={(e) => {
+                          if (!isDefaultStatus) renameVariable(key, e.target.value);
+                        }}
+                        onKeyDown={(e) =>
+                          e.key === "Enter" && e.currentTarget.blur()
+                        }
+                      />
+
+                      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                        {(() => {
+                          const defaultFormula = getDefaultAttributeRollFormula(key);
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => executeRoll(defaultFormula, `Teste de ${key}`)}
+                              title={`Rolar ${defaultFormula}`}
+                              aria-label={`Rolar ${defaultFormula}`}
+                              className="min-w-[36px] min-h-[36px] px-2 flex items-center justify-center bg-[#16161f] hover:bg-[#22222e] text-[#9ca3af] hover:text-white border border-[#262634] rounded-none transition-colors cursor-pointer touch-manipulation"
+                            >
+                              <Dices size={14} />
+                            </button>
+                          );
+                        })()}
+
+                        <button
+                          type="button"
+                          onClick={() => updateVariable(key, numVal - 1)}
+                          aria-label={`Diminuir ${key}`}
+                          className="min-w-[36px] min-h-[36px] flex items-center justify-center bg-[#16161f] hover:bg-[#22222e] active:scale-95 text-[#9ca3af] hover:text-white border border-[#262634] rounded-none transition-all cursor-pointer touch-manipulation"
+                        >
+                          <Minus size={13} />
+                        </button>
+
+                        <MestreStatInput
+                          value={numVal}
+                          onSave={(val) => updateVariable(key, val)}
+                          ariaLabel={`Valor de ${key}`}
+                          className="w-12 min-h-[36px] bg-[#0a0a0e] border border-[#262634] focus:border-[var(--op-red)] text-center text-white font-mono font-bold text-sm outline-none focus:outline-none focus-visible:outline-none rounded-none"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => updateVariable(key, numVal + 1)}
+                          aria-label={`Aumentar ${key}`}
+                          className="min-w-[36px] min-h-[36px] flex items-center justify-center bg-[#16161f] hover:bg-[#22222e] active:scale-95 text-[#9ca3af] hover:text-white border border-[#262634] rounded-none transition-all cursor-pointer touch-manipulation"
+                        >
+                          <Plus size={13} />
+                        </button>
+
+                        {!isDefaultStatus && (
+                          <button
+                            type="button"
+                            className="min-w-[34px] min-h-[36px] flex items-center justify-center text-[#686875] hover:text-[var(--op-red-bright)] hover:bg-red-950/25 border border-transparent hover:border-red-900/40 font-mono text-xs font-bold rounded-none transition-colors cursor-pointer touch-manipulation"
+                            onClick={() => removeVariable(key)}
+                            title={`Remover ${key}`}
+                            aria-label={`Remover variável ${key}`}
+                          >
+                            X
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <button className="btn-add" onClick={addVariable}>
+                + ADICIONAR VARIÁVEL
+              </button>
             </div>
-            <button className="btn-add" onClick={addVariable}>
-              + ADICIONAR VARIÁVEL
-            </button>
-          </div>
 
             {!isRlMode && (
               <div className="section skills-section">
@@ -2346,46 +2803,44 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                         {skill.desc || "Sem descrição"}
                       </div>
                     </div>
-                    <div
-                      className={`skill-details ${isActive && editingSkill !== skill.id ? "active" : "hidden"}`}
-                      style={{
-                        display:
-                          isActive && editingSkill !== skill.id
-                            ? "flex"
-                            : "none",
-                        background: "#0a0a0a",
-                        padding: "12px",
-                        gap: "8px",
-                        alignItems: "center",
-                        borderTop: "none",
-                        borderRadius: "0 0 8px 8px",
-                      }}
-                    >
-                      <button
-                        className="min-h-[44px] bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-300 hover:text-white uppercase font-bold text-xs tracking-wider rounded-none py-2.5 px-3 transition-all cursor-pointer touch-manipulation"
-                        style={{ flex: 1 }}
-                        onClick={() => {
-                          setUseSkillModalId(skill.id);
-                          setSkillModalTested(false);
+                    <MotionAccordion isOpen={isActive && editingSkill !== skill.id}>
+                      <div
+                        className="skill-details active"
+                        style={{
+                          display: "flex",
+                          background: "#0a0a0a",
+                          padding: "12px",
+                          gap: "8px",
+                          alignItems: "center",
+                          borderTop: "none",
+                          borderRadius: "0 0 8px 8px",
                         }}
                       >
-                        USAR
-                      </button>
-                      <button
-                        className="min-w-[44px] min-h-[44px] flex items-center justify-center bg-transparent hover:bg-[#1A1A1A] text-gray-400 hover:text-white p-2 rounded-none transition-colors border-none cursor-pointer touch-manipulation"
-                        onClick={() => setEditingSkill(skill.id)}
-                        title="Editar Skill"
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                    </div>
+                        <button
+                          className="min-h-[44px] bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-300 hover:text-white uppercase font-bold text-xs tracking-wider rounded-none py-2.5 px-3 transition-all cursor-pointer touch-manipulation"
+                          style={{ flex: 1 }}
+                          onClick={() => {
+                            setUseSkillModalId(skill.id);
+                            setSkillModalTested(false);
+                          }}
+                        >
+                          USAR
+                        </button>
+                        <button
+                          className="min-w-[44px] min-h-[44px] flex items-center justify-center bg-transparent hover:bg-[#1A1A1A] text-gray-400 hover:text-white p-2 rounded-none transition-colors border-none cursor-pointer touch-manipulation"
+                          onClick={() => setEditingSkill(skill.id)}
+                          title="Editar Skill"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                      </div>
+                    </MotionAccordion>
 
-                    <div
-                      className={`skill-details ${editingSkill === skill.id ? "active" : "hidden"}`}
-                      style={{
-                        display: editingSkill === skill.id ? "block" : "none",
-                      }}
-                    >
+                    <MotionAccordion isOpen={editingSkill === skill.id}>
+                      <div
+                        className="skill-details active"
+                        style={{ display: "block" }}
+                      >
                       <input
                         type="text"
                         className="input-dark"
@@ -2618,7 +3073,8 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                           FECHAR
                         </button>
                       </div>
-                    </div>
+                      </div>
+                    </MotionAccordion>
                   </div>
                 );
               })}
@@ -2638,10 +3094,11 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               </div>
             </div>
 
-            <div
-              className={`skill-details ${activeTributo ? "active" : ""}`}
-              style={{ background: "#1a1a1a", padding: "15px" }}
-            >
+            <MotionAccordion isOpen={activeTributo}>
+              <div
+                className="skill-details active"
+                style={{ display: "block", background: "#1a1a1a", padding: "15px" }}
+              >
               <label
                 style={{
                   display: "block",
@@ -2706,13 +3163,29 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 value={state.tributo.ativo}
                 onChange={(e) => updateTributo("ativo", e.target.value)}
               />
-            </div>
+              </div>
+            </MotionAccordion>
           </div>
           )}
           </div> {/* End Left Column */}
 
-          {/* Right Column: Inventory, System/Menu */}
+          {/* Right Column: Rolling Terminal (when enabled / default on extra sheets), Inventory, System/Menu */}
           <div className="w-full lg:w-[360px] xl:w-[420px] flex flex-col gap-3.5 sm:gap-4 lg:gap-6 shrink-0">
+
+          {(activeFichaId !== "main" ? state.diceInSheet !== false : diceInNormalSheet) && (
+            <div className="section">
+              <RollingTerminal
+                diceInput={diceInput}
+                setDiceInput={setDiceInput}
+                onRoll={processManualRoll}
+                history={state.history}
+                historyRef={historyRef}
+                isShaking={isShaking}
+                title="Terminal de Rolagem"
+                isRlMode={isRlMode}
+              />
+            </div>
+          )}
 
           <div className="section">
             <div className="section-title">Inventário</div>
@@ -2724,6 +3197,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   className="inv-slot"
                   placeholder={`Slot ${i + 1}`}
                   value={state.inventory[i]}
+                  onFocus={() => vibrate(15)}
                   onChange={(e) => updateInventory(i, e.target.value)}
                 />
               ))}
@@ -2753,15 +3227,152 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               >
                 {confirmReset ? "CONFIRME O RESET" : "Resetar Ficha"}
               </button>
+              {activeFichaId === "main" && isOcultistaSheetName(state.name) && (
+                <button
+                  type="button"
+                  onClick={() => handleManualSyncOcultista(false)}
+                  className="btn-menu col-span-2 flex items-center justify-center gap-2"
+                  style={{
+                    color: ocultistaManualSync ? "#34d399" : "#fbbf24",
+                    borderColor: ocultistaManualSync
+                      ? "rgba(52, 211, 153, 0.4)"
+                      : "rgba(251, 191, 36, 0.35)",
+                  }}
+                >
+                  <RefreshCw size={14} />
+                  <span>
+                    {ocultistaManualSync
+                      ? "Ocultista Sincronizado (Reenviar)"
+                      : "Sincronizar Ficha Ocultista"}
+                  </span>
+                </button>
+              )}
             </div>
+            {activeFichaId === "main" &&
+              isOcultistaSheetName(state.name) &&
+              manualSyncFeedback && (
+                <div
+                  className={`mt-2 px-3 py-2 text-xs font-mono border ${
+                    manualSyncFeedback.type === "error"
+                      ? "bg-red-950/40 border-red-700/50 text-red-300"
+                      : manualSyncFeedback.type === "success"
+                        ? "bg-emerald-950/35 border-emerald-600/40 text-emerald-300"
+                        : "bg-[#14141c] border-[#2c2c38] text-[#c4c5d0]"
+                  }`}
+                >
+                  {manualSyncFeedback.text}
+                </div>
+              )}
           </div>
           </div> {/* End Right Column */}
-
+          </div>
         </div>
       )}
 
       {currentPage === "oraculo" && (
-        <div className="animate-tab-fade pb-32 lg:pb-16 max-w-6xl mx-auto w-full px-3 sm:px-4 lg:px-6 pt-14 lg:pt-6 space-y-4">
+        <div className="pb-32 lg:pb-16 max-w-6xl mx-auto w-full px-3 sm:px-4 lg:px-6 pt-14 lg:pt-6 space-y-4">
+          {/* Seletor / Indicador da Ficha Ativa para Dados e Fórmulas */}
+          <div
+            className={`border px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 font-mono ${
+              isRlMode
+                ? "bg-[#120e1e]/95 border-purple-500/30"
+                : "bg-[#0e0e13]/95 border-[#22222c]"
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className={`text-[10px] uppercase tracking-wider px-2 py-0.5 border shrink-0 ${
+                  activeFichaId !== "main"
+                    ? "bg-blue-950/40 text-blue-300 border-blue-500/40"
+                    : isRlMode
+                      ? "bg-purple-950/40 text-purple-200 border-purple-500/40"
+                      : "bg-[#1a090c] text-[#ff9aa0] border-[var(--op-red)]/40"
+                }`}
+              >
+                {activeFichaId !== "main" ? "Ficha Extra" : "Ficha Normal"}
+              </span>
+              <span className="text-xs sm:text-sm font-bold text-white truncate">
+                {state.name || "Sem Nome"}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+              {(() => {
+                const isDiceInSheetActive =
+                  activeFichaId !== "main"
+                    ? state.diceInSheet !== false
+                    : diceInNormalSheet;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeFichaId === "main") {
+                        setDiceInNormalSheet((prev) => !prev);
+                      } else {
+                        setState((prev: any) => ({
+                          ...prev,
+                          diceInSheet: prev.diceInSheet === false,
+                        }));
+                      }
+                    }}
+                    aria-pressed={isDiceInSheetActive}
+                    className={`min-h-[38px] px-3 py-1.5 text-xs font-mono uppercase tracking-wider border rounded-none flex items-center gap-2 cursor-pointer transition-all touch-manipulation shrink-0 ${
+                      isDiceInSheetActive
+                        ? isRlMode
+                          ? "bg-purple-950/60 border-[#c084fc] text-white shadow-[0_0_12px_rgba(168,85,247,0.35)]"
+                          : "bg-[#2a0b0f] border-[var(--op-red-bright)] text-white shadow-[0_0_12px_rgba(181,42,48,0.35)]"
+                        : isRlMode
+                          ? "bg-[#140e24] border-purple-500/35 text-purple-200/80 hover:text-white"
+                          : "bg-[#121218] border-[#2c2c38] text-[#9e9fae] hover:text-white hover:border-[#3c3c4c]"
+                    }`}
+                    title="Mostrar ou ocultar o Terminal de Rolagem na aba da ficha"
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-none shrink-0 ${
+                        isDiceInSheetActive
+                          ? isRlMode
+                            ? "bg-[#c084fc] shadow-[0_0_6px_#c084fc]"
+                            : "bg-[#ff4d57] shadow-[0_0_6px_#ff4d57]"
+                          : "bg-[#4a4a58]"
+                      }`}
+                    />
+                    <span>Dados em Ficha</span>
+                  </button>
+                );
+              })()}
+
+              {extraFichas.length > 0 && (
+                <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+                  <label
+                    htmlFor="dice-active-sheet-select"
+                    className="text-[11px] text-[#8e90a0] uppercase tracking-wider shrink-0"
+                  >
+                    Ficha:
+                  </label>
+                  <select
+                    id="dice-active-sheet-select"
+                    value={activeFichaId}
+                    onChange={(e) => setActiveFichaId(e.target.value)}
+                    className={`flex-1 sm:flex-initial min-h-[38px] px-2.5 py-1 text-xs font-mono text-white border rounded-none outline-none cursor-pointer ${
+                      isRlMode
+                        ? "bg-[#140e24] border-purple-500/35 focus:border-[#c084fc]"
+                        : "bg-[#121218] border-[#2c2c38] focus:border-[var(--op-red)]"
+                    }`}
+                  >
+                    <option value="main">
+                      Normal: {mainState.name || "Sem Nome"}
+                    </option>
+                    {extraFichas.map((ef) => (
+                      <option key={ef.id} value={ef.id}>
+                        Extra: {ef.name || "Ficha Extra"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
             <div className="lg:col-span-6 w-full">
               <QuickDiceSection
@@ -2784,9 +3395,13 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 isRlMode={isRlMode}
               />
               <FormulaShortcutsSection
-                onRollFormula={executeRoll}
-                setDiceInput={setDiceInput}
-                diceInput={diceInput}
+                formulas={state.customFormulas || []}
+                onUpdateFormulas={(next) =>
+                  setState((prev: any) => ({ ...prev, customFormulas: next }))
+                }
+                onExecuteFormula={executeCustomFormulaRoll}
+                sheetName={state.name || "Sem Nome"}
+                isExtraSheet={activeFichaId !== "main"}
                 isRlMode={isRlMode}
               />
             </div>
@@ -2808,74 +3423,172 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
       {currentPage === "conexao" && (
         <>
-          <div className="animate-tab-fade p-4 pt-14 lg:pt-8 flex-1 text-center flex flex-col items-center justify-center max-w-md w-full mx-auto pb-20">
+          <div className="p-4 pt-14 lg:pt-8 flex-1 text-center flex flex-col items-center justify-center max-w-md w-full mx-auto pb-20">
             <div className="w-full bg-[#0c0c10] border border-[#1f1f28] p-6 sm:p-8 flex flex-col items-center">
-              <div
-                className={`w-3 h-3 rounded-full mb-4 ${
-                  isOnline
-                    ? "bg-emerald-400 shadow-[0_0_12px_#34d399]"
-                    : "bg-blood-red shadow-[0_0_12px_#d30000]"
-                }`}
-              />
-              <h2 className="text-xl font-bold text-white font-mono uppercase tracking-widest mb-2">
-                {isOnline ? "Sessão Conectada" : "Sessão Offline"}
-              </h2>
-              <p className="text-gray-400 text-xs font-mono mb-6">
-                {isOnline
-                  ? "Sua ficha está sincronizada em tempo real com a mesa."
-                  : "Conecte para sincronizar sua ficha em tempo real com o Mestre."}
-              </p>
-              <button
-                onClick={() => {
-                  if (!isOnline) {
-                    setIsOnline(true);
-                    if (userUid) {
-                      supabase
-                        .from("players")
-                        .upsert({
-                          id: userUid,
-                          data: state,
-                          updated_at: new Date().toISOString(),
-                        })
-                        .then(({ error }) => {
-                          if (error)
-                            console.warn(
-                              "Error syncing to Supabase (manual):",
-                              error.message,
+              {isOcultistaSheetName(mainState.name) ? (
+                <>
+                  <div
+                    className={`w-3 h-3 rounded-full mb-4 ${
+                      ocultistaManualSync && isOnline
+                        ? "bg-emerald-400 shadow-[0_0_12px_#34d399]"
+                        : "bg-amber-400 shadow-[0_0_12px_#fbbf24]"
+                    }`}
+                  />
+                  <h2 className="text-xl font-bold text-white font-mono uppercase tracking-widest mb-2">
+                    {ocultistaManualSync && isOnline
+                      ? "Ocultista Conectado (Manual)"
+                      : "Sincronização Manual (Ocultista)"}
+                  </h2>
+                  <p className="text-gray-400 text-xs font-mono mb-5 leading-relaxed">
+                    Fichas com o nome &quot;Ocultista&quot; não sincronizam automaticamente.
+                    Solicite o envio pontual ou ative manualmente a sincronização abaixo.
+                  </p>
+
+                  <div className="w-full flex flex-col gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => handleManualSyncOcultista(false)}
+                      className="w-full min-h-[48px] py-3 px-5 text-sm font-mono font-bold uppercase tracking-wider rounded-none transition-all duration-150 active:scale-[0.98] cursor-pointer touch-manipulation border bg-[#1a0505] border-blood-red hover:bg-[#300505] text-white shadow-[0_0_15px_rgba(211,0,0,0.25)] flex items-center justify-center gap-2"
+                    >
+                      <RefreshCw size={16} />
+                      <span>Sincronizar Ficha Agora</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!ocultistaManualSync) {
+                          handleManualSyncOcultista(true);
+                        } else {
+                          setOcultistaManualSync(false);
+                          setManualSyncFeedback({
+                            type: "success",
+                            text: "Sincronização automática da ficha Ocultista desativada.",
+                          });
+                        }
+                      }}
+                      className={`w-full min-h-[44px] py-2.5 px-5 text-xs font-mono font-bold uppercase tracking-wider rounded-none transition-all duration-150 active:scale-[0.98] cursor-pointer touch-manipulation border ${
+                        ocultistaManualSync
+                          ? "bg-emerald-950/60 border-emerald-500/60 hover:bg-emerald-900/60 text-emerald-200"
+                          : "bg-[#12121a] border-[#2c2c38] hover:border-amber-500/50 text-amber-200"
+                      }`}
+                    >
+                      {ocultistaManualSync
+                        ? "Desativar Sincronização Contínua"
+                        : "Ativar Sincronização Contínua (Manual)"}
+                    </button>
+
+                    {isOnline && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOcultistaManualSync(false);
+                          setIsOnline(false);
+                          setManualSyncFeedback(null);
+                          if (userUid) {
+                            supabase
+                              .from("players")
+                              .delete()
+                              .eq("id", userUid)
+                              .then(null, (err: any) =>
+                                console.warn(
+                                  "Erro de rede ao desconectar do Supabase:",
+                                  err.message,
+                                ),
+                              );
+                          }
+                        }}
+                        className="w-full min-h-[40px] py-2 px-4 text-xs font-mono uppercase tracking-wider rounded-none border border-[#242430] bg-[#101016] hover:bg-[#1a1a24] text-[#9ca3af] hover:text-white cursor-pointer"
+                      >
+                        Desconectar da Sessão
+                      </button>
+                    )}
+                  </div>
+
+                  {manualSyncFeedback && (
+                    <div
+                      className={`mt-4 w-full px-3 py-2.5 text-xs font-mono border text-left ${
+                        manualSyncFeedback.type === "error"
+                          ? "bg-red-950/40 border-red-700/50 text-red-300"
+                          : manualSyncFeedback.type === "success"
+                            ? "bg-emerald-950/35 border-emerald-600/40 text-emerald-300"
+                            : "bg-[#14141c] border-[#2c2c38] text-[#c4c5d0]"
+                      }`}
+                    >
+                      {manualSyncFeedback.text}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div
+                    className={`w-3 h-3 rounded-full mb-4 ${
+                      isOnline
+                        ? "bg-emerald-400 shadow-[0_0_12px_#34d399]"
+                        : "bg-blood-red shadow-[0_0_12px_#d30000]"
+                    }`}
+                  />
+                  <h2 className="text-xl font-bold text-white font-mono uppercase tracking-widest mb-2">
+                    {isOnline ? "Sessão Conectada" : "Sessão Offline"}
+                  </h2>
+                  <p className="text-gray-400 text-xs font-mono mb-6">
+                    {isOnline
+                      ? "Sua ficha está sincronizada em tempo real com a mesa."
+                      : "Conecte para sincronizar sua ficha em tempo real com o Mestre."}
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (!isOnline) {
+                        setIsOnline(true);
+                        if (userUid) {
+                          supabase
+                            .from("players")
+                            .upsert({
+                              id: userUid,
+                              data: state,
+                              updated_at: new Date().toISOString(),
+                            })
+                            .then(({ error }) => {
+                              if (error)
+                                console.warn(
+                                  "Error syncing to Supabase (manual):",
+                                  error.message,
+                                );
+                            });
+                        }
+                      } else {
+                        setIsOnline(false);
+                        if (userUid) {
+                          supabase
+                            .from("players")
+                            .delete()
+                            .eq("id", userUid)
+                            .then(null, (err: any) =>
+                              console.warn(
+                                "Erro de rede ao desconectar do Supabase:",
+                                err.message,
+                              ),
                             );
-                        });
-                    }
-                  } else {
-                    setIsOnline(false);
-                    if (userUid) {
-                      supabase
-                        .from("players")
-                        .delete()
-                        .eq("id", userUid)
-                        .then(null, (err: any) =>
-                          console.warn(
-                            "Erro de rede ao desconectar do Supabase:",
-                            err.message,
-                          ),
-                        );
-                    }
-                  }
-                }}
-                className={`w-full min-h-[48px] py-3 px-6 text-sm font-mono font-bold uppercase tracking-wider rounded-none transition-all duration-150 active:scale-[0.98] cursor-pointer touch-manipulation border ${
-                  isOnline
-                    ? "bg-emerald-950/60 border-emerald-500/60 hover:bg-emerald-900/60 text-emerald-200"
-                    : "bg-[#1a0505] border-blood-red hover:bg-[#300505] text-white shadow-[0_0_15px_rgba(211,0,0,0.25)]"
-                }`}
-              >
-                {isOnline ? "Desconectar" : "Conectar à Sessão"}
-              </button>
+                        }
+                      }
+                    }}
+                    className={`w-full min-h-[48px] py-3 px-6 text-sm font-mono font-bold uppercase tracking-wider rounded-none transition-all duration-150 active:scale-[0.98] cursor-pointer touch-manipulation border ${
+                      isOnline
+                        ? "bg-emerald-950/60 border-emerald-500/60 hover:bg-emerald-900/60 text-emerald-200"
+                        : "bg-[#1a0505] border-blood-red hover:bg-[#300505] text-white shadow-[0_0_15px_rgba(211,0,0,0.25)]"
+                    }`}
+                  >
+                    {isOnline ? "Desconectar" : "Conectar à Sessão"}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </>
       )}
 
       {currentPage === "chat" && (
-        <div className="animate-tab-fade flex-1 w-full flex flex-col justify-start items-center pt-14 lg:pt-6 px-2 sm:px-4 lg:px-6 pb-4">
+        <div className="flex-1 w-full flex flex-col justify-start items-center pt-14 lg:pt-6 px-2 sm:px-4 lg:px-6 pb-4">
           <div className="w-full max-w-5xl flex-1 flex flex-col min-h-[calc(100dvh-4.5rem)] lg:min-h-[calc(100dvh-3rem)]">
             <ChatContainer
               currentUser={{
@@ -2891,13 +3604,34 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         </div>
       )}
 
+      {currentPage === "handouts" && (
+        <div className="pt-14 lg:pt-6 pb-28">
+          <HandoutsView
+            handouts={handoutsSync.handouts}
+            folders={handoutsSync.folders}
+            unreadIds={handoutsSync.unreadIds}
+            syncStatus={handoutsSync.syncStatus}
+            isMestre={isMestreAuth}
+            players={players}
+            onMarkAsRead={handoutsSync.markAsRead}
+            onSaveHandout={handoutsSync.saveHandout}
+            onDeleteHandout={handoutsSync.deleteHandout}
+            onUpdateVisibility={handoutsSync.updateHandoutVisibility}
+            onToggleSecret={handoutsSync.toggleHandoutSecret}
+            onCreateFolder={handoutsSync.createFolder}
+            onDeleteFolder={handoutsSync.deleteFolder}
+          />
+        </div>
+      )}
+
       {currentPage === "mestre" && (
-        <div className="animate-tab-fade min-h-[100dvh] pb-24 font-sans">
+        <div className="min-h-[100dvh] pb-24 font-sans">
           <MasterHeaderBar
             activeTab={mestreTab}
             setActiveTab={setMestreTab}
             playersCount={players.length}
             extrasCount={extraFichas.length}
+            handoutsCount={handoutsSync.handouts.length}
             isOstPlaying={Boolean(playbackState?.is_playing)}
             onRollInitiative={handleRollAllInitiatives}
             onOpenMenu={() => setMenuOpen(true)}
@@ -2912,8 +3646,9 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             onOpenModeModal={() => setShowModeModal(true)}
           />
 
+          <MotionTabSwitch viewKey={mestreTab} className="w-full">
           {mestreTab === "fichas" && (
-            <div className="animate-tab-fade">
+            <div>
               <MasterPlayersView
                 players={players}
                 extraFichas={extraFichas}
@@ -2947,18 +3682,19 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   }
                   editPlayerStatExact(player, stat, val);
                 }}
+                onUpdateStatusEffects={updatePlayerStatusEffects}
               />
             </div>
           )}
 
           {mestreTab === "ost" && (
-            <div className="animate-tab-fade pt-3">
+            <div className="pt-3">
               <MasterOstPanel musicSync={musicSync} />
             </div>
           )}
 
           {mestreTab === "extras" && (
-            <div className="animate-tab-fade">
+            <div>
               <MasterExtrasView
                 extraFichas={extraFichas}
                 setExtraFichas={setExtraFichas}
@@ -2973,22 +3709,64 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               />
             </div>
           )}
+
+          {mestreTab === "handouts" && (
+            <div className="pt-4">
+              <HandoutsView
+                handouts={handoutsSync.handouts}
+                folders={handoutsSync.folders}
+                unreadIds={handoutsSync.unreadIds}
+                syncStatus={handoutsSync.syncStatus}
+                isMestre={true}
+                players={players}
+                onMarkAsRead={handoutsSync.markAsRead}
+                onSaveHandout={handoutsSync.saveHandout}
+                onDeleteHandout={handoutsSync.deleteHandout}
+                onUpdateVisibility={handoutsSync.updateHandoutVisibility}
+                onToggleSecret={handoutsSync.toggleHandoutSecret}
+                onCreateFolder={handoutsSync.createFolder}
+                onDeleteFolder={handoutsSync.deleteFolder}
+              />
+            </div>
+          )}
+
+          {mestreTab === "utilities" && (
+            <div className="pt-2">
+              <MasterUtilitiesView
+                ocultistaCount={
+                  players.filter((p) => isOcultistaSheetName(p.name)).length +
+                  extraFichas.filter((f) => f.synchronized && isOcultistaSheetName(f.name)).length
+                }
+                onDisconnectDefaultSheets={handleDisconnectDefaultSheets}
+                players={players}
+                minigameResults={minigamesSync.recentResults}
+                isSendingMinigame={minigamesSync.isSending}
+                onSendMinigame={minigamesSync.sendMinigame}
+                onClearMinigameResults={minigamesSync.clearRecentResults}
+              />
+            </div>
+          )}
+          </MotionTabSwitch>
         </div>
       )}
 
       {currentPage === "caderno" && (
-        <div className="animate-tab-fade min-h-[100dvh] w-full flex flex-col pt-4 sm:pt-6 pb-16">
+        <div className="min-h-[100dvh] w-full flex flex-col pt-3 sm:pt-5 pb-16">
           <CadernoDeCampoView
             onBackToSheet={() => setCurrentPage("ficha")}
             onOpenSidebar={() => setMenuOpen(true)}
             userUid={userUid}
             isOnline={isOnline}
+            playerName={state?.name || "Agente"}
+            onQuickRoll={(formula, label) => executeRoll(formula, label)}
           />
         </div>
       )}
+      </MotionTabSwitch>
       </main>
       </div>
 
+      <AnimatePresence>
       {useSkillModalId !== null &&
         (() => {
           const modalSkill = state.skills.find(
@@ -2996,12 +3774,12 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           );
           if (!modalSkill) return null;
           return (
-            <div
-              className="fixed inset-0 modal-backdrop-blur z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+            <MotionModalBackdrop
+              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
               onClick={() => setUseSkillModalId(null)}
             >
-              <div
-                className="bg-[#0a0a0e]/95 border-t sm:border border-[#2c2c38] rounded-none w-full max-w-sm flex flex-col p-4 sm:p-5 gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.85)] animate-sheet-up"
+              <MotionSheetPanel
+                className="bg-[#0a0a0e]/95 border-t sm:border border-[#2c2c38] rounded-none w-full max-w-sm flex flex-col p-4 sm:p-5 gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.85)]"
                 style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom, 1rem))" }}
                 onClick={(e) => e.stopPropagation()}
               >
@@ -3068,11 +3846,57 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                     </button>
                   )}
                 </div>
-              </div>
-            </div>
+              </MotionSheetPanel>
+            </MotionModalBackdrop>
           );
         })()}
+      </AnimatePresence>
+
+      <RollNotificationToast
+        roll={rollToast}
+        onDismiss={dismissRollToast}
+        isRlMode={isRlMode}
+      />
+
+      <HandoutNotificationToast
+        notification={handoutsSync.toastNotification}
+        onDismiss={handoutsSync.dismissToast}
+        onOpenHandout={(handout) => {
+          handoutsSync.markAsRead(handout.id);
+          setQuickViewHandout(handout);
+        }}
+      />
+
+      <HandoutViewerModal
+        handout={activeQuickViewHandout}
+        isMestre={isMestreAuth}
+        folderName={
+          activeQuickViewHandout?.folderId
+            ? handoutsSync.folders.find(
+                (f) => f.id === activeQuickViewHandout.folderId
+              )?.name || null
+            : null
+        }
+        onClose={() => setQuickViewHandout(null)}
+        onToggleRevealSecret={
+          isMestreAuth ? handoutsSync.toggleHandoutSecret : undefined
+        }
+      />
+
+      <PlayerMinigameOverlay
+        assignment={minigamesSync.activeAssignment}
+        onFinish={minigamesSync.submitResult}
+        onDismiss={minigamesSync.dismissActiveMinigame}
+      />
+
+      {isMestreAuth && (
+        <MasterMinigameNotificationToast
+          notification={minigamesSync.toastNotification}
+          onDismiss={minigamesSync.dismissToast}
+        />
+      )}
       </div>
     </div>
+    </MotionConfig>
   );
 }

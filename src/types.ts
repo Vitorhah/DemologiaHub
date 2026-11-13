@@ -33,6 +33,7 @@ export interface RPGCharacter {
   };
   inventory: string[];
   status: string[]; // e.g. "SANG", "FRAT", "MED", "CORR", "LOUC"
+  statusEffects?: import("./utils/statusEffects").StatusEffect[];
   initiativeRoll?: number;
 }
 
@@ -51,3 +52,6 @@ export interface GameModeConfig {
 }
 
 export * from "./types/events";
+export * from "./types/handouts";
+export type { StatusEffect } from "./utils/statusEffects";
+

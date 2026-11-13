@@ -10,6 +10,13 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { GameMode } from "../types";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  CLINICAL_EASE,
+  MotionAccordion,
+  MotionModalBackdrop,
+  MotionSheetPanel,
+} from "./MotionPrimitives";
 
 export interface MasterGameModeModalProps {
   isOpen: boolean;
@@ -31,8 +38,6 @@ export const MasterGameModeModal: React.FC<MasterGameModeModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showPlayersList, setShowPlayersList] = useState(false);
-
-  if (!isOpen) return null;
 
   const handleSelectModeForAll = async (mode: GameMode) => {
     setIsSubmitting(true);
@@ -63,18 +68,20 @@ export const MasterGameModeModal: React.FC<MasterGameModeModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[350] flex items-end sm:items-center justify-center p-0 sm:p-4 modal-backdrop-blur"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full sm:max-w-lg max-h-[90dvh] bg-[#0c0c10]/95 border-t sm:border border-[#282834] rounded-none shadow-[0_24px_60px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden font-mono animate-sheet-up"
-        style={{
-          paddingBottom: "env(safe-area-inset-bottom, 0px)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="w-10 h-1 rounded-none bg-[#32323e] mx-auto mt-2.5 mb-1 sm:hidden shrink-0" aria-hidden="true" />
+    <AnimatePresence>
+      {isOpen && (
+        <MotionModalBackdrop
+          className="fixed inset-0 z-[350] flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={onClose}
+        >
+          <MotionSheetPanel
+            className="relative w-full sm:max-w-lg max-h-[90dvh] bg-[#0c0c10]/95 border-t sm:border border-[#282834] rounded-none shadow-[0_24px_60px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden font-mono"
+            style={{
+              paddingBottom: "env(safe-area-inset-bottom, 0px)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 rounded-none bg-[#32323e] mx-auto mt-2.5 mb-1 sm:hidden shrink-0" aria-hidden="true" />
 
         {/* CABEÇALHO */}
         <div className="flex items-center justify-between px-5 py-3.5 bg-[#101016] border-b border-[#20202a] shrink-0">
@@ -107,12 +114,22 @@ export const MasterGameModeModal: React.FC<MasterGameModeModalProps> = ({
         </div>
 
         {/* MENSAGEM DE SUCESSO */}
-        {successMessage && (
-          <div className="px-5 py-2.5 bg-emerald-950/50 border-b border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2 shrink-0">
-            <Check size={14} className="shrink-0" />
-            <span>{successMessage}</span>
-          </div>
-        )}
+        <AnimatePresence>
+          {successMessage && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.18, ease: CLINICAL_EASE }}
+              className="overflow-hidden shrink-0"
+            >
+              <div className="px-5 py-2.5 bg-emerald-950/50 border-b border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
+                <Check size={14} className="shrink-0" />
+                <span>{successMessage}</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* CONTEÚDO PRINCIPAL */}
         <div className="p-4 sm:p-5 space-y-4 overflow-y-auto overscroll-contain">
@@ -207,7 +224,7 @@ export const MasterGameModeModal: React.FC<MasterGameModeModalProps> = ({
                 {showPlayersList ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
               </button>
 
-              {showPlayersList && (
+              <MotionAccordion isOpen={showPlayersList}>
                 <div className="mt-2 bg-[#101016] border border-[#22222e] rounded-none divide-y divide-[#1a1a24] max-h-44 overflow-y-auto">
                   {players.map((p) => {
                     const pMode = playerModes[p.id] || currentGlobalMode;
@@ -245,7 +262,7 @@ export const MasterGameModeModal: React.FC<MasterGameModeModalProps> = ({
                     );
                   })}
                 </div>
-              )}
+              </MotionAccordion>
             </div>
           )}
         </div>
@@ -260,7 +277,9 @@ export const MasterGameModeModal: React.FC<MasterGameModeModalProps> = ({
             Fechar
           </button>
         </div>
-      </div>
-    </div>
+          </MotionSheetPanel>
+        </MotionModalBackdrop>
+      )}
+    </AnimatePresence>
   );
 };

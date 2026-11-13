@@ -1,4 +1,6 @@
 import React from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { CLINICAL_EASE, SNAPPY_SPRING } from "./MotionPrimitives";
 
 interface RollResult {
   formula: string;
@@ -97,8 +99,8 @@ function DieShape({ sides, className = "w-10 h-10" }: { sides: number; className
           <polygon points="31,8 39,18 31,34 23,18" strokeLinejoin="round" fill="currentColor" fillOpacity="0.2" />
           <line x1="31" y1="8" x2="31" y2="34" />
           <line x1="17" y1="6" x2="17" y2="24" />
-          <text x="31" y="32" fill="currentColor" fontSize="8" fontWeight="900" textAnchor="middle" fontFamily="monospace" stroke="none">%</text>
-          <text x="17" y="30" fill="currentColor" fontSize="7" fontWeight="900" textAnchor="middle" fontFamily="monospace" stroke="none">00</text>
+          <text x="31" y="32" fill="currentColor" fontSize="8" fontWeight="400" textAnchor="middle" fontFamily="'Girassol', Georgia, serif" stroke="none">%</text>
+          <text x="17" y="30" fill="currentColor" fontSize="7" fontWeight="400" textAnchor="middle" fontFamily="'Girassol', Georgia, serif" stroke="none">00</text>
         </svg>
       );
     default:
@@ -126,76 +128,96 @@ export const QuickDiceSection = React.memo(function QuickDiceSection({
   return (
     <div className="w-full max-w-xl lg:max-w-none mx-auto">
       {/* VISOR DE RESULTADO DO DADO (SE HOUVER ROLAGEM RECENTE) */}
-      {lastRoll && (
-        <div
-          className={`mb-4 sm:mb-5 border rounded-none p-3.5 sm:p-4 relative overflow-hidden transition-all ${
-            isRlMode
-              ? "bg-gradient-to-b from-[#1b122e] via-[#140c24] to-[#0c0817] border-purple-500/35 shadow-[0_8px_30px_rgba(168,85,247,0.25)]"
-              : "bg-gradient-to-b from-[#18181f] to-[#0f0f13] border-[var(--op-border)] shadow-[0_6px_25px_rgba(0,0,0,0.8)]"
-          }`}
-        >
-          <div
-            className={`flex items-center justify-between text-[10px] font-mono uppercase tracking-widest border-b pb-2 mb-2 ${
-              isRlMode ? "border-purple-500/25 text-[#d8b4fe]/80" : "border-[var(--op-border)] text-[var(--op-text-muted)]"
+      <AnimatePresence mode="wait">
+        {lastRoll && (
+          <motion.div
+            key={`${lastRoll.formula}-${lastRoll.result}-${lastRoll.details}`}
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: CLINICAL_EASE }}
+            className={`mb-4 sm:mb-5 border rounded-none p-3.5 sm:p-4 relative overflow-hidden ${
+              isRlMode
+                ? "bg-gradient-to-b from-[#1b122e] via-[#140c24] to-[#0c0817] border-purple-500/35 shadow-[0_8px_30px_rgba(168,85,247,0.25)]"
+                : "bg-gradient-to-b from-[#18181f] to-[#0f0f13] border-[var(--op-border)] shadow-[0_6px_25px_rgba(0,0,0,0.8)]"
             }`}
           >
-            <span className="flex items-center gap-1.5 text-[var(--op-white)] font-bold">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isRlMode
-                    ? "bg-[#c084fc] shadow-[0_0_8px_#c084fc]"
-                    : "bg-[var(--op-red-bright)] shadow-[0_0_8px_#b81d24]"
-                }`}
-              />
-              RESULTADO
-            </span>
-            <span
-              className={`font-bold tracking-wider ${
-                isRlMode ? "text-[#c084fc]" : "text-[var(--op-red-bright)]"
-              }`}
-            >
-              {lastRoll.formula}
-            </span>
-          </div>
-
-          <div className="text-center py-1">
             <div
-              className={`text-5xl sm:text-6xl font-black text-white font-mono tabular-nums tracking-tight select-none ${
-                isRlMode
-                  ? "drop-shadow-[0_0_20px_rgba(192,132,252,0.9)]"
-                  : "drop-shadow-[0_0_20px_rgba(184,29,36,0.8)]"
+              className={`flex items-center justify-between text-[10px] font-mono uppercase tracking-widest border-b pb-2 mb-2 ${
+                isRlMode ? "border-purple-500/25 text-[#d8b4fe]/80" : "border-[var(--op-border)] text-[var(--op-text-muted)]"
               }`}
             >
-              {lastRoll.result}
-            </div>
-            {lastRoll.critical === "crit" && (
-              <div className="inline-block mt-1.5 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest bg-yellow-500/20 text-yellow-300 border border-yellow-500/50 rounded-full animate-bounce">
-                ★ SUCESSO CRÍTICO (20) ★
-              </div>
-            )}
-            {lastRoll.critical === "fumble" && (
-              <div
-                className={`inline-block mt-1.5 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest rounded-full border ${
-                  isRlMode
-                    ? "bg-purple-950/60 text-purple-300 border-purple-500/50"
-                    : "bg-red-900/40 text-red-400 border-red-500/50"
+              <span className="flex items-center gap-1.5 text-[var(--op-white)] font-bold">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isRlMode
+                      ? "bg-[#c084fc] shadow-[0_0_8px_#c084fc]"
+                      : "bg-[var(--op-red-bright)] shadow-[0_0_8px_#b81d24]"
+                  }`}
+                />
+                RESULTADO
+              </span>
+              <span
+                className={`font-bold tracking-wider ${
+                  isRlMode ? "text-[#c084fc]" : "text-[var(--op-red-bright)]"
                 }`}
               >
-                ☠ DESASTRE CRÍTICO (1) ☠
-              </div>
-            )}
-            <div
-              className={`text-xs font-mono mt-1.5 py-1.5 px-3 rounded-none border inline-block max-w-full break-words ${
-                isRlMode
-                  ? "bg-[#0e0818] border-purple-900/40 text-[#d8b4fe]"
-                  : "bg-[#0a0a0d] border-[#24242c] text-[var(--op-text-secondary)]"
-              }`}
-            >
-              {lastRoll.details}
+                {lastRoll.formula}
+              </span>
             </div>
-          </div>
-        </div>
-      )}
+
+            <div className="text-center py-1">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.88 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={SNAPPY_SPRING}
+                className={`text-5xl sm:text-6xl font-black text-white font-mono tabular-nums tracking-tight select-none ${
+                  isRlMode
+                    ? "drop-shadow-[0_0_20px_rgba(192,132,252,0.9)]"
+                    : "drop-shadow-[0_0_20px_rgba(184,29,36,0.8)]"
+                }`}
+              >
+                {lastRoll.result}
+              </motion.div>
+              {lastRoll.critical === "crit" && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.85, y: 4 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ ...SNAPPY_SPRING, delay: 0.05 }}
+                  className="inline-block mt-1.5 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest bg-yellow-500/20 text-yellow-300 border border-yellow-500/50 rounded-full"
+                >
+                  {lastRoll.details?.includes("Crítico(+5)")
+                    ? "★ SUCESSO CRÍTICO (+5) ★"
+                    : "★ SUCESSO CRÍTICO ★"}
+                </motion.div>
+              )}
+              {lastRoll.critical === "fumble" && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.85, y: 4 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ ...SNAPPY_SPRING, delay: 0.05 }}
+                  className={`inline-block mt-1.5 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest rounded-full border ${
+                    isRlMode
+                      ? "bg-purple-950/60 text-purple-300 border-purple-500/50"
+                      : "bg-red-900/40 text-red-400 border-red-500/50"
+                  }`}
+                >
+                  ☠ DESASTRE CRÍTICO (1) ☠
+                </motion.div>
+              )}
+              <div
+                className={`text-xs font-mono mt-1.5 py-1.5 px-3 rounded-none border inline-block max-w-full break-words ${
+                  isRlMode
+                    ? "bg-[#0e0818] border-purple-900/40 text-[#d8b4fe]"
+                    : "bg-[#0a0a0d] border-[#24242c] text-[var(--op-text-secondary)]"
+                }`}
+              >
+                {lastRoll.details}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* CONTAINER DOS DADOS RÁPIDOS */}
       <div
@@ -238,11 +260,14 @@ export const QuickDiceSection = React.memo(function QuickDiceSection({
             const formula = `${quickDiceQty}d${die.sides}`;
             const isPercentile = idx === 6;
             return (
-              <button
+              <motion.button
                 key={die.sides}
                 type="button"
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.96 }}
+                transition={{ duration: 0.14, ease: CLINICAL_EASE }}
                 onClick={() => onRoll(formula)}
-                className={`group relative flex flex-col items-center justify-between p-2 sm:p-3 md:p-3.5 rounded-none border transition-all duration-200 active:scale-95 cursor-pointer overflow-hidden touch-manipulation min-h-[78px] sm:min-h-[88px] ${
+                className={`group relative flex flex-col items-center justify-between p-2 sm:p-3 md:p-3.5 rounded-none border transition-colors duration-200 cursor-pointer overflow-hidden touch-manipulation min-h-[78px] sm:min-h-[88px] ${
                   isPercentile ? "col-span-2 sm:col-span-1 md:col-span-1" : "col-span-1"
                 } ${
                   isRlMode
@@ -285,7 +310,7 @@ export const QuickDiceSection = React.memo(function QuickDiceSection({
                     {formula}
                   </div>
                 </div>
-              </button>
+              </motion.button>
             );
           })}
         </div>

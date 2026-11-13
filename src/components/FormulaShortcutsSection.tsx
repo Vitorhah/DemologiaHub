@@ -1,74 +1,86 @@
-import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Edit2, Dices, Check, X, ArrowUpRight, Sparkles } from "lucide-react";
+import React, { useState } from "react";
+import {
+  Plus,
+  Trash2,
+  Edit2,
+  Dices,
+  Check,
+  X,
+  Play,
+  Sparkles,
+  AlertCircle,
+} from "lucide-react";
+import {
+  CustomRollFormula,
+  upsertCustomFormula,
+  removeCustomFormula,
+} from "../utils/diceFormula";
 
-export interface FormulaShortcut {
-  id: string;
-  name: string;
-  formula: string;
-}
+export type FormulaShortcut = CustomRollFormula;
 
-const MAX_SHORTCUTS = 8;
-const STORAGE_KEY = "op_custom_formula_shortcuts";
+const MAX_FORMULAS = 16;
 
-interface FormulaShortcutsSectionProps {
-  onRollFormula: (formula: string) => void;
-  setDiceInput: (formula: string) => void;
-  diceInput?: string;
+export interface FormulaShortcutsSectionProps {
+  formulas: CustomRollFormula[];
+  onUpdateFormulas: (next: CustomRollFormula[]) => void;
+  onExecuteFormula: (formula: string, label?: string) => boolean;
+  sheetName?: string;
+  isExtraSheet?: boolean;
   isRlMode?: boolean;
 }
 
 export function FormulaShortcutsSection({
-  onRollFormula,
-  setDiceInput,
-  diceInput = "",
+  formulas,
+  onUpdateFormulas,
+  onExecuteFormula,
+  sheetName = "Ficha",
+  isExtraSheet = false,
   isRlMode = false,
 }: FormulaShortcutsSectionProps) {
-  // Inicialmente vazio (sem atalhos padrão pré-inseridos)
-  const [shortcuts, setShortcuts] = useState<FormulaShortcut[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed.slice(0, MAX_SHORTCUTS);
-      }
-    } catch (e) {
-      console.error("Erro ao carregar atalhos customizados:", e);
-    }
-    return [];
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(shortcuts));
-    } catch (e) {
-      console.error("Erro ao salvar atalhos customizados:", e);
-    }
-  }, [shortcuts]);
+  const [quickFormula, setQuickFormula] = useState("");
+  const [formulaError, setFormulaError] = useState<string | null>(null);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formFormula, setFormFormula] = useState("");
 
-  const handleOpenCreate = () => {
-    if (shortcuts.length >= MAX_SHORTCUTS) return;
-    setEditingId(null);
-    setFormName("");
-    setFormFormula(diceInput.trim() || "");
-    setIsFormOpen(true);
+  const handleExecuteDirect = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = quickFormula.trim();
+    if (!clean) {
+      setFormulaError("Digite uma fórmula antes de executar.");
+      return;
+    }
+    const ok = onExecuteFormula(clean);
+    if (!ok) {
+      setFormulaError("Fórmula inválida. Use expressões como 2d6+OCU, 1d4+FOR ou 1d8+3.");
+    } else {
+      setFormulaError(null);
+    }
   };
 
-  const handleOpenEdit = (sc: FormulaShortcut, e: React.MouseEvent) => {
+  const handleOpenCreate = () => {
+    if (formulas.length >= MAX_FORMULAS) return;
+    setEditingId(null);
+    setFormName("");
+    setFormFormula(quickFormula.trim());
+    setIsFormOpen(true);
+    setFormulaError(null);
+  };
+
+  const handleOpenEdit = (sc: CustomRollFormula, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingId(sc.id);
     setFormName(sc.name);
     setFormFormula(sc.formula);
     setIsFormOpen(true);
+    setFormulaError(null);
   };
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setShortcuts((prev) => prev.filter((s) => s.id !== id));
+    onUpdateFormulas(removeCustomFormula(formulas, id));
     if (editingId === id) {
       setIsFormOpen(false);
       setEditingId(null);
@@ -79,21 +91,14 @@ export function FormulaShortcutsSection({
     e.preventDefault();
     const cleanFormula = formFormula.trim();
     if (!cleanFormula) return;
-    const cleanName = formName.trim() || cleanFormula;
+    if (!editingId && formulas.length >= MAX_FORMULAS) return;
 
-    if (editingId) {
-      setShortcuts((prev) =>
-        prev.map((s) => (s.id === editingId ? { ...s, name: cleanName, formula: cleanFormula } : s))
-      );
-    } else {
-      if (shortcuts.length >= MAX_SHORTCUTS) return;
-      const newShortcut: FormulaShortcut = {
-        id: Date.now().toString(),
-        name: cleanName,
-        formula: cleanFormula,
-      };
-      setShortcuts((prev) => [...prev, newShortcut].slice(0, MAX_SHORTCUTS));
-    }
+    const next = upsertCustomFormula(formulas, {
+      id: editingId || undefined,
+      name: formName,
+      formula: cleanFormula,
+    });
+    onUpdateFormulas(next.slice(0, MAX_FORMULAS));
 
     setIsFormOpen(false);
     setEditingId(null);
@@ -101,89 +106,147 @@ export function FormulaShortcutsSection({
     setFormFormula("");
   };
 
-  const handleInsert = (formula: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDiceInput(formula);
+  const handleRunSaved = (sc: CustomRollFormula) => {
+    const ok = onExecuteFormula(sc.formula, sc.name);
+    if (!ok) {
+      setFormulaError(`Fórmula "${sc.name}" inválida (${sc.formula}). Edite para corrigir.`);
+    } else {
+      setFormulaError(null);
+    }
   };
 
   return (
     <div
-      className={`w-full max-w-xl lg:max-w-none mx-auto rounded-none p-4 sm:p-6 shadow-xl relative overflow-hidden border transition-colors ${
+      className={`w-full max-w-xl lg:max-w-none mx-auto rounded-none p-4 sm:p-5 shadow-xl relative overflow-hidden border transition-colors ${
         isRlMode
           ? "bg-gradient-to-b from-[#151224] to-[#0c0a14] border-purple-500/30"
           : "bg-[var(--op-panel)] border-[var(--op-border)]"
       }`}
     >
-      {/* CABEÇALHO DA SEÇÃO DE ATALHOS */}
+      {/* CABEÇALHO DA SEÇÃO DE FÓRMULAS */}
       <div
-        className={`flex items-center justify-between gap-3 pb-3 mb-4 border-b ${
+        className={`flex flex-wrap items-center justify-between gap-2 pb-3 mb-3.5 border-b ${
           isRlMode ? "border-purple-500/25" : "border-[var(--op-border)]"
         }`}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <span
-            className={`w-2 h-2 rounded-none ${
+            className={`w-2 h-2 rounded-none shrink-0 ${
               isRlMode
                 ? "bg-[#c084fc] shadow-[0_0_8px_#c084fc]"
                 : "bg-[var(--op-red-bright)] shadow-[0_0_8px_#b81d24]"
             }`}
           />
-          <h2 className="text-xs sm:text-sm font-mono font-bold uppercase tracking-[0.18em] text-[var(--op-white)]">
-            ATALHOS
+          <h2 className="text-xs sm:text-sm font-mono font-bold uppercase tracking-[0.14em] text-[var(--op-white)] truncate">
+            Fórmulas Personalizadas
           </h2>
           <span
-            className={`text-[11px] font-mono font-bold tabular-nums px-2 py-0.5 rounded-none border ${
-              shortcuts.length >= MAX_SHORTCUTS
+            className={`text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 border shrink-0 ${
+              isExtraSheet
+                ? "bg-blue-950/40 text-blue-300 border-blue-500/35"
+                : isRlMode
+                  ? "bg-purple-950/40 text-purple-200 border-purple-500/35"
+                  : "bg-[#1a090c] text-[#ff9aa0] border-[var(--op-red)]/40"
+            }`}
+            title={`Vinculadas à ficha: ${sheetName}`}
+          >
+            {isExtraSheet ? "Extra" : "Normal"}
+          </span>
+          <span
+            className={`text-[11px] font-mono tabular-nums px-2 py-0.5 rounded-none border shrink-0 ${
+              formulas.length >= MAX_FORMULAS
                 ? isRlMode
                   ? "bg-[#341147] text-[#f3e8ff] border-purple-500/60"
                   : "bg-[#330f13] text-[#ff8085] border-[#7a181e]"
                 : isRlMode
-                ? "bg-[#181128] text-purple-200/80 border-purple-500/30"
-                : "bg-[#14141a] text-[var(--op-text-muted)] border-[var(--op-border)]"
+                  ? "bg-[#181128] text-purple-200/80 border-purple-500/30"
+                  : "bg-[#14141a] text-[var(--op-text-muted)] border-[var(--op-border)]"
             }`}
           >
-            {shortcuts.length}/{MAX_SHORTCUTS}
+            {formulas.length}/{MAX_FORMULAS}
           </span>
         </div>
 
-        {shortcuts.length < MAX_SHORTCUTS && !isFormOpen && (
+        {formulas.length < MAX_FORMULAS && !isFormOpen && (
           <button
             type="button"
             onClick={handleOpenCreate}
-            className={`px-3.5 py-2 rounded-none font-mono font-bold text-xs uppercase tracking-wider text-white active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[40px] touch-manipulation select-none border ${
+            className={`px-3 py-1.5 rounded-none font-mono font-bold text-xs uppercase tracking-wider text-white active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[40px] touch-manipulation select-none border ${
               isRlMode
                 ? "bg-gradient-to-r from-[#7e22ce] to-[#581c87] hover:from-[#9333ea] hover:to-[#6b21a8] border-purple-400/50"
                 : "bg-gradient-to-r from-[#99151b] to-[#6e0f14] hover:from-[#b81d24] hover:to-[#851218] border-[#b81d24]/60"
             }`}
           >
             <Plus size={14} className="text-white" />
-            <span>Adicionar</span>
+            <span>Nova Fórmula</span>
           </button>
         )}
       </div>
 
-      {/* FORMULÁRIO DE CRIAÇÃO / EDIÇÃO AMPLIADO */}
+      {/* BARRA DIRETA PARA INSERIR E EXECUTAR FÓRMULA (RESULTADO APENAS VIA NOTIFICAÇÃO) */}
+      <form onSubmit={handleExecuteDirect} className="mb-3.5">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="text"
+            value={quickFormula}
+            onChange={(e) => {
+              setQuickFormula(e.target.value);
+              if (formulaError) setFormulaError(null);
+            }}
+            aria-label="Inserir fórmula personalizada"
+            placeholder="Inserir fórmula (ex: 2d6+OCU+2, 1d4+FOR)"
+            className={`flex-1 min-h-[44px] px-3 py-2 text-base sm:text-sm font-mono text-white placeholder:text-[#666674] border rounded-none outline-none transition-colors ${
+              isRlMode
+                ? "bg-[#100b1b] border-purple-500/35 focus:border-[#c084fc]"
+                : "bg-[#0b0b10] border-[var(--op-border)] focus:border-[var(--op-red-bright)]"
+            }`}
+          />
+          <button
+            type="submit"
+            className={`min-h-[44px] px-4 py-2 rounded-none font-mono text-xs uppercase tracking-wider font-bold text-white border flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all shrink-0 touch-manipulation ${
+              isRlMode
+                ? "bg-gradient-to-r from-[#7e22ce] to-[#581c87] hover:from-[#9333ea] hover:to-[#6b21a8] border-purple-400/50"
+                : "bg-gradient-to-r from-[#99151b] to-[#6e0f14] hover:from-[#b81d24] hover:to-[#851218] border-[#ff8085]/35"
+            }`}
+          >
+            <Play size={14} />
+            <span>Executar</span>
+          </button>
+        </div>
+
+        {formulaError && (
+          <div
+            role="alert"
+            className="mt-2 px-3 py-2 bg-red-950/45 border border-red-700/60 text-red-300 text-xs font-mono flex items-center gap-2"
+          >
+            <AlertCircle size={14} className="shrink-0 text-red-400" />
+            <span>{formulaError}</span>
+          </div>
+        )}
+      </form>
+
+      {/* FORMULÁRIO DE CRIAÇÃO / EDIÇÃO DE FÓRMULA SALVA NA FICHA */}
       {isFormOpen && (
         <form
           onSubmit={handleSave}
-          className={`mb-4 sm:mb-5 p-4 sm:p-5 rounded-none shadow-2xl relative overflow-hidden border ${
+          className={`mb-4 p-4 rounded-none shadow-2xl relative overflow-hidden border ${
             isRlMode
-              ? "bg-gradient-to-b from-[#1b112d] via-[#130b20] to-[#0d0716] border-purple-500/50 shadow-[0_8px_32px_rgba(168,85,247,0.2)]"
+              ? "bg-gradient-to-b from-[#1b112d] via-[#130b20] to-[#0d0716] border-purple-500/50"
               : "bg-gradient-to-b from-[#1c0a0d] via-[#140608] to-[#0f0406] border-[#851a21]"
           }`}
         >
           <div
-            className={`flex items-center justify-between pb-2.5 mb-3.5 border-b ${
+            className={`flex items-center justify-between pb-2.5 mb-3 border-b ${
               isRlMode ? "border-purple-900/40" : "border-[#3d0f14]"
             }`}
           >
             <div className="flex items-center gap-2">
               <Sparkles
-                size={16}
+                size={15}
                 className={isRlMode ? "text-[#c084fc]" : "text-[var(--op-red-bright)]"}
               />
               <span className="text-xs font-mono font-bold uppercase tracking-wider text-white">
-                {editingId ? "Editar Atalho de Fórmula" : "Criar Novo Atalho"}
+                {editingId ? "Editar Fórmula" : "Salvar Fórmula na Ficha"}
               </span>
             </div>
             <button
@@ -192,31 +255,31 @@ export function FormulaShortcutsSection({
                 setIsFormOpen(false);
                 setEditingId(null);
               }}
-              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-none text-[var(--op-text-muted)] hover:text-white hover:bg-white/10 transition-colors touch-manipulation cursor-pointer"
-              aria-label="Fechar formulário"
+              className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-none text-[var(--op-text-muted)] hover:text-white hover:bg-white/10 transition-colors touch-manipulation cursor-pointer"
+              aria-label="Fechar formulário de fórmula"
             >
               <X size={16} />
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3.5">
             <div>
               <label
-                className={`block text-xs font-mono font-bold uppercase tracking-wider mb-1.5 ${
+                className={`block text-xs font-mono uppercase tracking-wider mb-1 ${
                   isRlMode ? "text-purple-200" : "text-[#e5b3b6]"
                 }`}
               >
-                Nome do Atalho:
+                Nome da Fórmula
               </label>
               <input
                 type="text"
-                placeholder="Ex: Ataque Furtivo, Tiroteio, Balística"
+                placeholder="Ex: Ritual Oculto, Esquiva, Tiro"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
-                className={`w-full rounded-none px-3 py-2.5 text-base sm:text-sm font-mono text-white placeholder:text-[#555] outline-none transition-all border ${
+                className={`w-full min-h-[44px] rounded-none px-3 py-2 text-base sm:text-sm font-mono text-white placeholder:text-[#555] outline-none transition-all border ${
                   isRlMode
-                    ? "bg-[#0e0818] border-purple-500/40 focus:border-[#c084fc] focus:ring-1 focus:ring-[#c084fc]"
-                    : "bg-[#0a0a0d] border-[var(--op-border)] focus:border-[var(--op-red-bright)] focus:ring-1 focus:ring-[var(--op-red-bright)]"
+                    ? "bg-[#0e0818] border-purple-500/40 focus:border-[#c084fc]"
+                    : "bg-[#0a0a0d] border-[var(--op-border)] focus:border-[var(--op-red-bright)]"
                 }`}
                 autoFocus
               />
@@ -224,39 +287,41 @@ export function FormulaShortcutsSection({
 
             <div>
               <label
-                className={`block text-xs font-mono font-bold uppercase tracking-wider mb-1.5 ${
+                className={`block text-xs font-mono uppercase tracking-wider mb-1 ${
                   isRlMode ? "text-purple-200" : "text-[#e5b3b6]"
                 }`}
               >
-                Fórmula do Dado{" "}
-                <span className={isRlMode ? "text-[#c084fc]" : "text-[var(--op-red-bright)]"}>*</span>:
+                Expressão{" "}
+                <span className={isRlMode ? "text-[#c084fc]" : "text-[var(--op-red-bright)]"}>
+                  *
+                </span>
               </label>
               <input
                 type="text"
-                placeholder="Ex: 1d20+AGL, 2d8+3, 1d100"
+                placeholder="Ex: 2d6+AGL, 1d4+FOR"
                 value={formFormula}
                 onChange={(e) => setFormFormula(e.target.value)}
-                className={`w-full rounded-none px-3 py-2.5 text-base sm:text-sm font-mono text-white placeholder:text-[#555] outline-none transition-all border ${
+                className={`w-full min-h-[44px] rounded-none px-3 py-2 text-base sm:text-sm font-mono text-white placeholder:text-[#555] outline-none transition-all border ${
                   isRlMode
-                    ? "bg-[#0e0818] border-purple-500/40 focus:border-[#c084fc] focus:ring-1 focus:ring-[#c084fc]"
-                    : "bg-[#0a0a0d] border-[var(--op-border)] focus:border-[var(--op-red-bright)] focus:ring-1 focus:ring-[var(--op-red-bright)]"
+                    ? "bg-[#0e0818] border-purple-500/40 focus:border-[#c084fc]"
+                    : "bg-[#0a0a0d] border-[var(--op-border)] focus:border-[var(--op-red-bright)]"
                 }`}
                 required
               />
             </div>
           </div>
 
-          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-2.5 pt-1">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => {
                 setIsFormOpen(false);
                 setEditingId(null);
               }}
-              className={`px-4 py-2.5 sm:py-2 text-xs font-mono uppercase tracking-wider rounded-none border transition-colors cursor-pointer text-center min-h-[44px] touch-manipulation select-none ${
+              className={`px-4 py-2 text-xs font-mono uppercase tracking-wider rounded-none border transition-colors cursor-pointer min-h-[44px] touch-manipulation ${
                 isRlMode
-                  ? "text-purple-200/70 hover:text-white bg-[#160f25] hover:bg-[#25183d] border-purple-500/30"
-                  : "text-[var(--op-text-muted)] hover:text-white bg-[#14141a] hover:bg-[#20202a] border-[var(--op-border)]"
+                  ? "text-purple-200/70 hover:text-white bg-[#160f25] border-purple-500/30"
+                  : "text-[var(--op-text-muted)] hover:text-white bg-[#14141a] border-[var(--op-border)]"
               }`}
             >
               Cancelar
@@ -264,92 +329,74 @@ export function FormulaShortcutsSection({
             <button
               type="submit"
               disabled={!formFormula.trim()}
-              className={`px-5 py-2.5 sm:py-2 text-xs font-mono font-bold uppercase tracking-wider text-white rounded-none border disabled:opacity-40 transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[44px] touch-manipulation select-none ${
+              className={`px-5 py-2 text-xs font-mono font-bold uppercase tracking-wider text-white rounded-none border disabled:opacity-40 transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[44px] touch-manipulation ${
                 isRlMode
-                  ? "bg-gradient-to-r from-[#7e22ce] to-[#581c87] hover:from-[#9333ea] hover:to-[#6b21a8] border-purple-400/50 shadow-[0_0_14px_rgba(168,85,247,0.4)]"
-                  : "bg-gradient-to-r from-[#b81d24] to-[#7a1015] hover:from-[#d1242c] hover:to-[#96141a] border-[#b81d24] shadow-[0_0_14px_rgba(184,29,36,0.5)]"
+                  ? "bg-gradient-to-r from-[#7e22ce] to-[#581c87] border-purple-400/50"
+                  : "bg-gradient-to-r from-[#b81d24] to-[#7a1015] border-[#b81d24]"
               }`}
             >
               <Check size={14} />
-              <span>{editingId ? "Atualizar Atalho" : "Salvar Atalho"}</span>
+              <span>{editingId ? "Atualizar" : "Salvar Fórmula"}</span>
             </button>
           </div>
         </form>
       )}
 
-      {/* ESTADO VAZIO */}
-      {shortcuts.length === 0 ? (
+      {/* LISTA DE FÓRMULAS SALVAS NA FICHA ATIVA (SEM HISTÓRICO) */}
+      {formulas.length === 0 ? (
         <div
-          className={`py-6 px-4 border border-dashed rounded-none text-center flex flex-col items-center justify-center ${
+          className={`py-5 px-4 border border-dashed rounded-none text-center flex flex-col items-center justify-center ${
             isRlMode
               ? "border-purple-500/30 bg-[#120c1f]/50"
               : "border-[var(--op-border)] bg-[#0d0d12]/50"
           }`}
         >
           <p
-            className={`text-xs font-mono mb-3 ${
-              isRlMode ? "text-purple-300/70" : "text-[var(--op-text-muted)]"
+            className={`text-xs font-mono ${
+              isRlMode ? "text-purple-300/75" : "text-[var(--op-text-muted)]"
             }`}
           >
-            Nenhum atalho salvo.
+            Nenhuma fórmula salva em "{sheetName}". Insira acima para executar ou salve suas fórmulas recorrentes.
           </p>
-          <button
-            type="button"
-            onClick={handleOpenCreate}
-            className={`px-4 py-2 rounded-none font-mono font-bold text-xs uppercase tracking-wider text-white active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[42px] touch-manipulation select-none border ${
-              isRlMode
-                ? "bg-gradient-to-r from-[#7e22ce] to-[#581c87] hover:from-[#9333ea] hover:to-[#6b21a8] border-purple-400/50"
-                : "bg-gradient-to-r from-[#b81d24] to-[#7a1015] hover:from-[#d1242c] hover:to-[#96141a] border-[#b81d24]"
-            }`}
-          >
-            <Plus size={15} />
-            <span>Criar Atalho</span>
-          </button>
         </div>
       ) : (
-        /* GRADE AMPLIADA DE ATALHOS CRIADOS */
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3.5">
-          {shortcuts.map((sc) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5">
+          {formulas.map((sc) => (
             <div
               key={sc.id}
-              onClick={() => onRollFormula(sc.formula)}
-              className={`group relative flex items-center justify-between p-3.5 sm:p-4 rounded-none border active:scale-[0.98] transition-all duration-200 cursor-pointer overflow-hidden touch-manipulation min-h-[66px] ${
+              onClick={() => handleRunSaved(sc)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleRunSaved(sc);
+                }
+              }}
+              aria-label={`Executar fórmula ${sc.name}: ${sc.formula}`}
+              className={`group relative flex items-center justify-between p-3 rounded-none border active:scale-[0.98] transition-all duration-200 cursor-pointer overflow-hidden touch-manipulation min-h-[62px] ${
                 isRlMode
-                  ? "bg-gradient-to-r from-[#181129] to-[#110c1c] hover:from-[#261540] hover:to-[#170c2a] border-purple-500/25 hover:border-purple-400 hover:shadow-[0_4px_20px_rgba(168,85,247,0.3)]"
-                  : "bg-gradient-to-r from-[#17171f] to-[#111116] hover:from-[#240b0e] hover:to-[#170608] border-[var(--op-border)] hover:border-[#99171e] hover:shadow-[0_4px_20px_rgba(184,29,36,0.25)]"
+                  ? "bg-gradient-to-r from-[#181129] to-[#110c1c] hover:from-[#261540] hover:to-[#170c2a] border-purple-500/25 hover:border-purple-400"
+                  : "bg-gradient-to-r from-[#17171f] to-[#111116] hover:from-[#240b0e] hover:to-[#170608] border-[var(--op-border)] hover:border-[#99171e]"
               }`}
-              title={`Toque para rolar ${sc.formula}`}
             >
-              {/* Linha de acento luminoso no topo */}
-              <div
-                className={`absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/5 to-transparent transition-colors ${
-                  isRlMode
-                    ? "group-hover:via-[#c084fc]/70"
-                    : "group-hover:via-[var(--op-red-bright)]/70"
-                }`}
-              />
-
-              <div className="flex items-center gap-3 min-w-0 pr-2">
+              <div className="flex items-center gap-2.5 min-w-0 pr-2">
                 <div
-                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-none border flex items-center justify-center shrink-0 transition-all ${
+                  className={`w-9 h-9 rounded-none border flex items-center justify-center shrink-0 transition-all ${
                     isRlMode
-                      ? "bg-[#23123b] border-purple-500/40 text-[#c084fc] group-hover:shadow-[0_0_12px_rgba(168,85,247,0.5)]"
-                      : "bg-[#21090c] border-[#521016] group-hover:border-[var(--op-red-bright)] text-[var(--op-red-bright)] group-hover:shadow-[0_0_10px_rgba(184,29,36,0.5)]"
+                      ? "bg-[#23123b] border-purple-500/40 text-[#c084fc]"
+                      : "bg-[#21090c] border-[#521016] group-hover:border-[var(--op-red-bright)] text-[var(--op-red-bright)]"
                   }`}
                 >
-                  <Dices size={17} />
+                  <Dices size={16} />
                 </div>
                 <div className="min-w-0">
-                  <div
-                    className={`text-xs sm:text-sm font-mono font-bold text-white truncate transition-colors leading-snug ${
-                      isRlMode ? "group-hover:text-[#f3e8ff]" : "group-hover:text-[#ff8085]"
-                    }`}
-                  >
+                  <div className="text-sm font-mono font-bold text-white truncate leading-snug">
                     {sc.name}
                   </div>
                   <div
-                    className={`text-[11px] sm:text-xs font-mono font-bold mt-0.5 tracking-wider ${
-                      isRlMode ? "text-[#c084fc]" : "text-[var(--op-red-bright)]"
+                    className={`text-xs font-mono mt-0.5 tracking-wider truncate ${
+                      isRlMode ? "text-[#c084fc]" : "text-[#ff8085]"
                     }`}
                   >
                     {sc.formula}
@@ -357,35 +404,28 @@ export function FormulaShortcutsSection({
                 </div>
               </div>
 
-              {/* AÇÕES LATERAIS */}
-              <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={(e) => handleInsert(sc.formula, e)}
-                  title="Copiar fórmula para o terminal"
-                  className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-none hover:bg-white/10 active:bg-white/20 text-[var(--op-text-muted)] hover:text-white transition-colors cursor-pointer touch-manipulation"
-                >
-                  <ArrowUpRight size={16} />
-                </button>
+              <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   type="button"
                   onClick={(e) => handleOpenEdit(sc, e)}
-                  title="Editar atalho"
-                  className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-none hover:bg-white/10 active:bg-white/20 text-[var(--op-text-muted)] hover:text-white transition-colors cursor-pointer touch-manipulation"
+                  title="Editar fórmula"
+                  aria-label={`Editar fórmula ${sc.name}`}
+                  className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-none hover:bg-white/10 text-[var(--op-text-muted)] hover:text-white transition-colors cursor-pointer touch-manipulation"
                 >
-                  <Edit2 size={15} />
+                  <Edit2 size={14} />
                 </button>
                 <button
                   type="button"
                   onClick={(e) => handleDelete(sc.id, e)}
-                  title="Excluir atalho"
-                  className={`min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-none transition-colors cursor-pointer touch-manipulation ${
+                  title="Excluir fórmula"
+                  aria-label={`Excluir fórmula ${sc.name}`}
+                  className={`min-w-[40px] min-h-[40px] flex items-center justify-center rounded-none transition-colors cursor-pointer touch-manipulation ${
                     isRlMode
-                      ? "hover:bg-purple-950/60 active:bg-purple-900 text-[var(--op-text-muted)] hover:text-purple-300"
-                      : "hover:bg-red-950/60 active:bg-red-900 text-[var(--op-text-muted)] hover:text-red-400"
+                      ? "hover:bg-purple-950/60 text-[var(--op-text-muted)] hover:text-purple-300"
+                      : "hover:bg-red-950/60 text-[var(--op-text-muted)] hover:text-red-400"
                   }`}
                 >
-                  <Trash2 size={15} />
+                  <Trash2 size={14} />
                 </button>
               </div>
             </div>

@@ -10,6 +10,8 @@ import {
   RotateCcw,
   Check,
 } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { CLINICAL_EASE } from "./MotionPrimitives";
 
 interface DossierInventorySectionProps {
   inventory: string[];
@@ -132,15 +134,17 @@ export const DossierInventorySection = React.memo(function DossierInventorySecti
 
         {/* BARRA DE CAPACIDADE DE CARGA TÁTICA */}
         <div className="mt-3 w-full bg-[#0a0a0d] h-1.5 rounded-full overflow-hidden border border-white/5">
-          <div
-            className={`h-full transition-all duration-300 ${
+          <motion.div
+            initial={false}
+            animate={{ width: `${Math.min(100, Math.max(0, percentOccupied))}%` }}
+            transition={{ duration: 0.35, ease: CLINICAL_EASE }}
+            className={`h-full transition-colors duration-300 ${
               percentOccupied >= 100
                 ? "bg-gradient-to-r from-[#b81d24] to-[#ff3b45] shadow-[0_0_8px_#ff3b45]"
                 : percentOccupied > 60
                   ? "bg-gradient-to-r from-[#b45309] to-[#f59e0b]"
                   : "bg-gradient-to-r from-[#8f171c] to-[#b81d24]"
             }`}
-            style={{ width: `${Math.min(100, Math.max(0, percentOccupied))}%` }}
           />
         </div>
       </div>
@@ -156,9 +160,12 @@ export const DossierInventorySection = React.memo(function DossierInventorySecti
           const slotNum = String(i + 1).padStart(2, "0");
 
           return (
-            <div
+            <motion.div
               key={i}
-              className={`group relative rounded-none border transition-all duration-200 shadow-md flex flex-col justify-between overflow-hidden ${
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: CLINICAL_EASE }}
+              className={`group relative rounded-none border transition-colors duration-200 shadow-md flex flex-col justify-between overflow-hidden ${
                 isOccupied
                   ? "bg-gradient-to-b from-[#171720] via-[#121217] to-[#0d0d12] border-[#383844] hover:border-[#8f171c]"
                   : "bg-gradient-to-b from-[#111116]/80 via-[#0d0d11]/70 to-[#09090c] border-[var(--op-border)]/70 hover:border-[#40404a]"
@@ -222,33 +229,41 @@ export const DossierInventorySection = React.memo(function DossierInventorySecti
               <div className="p-2.5">
                 <input
                   type="text"
-                  className="w-full bg-[#09090d] border border-[var(--op-border)] focus:border-[var(--op-red-bright)] focus:ring-1 focus:ring-[var(--op-red-bright)] rounded-none px-3 py-2.5 text-sm font-mono text-white placeholder:text-[#555] outline-none transition-all min-h-[44px]"
+                  className="w-full bg-[#09090d] border border-[var(--op-border)] focus:border-[var(--op-red-bright)] focus:ring-1 focus:ring-[var(--op-red-bright)] focus:scale-[1.018] active:scale-[0.985] focus:shadow-[0_0_18px_rgba(220,38,38,0.55)] focus:z-10 relative rounded-none px-3 py-2.5 text-sm font-mono text-white placeholder:text-[#555] outline-none transition-all duration-150 min-h-[44px] touch-manipulation"
                   placeholder={`Vazio // Item, arma ou evidência #${slotNum}...`}
                   value={item}
                   onChange={(e) => updateInventory(i, e.target.value)}
                 />
 
                 {/* BOTÃO DE ROLAGEM SE O ITEM CONTER FÓRMULA DE DADO (ex: 2d6+2 ou 1d8+FOR) */}
-                {detectedFormula && onRollFormula && (
-                  <div className="mt-2 flex items-center justify-between gap-2 p-1.5 px-2 rounded-none bg-[#20070a] border border-[#5c1015]">
-                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#ff8085]">
-                      <Sparkles size={13} className="text-[var(--op-red-bright)]" />
-                      <span>Fórmula detectada:</span>
-                      <strong className="text-white font-bold">{detectedFormula}</strong>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onRollFormula(detectedFormula)}
-                      className="px-2.5 py-1 rounded-none text-[10px] font-mono font-bold uppercase tracking-wider text-white bg-gradient-to-r from-[#99151b] to-[#6e0f14] hover:from-[#b81d24] hover:to-[#851218] border border-[#b81d24]/60 shadow-sm active:scale-95 transition-all flex items-center gap-1 cursor-pointer touch-manipulation"
-                      title={`Rolar ${detectedFormula}`}
+                <AnimatePresence initial={false}>
+                  {detectedFormula && onRollFormula && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.16, ease: CLINICAL_EASE }}
+                      className="mt-2 flex items-center justify-between gap-2 p-1.5 px-2 rounded-none bg-[#20070a] border border-[#5c1015]"
                     >
-                      <Dices size={12} />
-                      <span>Rolar</span>
-                    </button>
-                  </div>
-                )}
+                      <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#ff8085]">
+                        <Sparkles size={13} className="text-[var(--op-red-bright)]" />
+                        <span>Fórmula detectada:</span>
+                        <strong className="text-white font-bold">{detectedFormula}</strong>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onRollFormula(detectedFormula)}
+                        className="px-2.5 py-1 rounded-none text-[10px] font-mono font-bold uppercase tracking-wider text-white bg-gradient-to-r from-[#99151b] to-[#6e0f14] hover:from-[#b81d24] hover:to-[#851218] border border-[#b81d24]/60 shadow-sm active:scale-95 transition-all flex items-center gap-1 cursor-pointer touch-manipulation"
+                        title={`Rolar ${detectedFormula}`}
+                      >
+                        <Dices size={12} />
+                        <span>Rolar</span>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>

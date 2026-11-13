@@ -13,9 +13,14 @@ import {
   Flame,
   EyeOff,
   Dices,
+  Tag,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { GameMode } from "../types";
 import { StatMathInput } from "./StatMathInput";
+import { StatusEffectsEditor, StatusPostIt } from "./StatusPostIts";
+import { StatusEffect } from "../utils/statusEffects";
 
 export interface MasterPlayersViewProps {
   players: any[];
@@ -27,6 +32,12 @@ export interface MasterPlayersViewProps {
     player: any,
     stat: "hp" | "pe" | "sm",
     val: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => void;
+  onUpdateStatusEffects?: (
+    player: any,
+    effects: StatusEffect[],
     isExtraSheet?: boolean,
     rawExtraSheetId?: string,
   ) => void;
@@ -45,6 +56,7 @@ export function MasterPlayersView({
   onKickPlayer,
   onOpenInteractiveSheet,
   onUpdateStat,
+  onUpdateStatusEffects,
   viewMode = "grid",
   onClearChatHistory,
   onRollInitiative,
@@ -52,6 +64,7 @@ export function MasterPlayersView({
   currentGlobalMode = "demologia",
   onTogglePlayerMode,
 }: MasterPlayersViewProps) {
+  const [expandedStatusId, setExpandedStatusId] = React.useState<string | null>(null);
   const isRlGlobal = currentGlobalMode === "rl";
 
   const renderFloatingInitiativeButton = () => {
@@ -92,6 +105,7 @@ export function MasterPlayersView({
       pe: f.pe || { current: 0, max: 100 },
       sm: f.sm || f.san || { current: 100, max: 100 },
       variables: f.variables || {},
+      statusEffects: f.statusEffects || [],
       history: f.history || (f.notes ? [`<span style="color: #888;">${f.notes}</span>`] : []),
       isExtraSheet: true,
       rawExtraSheetId: f.id,
@@ -209,6 +223,29 @@ export function MasterPlayersView({
                           {(playerModes[p.id] || currentGlobalMode) === "rl" ? "Real L" : "Demologia"}
                         </button>
                       </div>
+                      {Array.isArray(p.statusEffects) && p.statusEffects.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {p.statusEffects.map((ef: StatusEffect, idx: number) => (
+                            <StatusPostIt
+                              key={ef.id}
+                              effect={ef}
+                              index={idx}
+                              compact
+                              onRemove={
+                                onUpdateStatusEffects
+                                  ? (id) =>
+                                      onUpdateStatusEffects(
+                                        p,
+                                        (p.statusEffects || []).filter((item: StatusEffect) => item.id !== id),
+                                        p.isExtraSheet,
+                                        p.rawExtraSheetId,
+                                      )
+                                  : undefined
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
                     </td>
 
                     <td className="py-3 px-3 sm:px-4">
@@ -591,9 +628,70 @@ export function MasterPlayersView({
                 )}
               </div>
 
+              {/* Condições / Status Post-its */}
+              {onUpdateStatusEffects && (
+                <div className="pt-2 border-t border-[#1a1a24] space-y-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedStatusId((prev) => (prev === p.id ? null : p.id))
+                    }
+                    className="w-full flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#9ca3af] hover:text-white py-1 cursor-pointer"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Tag size={11} className="text-[var(--op-red-bright)]" />
+                      Post-its de Condição ({(p.statusEffects || []).length})
+                    </span>
+                    {expandedStatusId === p.id ? (
+                      <ChevronUp size={13} />
+                    ) : (
+                      <ChevronDown size={13} />
+                    )}
+                  </button>
+
+                  {expandedStatusId !== p.id &&
+                    Array.isArray(p.statusEffects) &&
+                    p.statusEffects.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pb-1">
+                        {p.statusEffects.map((ef: StatusEffect, idx: number) => (
+                          <StatusPostIt
+                            key={ef.id}
+                            effect={ef}
+                            index={idx}
+                            compact
+                            onRemove={(id) =>
+                              onUpdateStatusEffects(
+                                p,
+                                (p.statusEffects || []).filter((item: StatusEffect) => item.id !== id),
+                                p.isExtraSheet,
+                                p.rawExtraSheetId,
+                              )
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                  {expandedStatusId === p.id && (
+                    <StatusEffectsEditor
+                      effects={p.statusEffects || []}
+                      compact
+                      onChange={(nextEffects) =>
+                        onUpdateStatusEffects(
+                          p,
+                          nextEffects,
+                          p.isExtraSheet,
+                          p.rawExtraSheetId,
+                        )
+                      }
+                    />
+                  )}
+                </div>
+              )}
+
               {/* Última Ação */}
               {p.history && p.history.length > 0 && (
-                <div className="pt-2 border-t border-[#1a1a24]">
+                <div className="pt-2 border-t border-[#1a1a24] mt-2">
                   <div
                     className="text-xs text-[#828392] line-clamp-2 leading-relaxed"
                     dangerouslySetInnerHTML={{ __html: p.history[0] }}

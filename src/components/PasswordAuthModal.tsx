@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Lock, Eye, EyeOff, AlertCircle, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { MotionModalBackdrop, MotionSheetPanel, CLINICAL_EASE } from "./MotionPrimitives";
 
 export interface PasswordAuthModalProps {
   isOpen: boolean;
@@ -28,8 +30,6 @@ export function PasswordAuthModal({
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!password.trim()) {
@@ -51,22 +51,24 @@ export function PasswordAuthModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[350] modal-backdrop-blur flex items-end sm:items-center justify-center p-0 sm:p-4 font-sans"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="auth-modal-title"
-      onClick={onClose}
-    >
-      <div
-        className="w-full sm:max-w-sm bg-[#0c0c10]/95 border-t sm:border border-[#282834] rounded-none shadow-[0_24px_60px_rgba(0,0,0,0.9)] relative overflow-hidden animate-sheet-up"
-        style={{
-          paddingBottom: "env(safe-area-inset-bottom, 0px)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="h-[2px] w-full bg-[var(--op-red)] absolute top-0 left-0" />
-        <div className="w-10 h-1 rounded-none bg-[#32323e] mx-auto mt-3 sm:hidden" aria-hidden="true" />
+    <AnimatePresence>
+      {isOpen && (
+        <MotionModalBackdrop
+          className="fixed inset-0 z-[350] flex items-end sm:items-center justify-center p-0 sm:p-4 font-sans"
+          onClick={onClose}
+        >
+          <MotionSheetPanel
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="auth-modal-title"
+            className="w-full sm:max-w-sm bg-[#0c0c10]/95 border-t sm:border border-[#282834] rounded-none shadow-[0_24px_60px_rgba(0,0,0,0.9)] relative overflow-hidden"
+            style={{
+              paddingBottom: "env(safe-area-inset-bottom, 0px)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="h-[2px] w-full bg-[var(--op-red)] absolute top-0 left-0" />
+            <div className="w-10 h-1 rounded-none bg-[#32323e] mx-auto mt-3 sm:hidden" aria-hidden="true" />
 
         {/* Botão Fechar */}
         <button
@@ -137,12 +139,20 @@ export function PasswordAuthModal({
                 </button>
               </div>
 
-              {hasError && (
-                <div className="mt-2.5 p-3 bg-red-950/40 border border-red-800/60 rounded-none flex items-center gap-2 text-red-300 text-xs font-mono">
-                  <AlertCircle size={15} className="shrink-0" />
-                  <span>Senha incorreta. Tente novamente.</span>
-                </div>
-              )}
+              <AnimatePresence>
+                {hasError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.16, ease: CLINICAL_EASE }}
+                    className="mt-2.5 p-3 bg-red-950/40 border border-red-800/60 rounded-none flex items-center gap-2 text-red-300 text-xs font-mono"
+                  >
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>Senha incorreta. Tente novamente.</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <div className="pt-2 flex items-center justify-end gap-2.5 font-mono">
@@ -164,7 +174,9 @@ export function PasswordAuthModal({
             </div>
           </form>
         </div>
-      </div>
-    </div>
+          </MotionSheetPanel>
+        </MotionModalBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

@@ -101,7 +101,8 @@ export const StatMathInput: React.FC<StatMathInputProps> = ({
         onChange={(e) => setLocalVal(e.target.value)}
         onBlur={commitValue}
         onKeyDown={handleKeyDown}
-        className={`${className} ${
+        style={{ outline: 'none' }}
+        className={`outline-none focus:outline-none focus-visible:outline-none ${className} ${
           errorMsg
             ? 'ring-1 ring-red-500/80 border-red-500/90 text-red-300 transition-colors'
             : ''

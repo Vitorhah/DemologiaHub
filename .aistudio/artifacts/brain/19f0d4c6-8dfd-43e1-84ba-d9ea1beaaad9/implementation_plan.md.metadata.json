@@ -1,6 +1,0 @@
-{
-  "summary":  "Plano de implementação para o novo sistema de música sincronizada do Demologia Tabletop via Supabase (Realtime + Storage + Postgres) e Web Audio API.",
-  "updatedAt":  "2026-10-23T00:38:58.008588988Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

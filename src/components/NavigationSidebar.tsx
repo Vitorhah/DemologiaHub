@@ -12,9 +12,12 @@ import {
   EyeOff,
   PanelLeftClose,
   PanelLeftOpen,
+  FolderOpen,
 } from "lucide-react";
 import { GameMode } from "../types";
-import demologiaLogoUrl from "../assets/demologia_logo.png";
+import { DEMOLOGIA_LOGO_URL } from "../constants/branding";
+import { motion } from "motion/react";
+import { SNAPPY_SPRING } from "./MotionPrimitives";
 
 export interface NavigationSidebarProps {
   currentPage: string;
@@ -28,6 +31,7 @@ export interface NavigationSidebarProps {
   gameMode?: GameMode;
   onOpenModeModal?: () => void;
   isOnline?: boolean;
+  unreadHandoutsCount?: number;
 }
 
 export const NavigationSidebar = React.memo(function NavigationSidebar({
@@ -42,6 +46,7 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
   gameMode = "demologia",
   onOpenModeModal,
   isOnline = false,
+  unreadHandoutsCount = 0,
 }: NavigationSidebarProps) {
   const isRlMode = gameMode === "rl";
   const [collapsed, setCollapsed] = useState(false);
@@ -127,17 +132,14 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
       isActive: currentPage === "chat",
       onClick: () => setCurrentPage("chat"),
     },
-    ...(isRlMode
-      ? [
-          {
-            id: "caderno",
-            label: "Caderno",
-            icon: FileText,
-            isActive: currentPage === "caderno",
-            onClick: () => setCurrentPage("caderno"),
-          },
-        ]
-      : []),
+    {
+      id: "handouts",
+      label: "Handouts",
+      icon: FolderOpen,
+      isActive: currentPage === "handouts",
+      badgeCount: !isMestreAuth && unreadHandoutsCount > 0 ? unreadHandoutsCount : undefined,
+      onClick: () => setCurrentPage("handouts"),
+    },
     {
       id: "conexao",
       label: "Conexão",
@@ -161,11 +163,6 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
     },
   ];
 
-  const sheetQuickJumps = [
-    { label: "Status", selector: ".hud-container" },
-    ...(!isRlMode ? [{ label: "Skills", selector: ".skills-section" }] : []),
-    { label: "Itens", selector: ".inv-grid" },
-  ];
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -229,7 +226,7 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
               title="Ir para a Ficha"
             >
               <img
-                src={demologiaLogoUrl}
+                src={DEMOLOGIA_LOGO_URL}
                 alt="Demologia"
                 className="w-6 h-6 object-cover rounded-none border border-[#2a2a34] group-hover:border-[var(--op-red)] transition-colors duration-200 shrink-0"
               />
@@ -308,16 +305,20 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
                         : "text-[#8e90a0] hover:text-white hover:bg-white/[0.03]"
                     }`}
                   >
-                    {/* Barra vertical dinâmica de item ativo */}
-                    <span
-                      className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] origin-center transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                        active
-                          ? isRlMode
-                            ? "bg-[#c084fc] shadow-[0_0_8px_#a855f7] opacity-100 scale-y-100"
-                            : "bg-[var(--op-red-bright)] shadow-[0_0_8px_#b81d24] opacity-100 scale-y-100"
-                          : "opacity-0 scale-y-0 group-hover:opacity-40 group-hover:scale-y-50 bg-white/40"
-                      }`}
-                    />
+                    {/* Barra vertical dinâmica de item ativo com spring layoutId */}
+                    {active ? (
+                      <motion.span
+                        layoutId="sidebar-active-indicator"
+                        transition={SNAPPY_SPRING}
+                        className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] ${
+                          isRlMode
+                            ? "bg-[#c084fc] shadow-[0_0_8px_#a855f7]"
+                            : "bg-[var(--op-red-bright)] shadow-[0_0_8px_#b81d24]"
+                        }`}
+                      />
+                    ) : (
+                      <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] opacity-0 scale-y-50 group-hover:opacity-40 group-hover:scale-y-75 bg-white/40 transition-all duration-150" />
+                    )}
 
                     <div
                       className={`flex items-center gap-3 min-w-0 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
@@ -347,6 +348,9 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
                             `}
                           />
                         )}
+                        {!item.statusDot && item.badgeCount !== undefined && collapsed && (
+                          <span className="hidden lg:block absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--op-red-bright)] border border-[#0a0a0e]" />
+                        )}
                       </div>
                       <span
                         className={`truncate text-xs tracking-wider transition-opacity duration-150 ${
@@ -356,31 +360,18 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
                         {item.label}
                       </span>
                     </div>
+
+                    {item.badgeCount !== undefined && (
+                      <span
+                        className={`px-1.5 py-0.5 text-[10px] font-bold font-mono tabular-nums bg-[var(--op-red)] text-white rounded-none shrink-0 ${
+                          collapsed ? "lg:hidden" : ""
+                        }`}
+                      >
+                        {item.badgeCount}
+                      </span>
+                    )}
                   </button>
 
-                  {/* Sub-atalhos dinâmicos da Ficha (aparecem apenas quando na Ficha e menu expandido) */}
-                  {item.id === "ficha" && active && (
-                    <div
-                      className={`grid grid-cols-3 gap-1 pt-1 pb-1.5 pl-3 pr-1 animate-subitems-in ${
-                        collapsed ? "lg:hidden" : ""
-                      }`}
-                    >
-                      {sheetQuickJumps.map((jump) => (
-                        <button
-                          key={jump.label}
-                          type="button"
-                          onClick={() =>
-                            handleNavClick(() => {
-                              scrollToSection(jump.selector);
-                            })
-                          }
-                          className="min-h-[32px] px-1.5 py-1 text-[10px] font-mono uppercase tracking-wider text-[#828392] hover:text-white bg-[#111117] hover:bg-[#191922] active:scale-95 border border-[#1e1e28] rounded-none transition-all duration-150 cursor-pointer text-center truncate touch-manipulation"
-                        >
-                          {jump.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
               );
             })}

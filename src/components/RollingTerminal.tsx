@@ -80,7 +80,7 @@ export function RollingTerminal({
                 ? "!bg-[#110d1c] !border-purple-500/35 focus:!border-[#c084fc] focus:!ring-1 focus:!ring-[#c084fc] text-white"
                 : ""
             }`}
-            placeholder="Ex: 1d20+OCU"
+            placeholder="Ex: 2d6+OCU"
             value={diceInput}
             onChange={(e) => setDiceInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && onRoll()}

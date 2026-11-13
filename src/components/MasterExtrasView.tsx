@@ -13,6 +13,10 @@ import {
   FileText,
 } from "lucide-react";
 import { StatMathInput } from "./StatMathInput";
+import { StatusEffectsEditor } from "./StatusPostIts";
+import { StatusEffect } from "../utils/statusEffects";
+import { AnimatePresence } from "motion/react";
+import { MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
 
 export interface MasterExtrasViewProps {
   extraFichas: any[];
@@ -21,7 +25,7 @@ export interface MasterExtrasViewProps {
   activeFichaId: string;
   setActiveFichaId: (id: string) => void;
   setCurrentPage: (page: string) => void;
-  setMestreTab: (tab: "fichas" | "ost" | "extras") => void;
+  setMestreTab: (tab: "fichas" | "ost" | "extras" | "handouts" | "utilities") => void;
   toggleFichaSync: (ficha: any) => void;
   supabase: any;
   currentGlobalMode?: "demologia" | "rl";
@@ -48,6 +52,8 @@ export function MasterExtrasView({
         id: Date.now().toString(),
         name: `Ficha Extra ${extraFichas.length + 1}`,
         notes: "",
+        statusEffects: [],
+        customFormulas: [],
       },
       ...extraFichas,
     ]);
@@ -158,12 +164,14 @@ export function MasterExtrasView({
                         value={ficha.name}
                         onChange={(e) => {
                           const newName = e.target.value;
+                          const isOcultista = newName.trim().toLowerCase() === "ocultista";
                           setExtraFichas(
                             extraFichas.map((f) =>
                               f.id === ficha.id
                                 ? {
                                     ...f,
                                     name: newName,
+                                    manualOcultistaSync: isOcultista ? false : f.manualOcultistaSync,
                                     last_local_edit: f.synchronized ? Date.now() : undefined,
                                   }
                                 : f,
@@ -434,6 +442,27 @@ export function MasterExtrasView({
                       placeholder="Observações do mestre..."
                     />
                   </div>
+
+                  {/* Condições / Status Post-its */}
+                  <div className="mt-2.5">
+                    <StatusEffectsEditor
+                      effects={ficha.statusEffects || []}
+                      compact
+                      onChange={(nextEffects: StatusEffect[]) => {
+                        setExtraFichas(
+                          extraFichas.map((f) =>
+                            f.id === ficha.id
+                              ? {
+                                  ...f,
+                                  statusEffects: nextEffects,
+                                  last_local_edit: f.synchronized ? Date.now() : undefined,
+                                }
+                              : f,
+                          ),
+                        );
+                      }}
+                    />
+                  </div>
                 </div>
 
                 <div className="mt-3 flex gap-2">
@@ -457,65 +486,67 @@ export function MasterExtrasView({
       )}
 
       {/* MODAL DE CONFIRMAÇÃO PARA EXCLUIR FICHA EXTRA */}
-      {deletingFichaId !== null &&
-        (() => {
-          const fichaToDelete = extraFichas.find((f) => f.id === deletingFichaId);
-          if (!fichaToDelete) return null;
-          return (
-            <div
-              className="fixed inset-0 z-[350] modal-backdrop-blur flex items-end sm:items-center justify-center p-0 sm:p-4"
-              onClick={() => setDeletingFichaId(null)}
-            >
-              <div
-                className="w-full sm:max-w-sm bg-[#0c0c10]/95 border-t sm:border border-[#2b2b36] rounded-none p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.9)] relative overflow-hidden animate-sheet-up"
-                style={{
-                  paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))",
-                }}
-                onClick={(e) => e.stopPropagation()}
+      <AnimatePresence>
+        {deletingFichaId !== null &&
+          (() => {
+            const fichaToDelete = extraFichas.find((f) => f.id === deletingFichaId);
+            if (!fichaToDelete) return null;
+            return (
+              <MotionModalBackdrop
+                className="fixed inset-0 z-[350] flex items-end sm:items-center justify-center p-0 sm:p-4"
+                onClick={() => setDeletingFichaId(null)}
               >
-                <div className="h-[2px] w-full bg-[var(--op-red)] absolute top-0 left-0" />
-                <div className="sm:hidden flex justify-center -mt-1 pb-3">
-                  <div className="w-10 h-1 bg-[#32323e] rounded-none" />
-                </div>
-
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-red-950/60 border border-red-800/60 flex items-center justify-center text-red-400 shrink-0">
-                    <Trash2 size={18} />
+                <MotionSheetPanel
+                  className="w-full sm:max-w-sm bg-[#0c0c10]/95 border-t sm:border border-[#2b2b36] rounded-none p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.9)] relative overflow-hidden"
+                  style={{
+                    paddingBottom: "max(1.25rem, env(safe-area-inset-bottom, 1.25rem))",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="h-[2px] w-full bg-[var(--op-red)] absolute top-0 left-0" />
+                  <div className="sm:hidden flex justify-center -mt-1 pb-3">
+                    <div className="w-10 h-1 bg-[#32323e] rounded-none" />
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                      Apagar Ficha Extra?
-                    </h3>
-                    <p className="text-xs text-gray-400 truncate mt-0.5">
-                      {fichaToDelete.name || "Ficha Extra"}
-                    </p>
+
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-red-950/60 border border-red-800/60 flex items-center justify-center text-red-400 shrink-0">
+                      <Trash2 size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                        Apagar Ficha Extra?
+                      </h3>
+                      <p className="text-xs text-gray-400 truncate mt-0.5">
+                        {fichaToDelete.name || "Ficha Extra"}
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <p className="text-xs text-[#9ca3af] leading-relaxed mb-5 border-b border-[#1c1c26] pb-3.5 font-sans">
-                  Deseja realmente apagar esta ficha extra?
-                </p>
+                  <p className="text-xs text-[#9ca3af] leading-relaxed mb-5 border-b border-[#1c1c26] pb-3.5 font-sans">
+                    Deseja realmente apagar esta ficha extra?
+                  </p>
 
-                <div className="flex gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setDeletingFichaId(null)}
-                    className="flex-1 min-h-[44px] bg-[#16161e] hover:bg-[#20202b] active:scale-95 border border-[#2c2c38] text-gray-300 hover:text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-none transition-all cursor-pointer touch-manipulation"
-                  >
-                    Não
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteConfirm(fichaToDelete)}
-                    className="flex-1 min-h-[44px] bg-gradient-to-r from-[#b52a30] to-[#7a1015] hover:brightness-110 active:scale-95 border border-[#ff8085]/40 text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-none shadow-[0_0_16px_rgba(181,42,48,0.4)] transition-all cursor-pointer touch-manipulation"
-                  >
-                    Sim
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+                  <div className="flex gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setDeletingFichaId(null)}
+                      className="flex-1 min-h-[44px] bg-[#16161e] hover:bg-[#20202b] active:scale-95 border border-[#2c2c38] text-gray-300 hover:text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-none transition-all cursor-pointer touch-manipulation"
+                    >
+                      Não
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteConfirm(fichaToDelete)}
+                      className="flex-1 min-h-[44px] bg-gradient-to-r from-[#b52a30] to-[#7a1015] hover:brightness-110 active:scale-95 border border-[#ff8085]/40 text-white font-mono text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-none shadow-[0_0_16px_rgba(181,42,48,0.4)] transition-all cursor-pointer touch-manipulation"
+                    >
+                      Sim
+                    </button>
+                  </div>
+                </MotionSheetPanel>
+              </MotionModalBackdrop>
+            );
+          })()}
+      </AnimatePresence>
     </div>
   );
 }

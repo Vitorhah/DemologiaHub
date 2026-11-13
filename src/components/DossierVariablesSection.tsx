@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { getDefaultAttributeRollFormula } from "../utils/diceFormula";
 import {
   Brain,
   Zap,
@@ -16,6 +17,8 @@ import {
   FileText,
 } from "lucide-react";
 import { StatMathInput } from "./StatMathInput";
+import { motion } from "motion/react";
+import { CLINICAL_EASE } from "./MotionPrimitives";
 
 interface VariableMeta {
   fullName: string;
@@ -187,9 +190,12 @@ export const DossierVariablesSection = React.memo(function DossierVariablesSecti
           const isEditing = editingKey === key;
 
           return (
-            <div
+            <motion.div
               key={key}
-              className={`group relative rounded-none border transition-all duration-200 shadow-lg flex flex-col justify-between overflow-hidden bg-gradient-to-b ${meta.bgGradient} hover:shadow-[0_4px_20px_rgba(0,0,0,0.7)]`}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: CLINICAL_EASE }}
+              className={`group relative rounded-none border transition-colors duration-200 shadow-lg flex flex-col justify-between overflow-hidden bg-gradient-to-b ${meta.bgGradient} hover:shadow-[0_4px_20px_rgba(0,0,0,0.7)]`}
               style={{ borderColor: `${meta.borderColor}70` }}
             >
               {/* Marcador de canto estilo pasta dossiê */}
@@ -245,15 +251,17 @@ export const DossierVariablesSection = React.memo(function DossierVariablesSecti
                   </div>
                 )}
 
-                {/* BOTÃO DE REMOÇÃO DISCRETO */}
-                <button
-                  type="button"
-                  onClick={() => removeVariable(key)}
-                  title={`Remover parâmetro ${key}`}
-                  className="w-6 h-6 flex items-center justify-center rounded-none text-[var(--op-text-muted)] hover:text-rose-400 hover:bg-rose-950/40 transition-colors opacity-70 hover:opacity-100 touch-manipulation cursor-pointer shrink-0"
-                >
-                  <Trash2 size={12} />
-                </button>
+                {/* BOTÃO DE REMOÇÃO DISCRETO (APENAS VARIÁVEIS CUSTOMIZADAS) */}
+                {!isDefault && (
+                  <button
+                    type="button"
+                    onClick={() => removeVariable(key)}
+                    title={`Remover parâmetro ${key}`}
+                    className="w-6 h-6 flex items-center justify-center rounded-none text-[var(--op-text-muted)] hover:text-rose-400 hover:bg-rose-950/40 transition-colors opacity-70 hover:opacity-100 touch-manipulation cursor-pointer shrink-0"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
               </div>
 
               {/* TÍTULO DESCRITIVO / SUBTÍTULO DO DOSSIÊ */}
@@ -301,19 +309,19 @@ export const DossierVariablesSection = React.memo(function DossierVariablesSecti
                 </button>
               </div>
 
-              {/* BOTÃO DE AÇÃO: ROLAR TESTE (1d20+ATTR) ESTILO DOSSIÊ */}
+              {/* BOTÃO DE AÇÃO: ROLAR TESTE PADRÃO DO SISTEMA ESTILO DOSSIÊ */}
               <div className="p-2 pt-1">
                 <button
                   type="button"
                   onClick={() => onRollTest?.(key)}
                   className="w-full py-1.5 px-2 rounded-none text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--op-text-secondary)] hover:text-white bg-[#131318] hover:bg-[#220a0d] border border-[var(--op-border)] hover:border-[var(--op-red-bright)] active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation shadow-sm"
-                  title={`Rolar teste com 1d20+${key}`}
+                  title={`Rolar teste com ${getDefaultAttributeRollFormula(key)}`}
                 >
                   <Dices size={13} style={{ color: meta.color }} />
-                  <span>Testar 1d20+{key}</span>
+                  <span>Testar {getDefaultAttributeRollFormula(key)}</span>
                 </button>
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>
