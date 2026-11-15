@@ -18,8 +18,10 @@ import {
   FileAudio,
   Loader2,
   ExternalLink,
+  RotateCcw,
 } from "lucide-react";
-import { MusicSync, Track, PlaybackState } from "../services/musicSync";
+import { MusicSync, Track, PlaybackState, OstStatusSnapshot } from "../services/musicSync";
+import { normalizeTrackUrl } from "../services/ostUtils";
 import { AnimatePresence } from "motion/react";
 import { MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
 
@@ -30,6 +32,7 @@ export interface MasterOstPanelProps {
 export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
   const [playbackState, setPlaybackState] = useState<PlaybackState | null>(musicSync.getCurrentState());
   const [tracks, setTracks] = useState<Track[]>(musicSync.getTracks());
+  const [audioStatus, setAudioStatus] = useState<OstStatusSnapshot>(musicSync.getAudioStatus());
   const [searchTerm, setSearchTerm] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -49,9 +52,10 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
 
   // Progresso em tempo real da faixa ativa
   const [currentProgress, setCurrentProgress] = useState<number>(0);
+  const [scrubValue, setScrubValue] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Inscreve no estado e lista de faixas do MusicSync
+  // Inscreve no estado, status do motor de áudio e lista de faixas do MusicSync
   useEffect(() => {
     const unsubState = musicSync.onStateChange((state) => {
       setPlaybackState(state);
@@ -61,9 +65,14 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
       setTracks(updatedTracks);
     });
 
+    const unsubStatus = musicSync.onStatusChange((snapshot) => {
+      setAudioStatus(snapshot);
+    });
+
     return () => {
       unsubState();
       unsubTracks();
+      unsubStatus();
     };
   }, [musicSync]);
 
@@ -78,7 +87,7 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
     const timer = setInterval(() => {
       const nextTime = musicSync.getCurrentAudioTime();
       setCurrentProgress((prev) => (Math.abs(prev - nextTime) >= 0.2 ? nextTime : prev));
-    }, 350);
+    }, 300);
 
     return () => clearInterval(timer);
   }, [playbackState?.is_playing, playbackState?.paused_position, playbackState?.track_url, musicSync]);
@@ -86,7 +95,8 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
   // Faixa atualmente em reprodução
   const activeTrack = useMemo(() => {
     if (!playbackState?.track_url) return null;
-    return tracks.find((t) => t.url === playbackState.track_url) || null;
+    const normalized = normalizeTrackUrl(playbackState.track_url);
+    return tracks.find((t) => normalizeTrackUrl(t.url) === normalized) || null;
   }, [tracks, playbackState?.track_url]);
 
   // Faixas filtradas pela busca
@@ -146,7 +156,7 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
       setEditingTrackId(null);
       setEditingName("");
     } catch (err: any) {
-      alert("Erro ao renomear: " + err.message);
+      setUploadError("Erro ao renomear: " + (err?.message || "falha desconhecida"));
     }
   };
 
@@ -156,7 +166,7 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
       await musicSync.removeTrack(track);
       setDeleteConfirmId(null);
     } catch (err: any) {
-      alert("Erro ao excluir faixa: " + err.message);
+      setUploadError("Erro ao excluir faixa: " + (err?.message || "falha desconhecida"));
     }
   };
 
@@ -171,7 +181,11 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
   const isPlaying = Boolean(playbackState?.is_playing);
   const currentVolume = playbackState?.volume ?? 1;
   const isLoop = Boolean(playbackState?.loop);
-  const audioDuration = musicSync.getAudioDuration();
+  const audioDuration = audioStatus.duration || musicSync.getAudioDuration();
+  const displayProgress = scrubValue !== null ? scrubValue : currentProgress;
+  const isBufferingOrLoading =
+    audioStatus.status === "loading" || audioStatus.status === "buffering";
+  const hasAudioError = audioStatus.status === "error" && Boolean(audioStatus.error);
 
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-4 px-3 sm:px-4 pb-12 font-mono text-gray-200">
@@ -194,19 +208,35 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
           <div className="flex items-center gap-2.5">
             <span
               className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border ${
-                isPlaying
+                hasAudioError
+                  ? "bg-red-950/60 border-red-500/70 text-red-300"
+                  : isBufferingOrLoading
+                  ? "bg-amber-950/50 border-amber-500/60 text-amber-300"
+                  : isPlaying
                   ? "bg-blood-red/20 border-blood-red/60 text-red-300"
                   : "bg-[#14141c] border-[#2a2a36] text-gray-500"
               }`}
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
-                  isPlaying
+                  hasAudioError
+                    ? "bg-red-500"
+                    : isBufferingOrLoading
+                    ? "bg-amber-400 animate-pulse"
+                    : isPlaying
                     ? "bg-red-500 animate-ping"
                     : "bg-gray-600"
                 }`}
               />
-              {isPlaying ? "NO AR" : "STANDBY"}
+              {hasAudioError
+                ? "ERRO"
+                : audioStatus.status === "loading"
+                ? "CARREGANDO"
+                : audioStatus.status === "buffering"
+                ? "BUFFER"
+                : isPlaying
+                ? "NO AR"
+                : "STANDBY"}
             </span>
             <span className="text-[11px] uppercase font-bold tracking-widest text-gray-400">
               OST • Mesa
@@ -292,7 +322,7 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
               </h3>
               <div className="text-xs text-gray-400 flex items-center gap-2 mt-1 tabular-nums">
                 <span className={isPlaying ? "text-white font-bold" : "text-gray-400"}>
-                  {formatTime(currentProgress)}
+                  {formatTime(displayProgress)}
                 </span>
                 <span className="text-gray-600">/</span>
                 <span>{audioDuration > 0 ? formatTime(audioDuration) : "--:--"}</span>
@@ -395,23 +425,65 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
           </div>
         </div>
 
-        {/* Barra de Progresso Visual */}
+        {/* Barra de Progresso Interativa (Seek sincronizado) */}
         <div className="mt-4">
-          <div className="w-full bg-[#060609] h-1.5 overflow-hidden border border-[#1d1d26]">
-            <div
-              className="bg-blood-red h-full transition-all duration-200 shadow-[0_0_10px_#8f171c]"
-              style={{
-                width:
-                  audioDuration > 0
-                    ? `${Math.min(100, (currentProgress / audioDuration) * 100)}%`
-                    : isPlaying
-                      ? "100%"
-                      : "0%",
+          {audioDuration > 0 ? (
+            <input
+              type="range"
+              min="0"
+              max={audioDuration}
+              step="0.5"
+              value={Math.min(audioDuration, displayProgress)}
+              onChange={(e) => setScrubValue(parseFloat(e.target.value))}
+              onMouseUp={(e) => {
+                const target = parseFloat((e.target as HTMLInputElement).value);
+                setScrubValue(null);
+                musicSync.seekTo(target).catch(() => {});
               }}
+              onTouchEnd={(e) => {
+                const target = parseFloat((e.target as HTMLInputElement).value);
+                setScrubValue(null);
+                musicSync.seekTo(target).catch(() => {});
+              }}
+              onKeyUp={(e) => {
+                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                  const target = parseFloat((e.target as HTMLInputElement).value);
+                  setScrubValue(null);
+                  musicSync.seekTo(target).catch(() => {});
+                }
+              }}
+              aria-label="Posição da trilha sonora"
+              className="w-full h-2 accent-blood-red cursor-pointer touch-manipulation"
             />
-          </div>
+          ) : (
+            <div className="w-full bg-[#060609] h-1.5 overflow-hidden border border-[#1d1d26]">
+              <div
+                className={`h-full transition-all duration-200 ${
+                  isBufferingOrLoading
+                    ? "bg-amber-500/80 animate-pulse w-1/3"
+                    : isPlaying
+                    ? "bg-blood-red shadow-[0_0_10px_#8f171c] w-full"
+                    : "bg-blood-red w-0"
+                }`}
+              />
+            </div>
+          )}
         </div>
       </div>
+
+      {hasAudioError && (
+        <div className="p-3 bg-red-950/60 border border-blood-red text-red-200 text-xs flex items-center justify-between gap-3">
+          <span>{audioStatus.error}</span>
+          <button
+            type="button"
+            onClick={() => musicSync.retryAudio()}
+            className="min-h-[36px] px-3 py-1 bg-blood-red/30 hover:bg-blood-red/50 border border-blood-red text-white text-[10px] uppercase tracking-wider font-bold flex items-center gap-1.5 shrink-0 cursor-pointer touch-manipulation"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Tentar novamente</span>
+          </button>
+        </div>
+      )}
 
       {uploadError && (
         <div className="p-3 bg-red-950/60 border border-blood-red text-red-200 text-xs flex items-center justify-between">
@@ -536,14 +608,15 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
             {filteredTracks.map((track) => {
-              const isThisTrackActive = playbackState?.track_url === track.url;
+              const isThisTrackActive =
+                normalizeTrackUrl(playbackState?.track_url) === normalizeTrackUrl(track.url);
               const isThisTrackPlaying = isThisTrackActive && isPlaying;
               const isEditing = editingTrackId === track.id;
-              const isDeleting = deleteConfirmId === track.id;
 
               return (
                 <div
                   key={track.id}
+                  onMouseEnter={() => musicSync.preloadTrack(track.url)}
                   className={`flex items-center justify-between p-2.5 transition-all border ${
                     isThisTrackActive
                       ? "bg-[#150f16] border-blood-red/80 shadow-[inset_3px_0_0_#8f171c]"
