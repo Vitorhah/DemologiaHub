@@ -19,9 +19,10 @@ import {
   Loader2,
   ExternalLink,
   RotateCcw,
+  Clock,
 } from "lucide-react";
 import { MusicSync, Track, PlaybackState, OstStatusSnapshot } from "../services/musicSync";
-import { normalizeTrackUrl } from "../services/ostUtils";
+import { getNextFadeDuration, normalizeTrackUrl } from "../services/ostUtils";
 import { AnimatePresence } from "motion/react";
 import { MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
 
@@ -179,13 +180,28 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
   };
 
   const isPlaying = Boolean(playbackState?.is_playing);
+  const fadeSeconds = audioStatus.fadeDurationSeconds;
+  const nextFadeSeconds = getNextFadeDuration(fadeSeconds);
+  const isFadingIn = audioStatus.fadeDirection === "in";
+  const isFadingOut = audioStatus.fadeDirection === "out";
+  const isEffectivelyPlaying = isPlaying && !isFadingOut;
   const currentVolume = playbackState?.volume ?? 1;
+  const timelineVolumePercent = Math.round(currentVolume * 100);
+  const effectiveVolumePercent = Math.round(
+    (audioStatus.effectiveVolume ?? currentVolume) * 100,
+  );
   const isLoop = Boolean(playbackState?.loop);
   const audioDuration = audioStatus.duration || musicSync.getAudioDuration();
   const displayProgress = scrubValue !== null ? scrubValue : currentProgress;
   const isBufferingOrLoading =
     audioStatus.status === "loading" || audioStatus.status === "buffering";
   const hasAudioError = audioStatus.status === "error" && Boolean(audioStatus.error);
+  const fadeButtonLabel =
+    fadeSeconds === 0
+      ? "Fade: Desligado (0s) — clique para 2s"
+      : nextFadeSeconds === 0
+      ? `Fade: ${fadeSeconds}s — clique para desligar`
+      : `Fade: ${fadeSeconds}s — clique para ${nextFadeSeconds}s`;
 
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-4 px-3 sm:px-4 pb-12 font-mono text-gray-200">
@@ -234,6 +250,10 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
                 ? "CARREGANDO"
                 : audioStatus.status === "buffering"
                 ? "BUFFER"
+                : isFadingOut
+                ? "FADE OUT"
+                : isFadingIn && isPlaying
+                ? "NO AR • FADE"
                 : isPlaying
                 ? "NO AR"
                 : "STANDBY"}
@@ -339,7 +359,7 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
           <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-2.5 flex-wrap">
             <div className="flex items-center gap-2">
               {/* Play / Pause */}
-              {isPlaying ? (
+              {isEffectivelyPlaying ? (
                 <button
                   type="button"
                   onClick={() => musicSync.pause()}
@@ -360,7 +380,7 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
                       musicSync.playTrack(tracks[0]);
                     }
                   }}
-                  title="Tocar"
+                  title={isFadingOut ? "Retomar (reverter fade)" : "Tocar"}
                   className="w-11 h-11 flex items-center justify-center bg-[#181822] hover:bg-blood-red border border-[#323242] hover:border-blood-red text-white transition-all active:scale-95 disabled:opacity-40 cursor-pointer touch-manipulation"
                 >
                   <Play className="w-5 h-5 fill-current ml-0.5" />
@@ -391,6 +411,31 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
               >
                 <Repeat className="w-4 h-4" />
               </button>
+
+              {/* Fade In / Fade Out Toggle (Desligado -> 2s -> 5s -> 10s) */}
+              <button
+                type="button"
+                onClick={() => musicSync.cycleFadeDuration()}
+                title={fadeButtonLabel}
+                aria-label={fadeButtonLabel}
+                data-fade-duration={fadeSeconds}
+                className={`min-w-[44px] h-11 px-2 flex items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer touch-manipulation ${
+                  fadeSeconds > 0
+                    ? "bg-blood-red/25 border-blood-red text-red-200 shadow-[0_0_10px_rgba(143,23,28,0.35)]"
+                    : "bg-[#14141d] hover:bg-[#222230] border-[#2c2c3a] text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                <Clock
+                  className={`w-4 h-4 shrink-0 ${
+                    fadeSeconds > 0 ? "text-red-400" : "text-gray-500 opacity-60"
+                  }`}
+                />
+                {fadeSeconds > 0 && (
+                  <span className="text-[11px] font-mono font-bold text-white leading-none tabular-nums">
+                    {fadeSeconds}
+                  </span>
+                )}
+              </button>
             </div>
 
             {/* Controle de Volume */}
@@ -416,10 +461,19 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
                 value={currentVolume}
                 onChange={(e) => musicSync.setVolume(parseFloat(e.target.value))}
                 className="w-full sm:w-24 accent-blood-red cursor-pointer"
-                title={`Volume: ${Math.round(currentVolume * 100)}%`}
+                title={`Volume da timeline: ${timelineVolumePercent}%`}
               />
-              <span className="text-[11px] w-8 text-right font-bold text-gray-300 tabular-nums">
-                {Math.round(currentVolume * 100)}%
+              <span
+                className="text-[11px] min-w-[2.2rem] text-right font-bold text-gray-300 tabular-nums whitespace-nowrap"
+                title={
+                  isFadingIn || isFadingOut
+                    ? `Volume atual: ${effectiveVolumePercent}% (alvo: ${timelineVolumePercent}%)`
+                    : `Volume: ${timelineVolumePercent}%`
+                }
+              >
+                {isFadingIn || isFadingOut
+                  ? `${effectiveVolumePercent}%/${timelineVolumePercent}%`
+                  : `${timelineVolumePercent}%`}
               </span>
             </div>
           </div>
@@ -610,7 +664,7 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
             {filteredTracks.map((track) => {
               const isThisTrackActive =
                 normalizeTrackUrl(playbackState?.track_url) === normalizeTrackUrl(track.url);
-              const isThisTrackPlaying = isThisTrackActive && isPlaying;
+              const isThisTrackPlaying = isThisTrackActive && isEffectivelyPlaying;
               const isEditing = editingTrackId === track.id;
 
               return (

@@ -1,19 +1,34 @@
 import { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
 import { Howl, Howler } from "howler";
 import {
+  ActiveVolumeFade,
   arePlaybackStatesEqual,
+  clampVolume,
   ClockSample,
   computeSignedDrift,
   computeSynchronizedPosition,
+  createVolumeFade,
   decideDriftCorrection,
+  evaluateVolumeFade,
+  FadeDirection,
+  FadeDurationSeconds,
+  FadeFinishAction,
+  getNextFadeDuration,
   isStalePlaybackState,
+  normalizeFadeDuration,
   normalizeTrackUrl,
   OstHealthStatus,
   PlaybackState,
   selectBestClockOffset,
+  updateVolumeFadeTarget,
 } from "./ostUtils";
 
-export type { PlaybackState, OstHealthStatus };
+export type {
+  PlaybackState,
+  OstHealthStatus,
+  FadeDurationSeconds,
+  FadeDirection,
+};
 
 /**
  * Interface que representa uma faixa na biblioteca da mesa.
@@ -31,6 +46,9 @@ export interface OstStatusSnapshot {
   status: OstHealthStatus;
   error: string | null;
   duration: number;
+  fadeDirection: FadeDirection | null;
+  fadeDurationSeconds: FadeDurationSeconds;
+  effectiveVolume: number;
 }
 
 export type PlaybackStateCallback = (state: PlaybackState | null) => void;
@@ -40,12 +58,14 @@ export type OstStatusCallback = (snapshot: OstStatusSnapshot) => void;
 const DRIFT_CHECK_INTERVAL_MS = 1500;
 const CLOCK_SYNC_INTERVAL_MS = 60000;
 const VOLUME_PERSIST_DEBOUNCE_MS = 220;
+const FADE_STORAGE_KEY = "demologia_ost_fade_seconds";
 
 /**
  * Sistema otimizado de sincronização de trilha sonora (OST) em mesas de RPG.
  * Usa Howler.js (HTML5 streaming pool + WebAudio unlock) aliado a calibração NTP-lite,
  * correção suave de drift por playbackRate (sem travamentos/re-buffering),
- * e dual-channel Supabase (Broadcast instantâneo + PostgreSQL Realtime).
+ * dual-channel Supabase (Broadcast instantâneo + PostgreSQL Realtime) e
+ * transições lineares de volume (Fade In / Fade Out) no mesmo canal de áudio.
  */
 export class MusicSync {
   private supabase: SupabaseClient;
@@ -54,6 +74,10 @@ export class MusicSync {
   private activeHowlLoaded: boolean = false;
   private activeSoundId: number | null = null;
   private activeDuration: number = 0;
+  private isBuffering: boolean = false;
+  private isSeeking: boolean = false;
+  private currentPlaybackRate: number = 1.0;
+  private lastHardSeekAtMs: number = 0;
 
   private preloadAudio: HTMLAudioElement;
   private preloadUrl: string = "";
@@ -65,25 +89,24 @@ export class MusicSync {
   private tracksChannel: RealtimeChannel | null = null;
 
   private clockOffset: number = 0;
+  private lastCommandUpdatedAtMs: number = 0;
   private clockSyncInterval: number | null = null;
   private driftCheckInterval: number | null = null;
   private visibilityHandler: (() => void) | null = null;
   private reconnectTimer: number | null = null;
   private volumePersistTimer: number | null = null;
 
+  // Controle de Fade In / Fade Out (mesmo canal de áudio, baseado em tempo)
+  private fadeDurationSeconds: FadeDurationSeconds = 0;
+  private activeFade: ActiveVolumeFade | null = null;
+  private fadeRafId: number | null = null;
+  private fadeFallbackTimerId: number | null = null;
+  private lastFadeUiNotifyMs: number = 0;
+  private effectiveVolume: number = 1.0;
+
   private currentState: PlaybackState | null = null;
   private tracksList: Track[] = [];
-  private statusSnapshot: OstStatusSnapshot = {
-    status: "idle",
-    error: null,
-    duration: 0,
-  };
-
-  private isBuffering: boolean = false;
-  private isSeeking: boolean = false;
-  private lastHardSeekAtMs: number = 0;
-  private lastCommandUpdatedAtMs: number = 0;
-  private currentPlaybackRate: number = 1.0;
+  private statusSnapshot: OstStatusSnapshot;
 
   private stateSubscribers: Set<PlaybackStateCallback> = new Set();
   private tracksSubscribers: Set<TracksCallback> = new Set();
@@ -98,6 +121,24 @@ export class MusicSync {
 
   constructor(supabaseClient: SupabaseClient) {
     this.supabase = supabaseClient;
+
+    try {
+      const savedFade = localStorage.getItem(FADE_STORAGE_KEY);
+      if (savedFade !== null) {
+        this.fadeDurationSeconds = normalizeFadeDuration(savedFade);
+      }
+    } catch {
+      this.fadeDurationSeconds = 0;
+    }
+
+    this.statusSnapshot = {
+      status: "idle",
+      error: null,
+      duration: 0,
+      fadeDirection: null,
+      fadeDurationSeconds: this.fadeDurationSeconds,
+      effectiveVolume: 1.0,
+    };
 
     Howler.autoUnlock = true;
     Howler.html5PoolSize = 10;
@@ -126,7 +167,6 @@ export class MusicSync {
     this.isDestroyed = false;
 
     try {
-      // 1. Calibração inicial de relógio multi-amostra (filtra picos de latência)
       await this.syncClock(2);
 
       if (this.clockSyncInterval) clearInterval(this.clockSyncInterval);
@@ -143,13 +183,11 @@ export class MusicSync {
 
       this.attachVisibilityListener();
 
-      // 2. Estado inicial + biblioteca de faixas em paralelo
       await Promise.all([
         this.fetchInitialPlaybackState(),
         this.fetchTracks(),
       ]);
 
-      // 3. Canais Realtime (Broadcast instantâneo + Postgres Changes)
       this.setupRealtimeSubscriptions();
     } catch (error) {
       console.error(`[MusicSync] Falha ao conectar na sala ${roomId}:`, error);
@@ -179,6 +217,9 @@ export class MusicSync {
       this.volumePersistTimer = null;
     }
 
+    this.stopFadeTimers();
+    this.activeFade = null;
+
     this.detachVisibilityListener();
     this.removeAutoplayListeners();
 
@@ -201,6 +242,7 @@ export class MusicSync {
     this.currentState = null;
     this.tracksList = [];
     this.pendingPlayState = null;
+    this.effectiveVolume = 1.0;
     this.updateStatus("idle", null, 0);
     this.notifyStateSubscribers(null);
     this.notifyTracksSubscribers([]);
@@ -266,6 +308,178 @@ export class MusicSync {
     const monotonic = Math.max(now, this.lastCommandUpdatedAtMs + 1);
     this.lastCommandUpdatedAtMs = monotonic;
     return new Date(monotonic).toISOString();
+  }
+
+  // ============================================================================
+  // CONTROLE DE FADE IN / FADE OUT (LINEAR, INDEPENDENTE DE FPS)
+  // ============================================================================
+
+  private getFadeClockNow(): number {
+    return typeof performance !== "undefined" ? performance.now() : Date.now();
+  }
+
+  private getTimelineVolume(): number {
+    return clampVolume(this.currentState?.volume ?? 1.0);
+  }
+
+  private applyHowlVolume(vol: number): void {
+    const clamped = clampVolume(vol);
+    this.effectiveVolume = clamped;
+    if (this.activeHowl) {
+      this.activeHowl.volume(clamped);
+    }
+  }
+
+  private stopFadeTimers(): void {
+    if (this.fadeRafId !== null && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(this.fadeRafId);
+      this.fadeRafId = null;
+    }
+    if (this.fadeFallbackTimerId !== null) {
+      clearTimeout(this.fadeFallbackTimerId);
+      this.fadeFallbackTimerId = null;
+    }
+  }
+
+  private cancelActiveFade(applyTargetVolume = false): void {
+    this.stopFadeTimers();
+    this.activeFade = null;
+    if (applyTargetVolume) {
+      this.applyHowlVolume(this.getTimelineVolume());
+    }
+    this.emitStatusSnapshot();
+  }
+
+  private completeActiveFade(): void {
+    const fade = this.activeFade;
+    if (!fade) return;
+
+    this.stopFadeTimers();
+    this.applyHowlVolume(fade.targetVolume);
+    this.activeFade = null;
+    this.emitStatusSnapshot();
+
+    if (fade.finishAction === "pause") {
+      this.commitPauseImmediate().catch(console.error);
+    } else if (fade.finishAction === "stop") {
+      this.commitStopImmediate().catch(console.error);
+    }
+  }
+
+  private startVolumeFade(params: {
+    direction: FadeDirection;
+    fromVolume: number;
+    targetVolume: number;
+    durationSeconds?: FadeDurationSeconds;
+    finishAction?: FadeFinishAction;
+  }): void {
+    const durationSec = params.durationSeconds ?? this.fadeDurationSeconds;
+    const finishAction = params.finishAction ?? "none";
+
+    this.stopFadeTimers();
+
+    if (durationSec <= 0) {
+      this.activeFade = null;
+      if (params.direction === "out") {
+        this.applyHowlVolume(0);
+        this.emitStatusSnapshot();
+        if (finishAction === "pause") {
+          this.commitPauseImmediate().catch(console.error);
+        } else if (finishAction === "stop") {
+          this.commitStopImmediate().catch(console.error);
+        }
+      } else {
+        this.applyHowlVolume(params.targetVolume);
+        this.emitStatusSnapshot();
+      }
+      return;
+    }
+
+    const nowMs = this.getFadeClockNow();
+    this.activeFade = createVolumeFade({
+      direction: params.direction,
+      currentVolume: params.fromVolume,
+      targetVolume: params.targetVolume,
+      durationSeconds: durationSec,
+      nowMs,
+      finishAction,
+    });
+
+    this.applyHowlVolume(this.activeFade.fromVolume);
+    this.lastFadeUiNotifyMs = nowMs;
+    this.emitStatusSnapshot();
+
+    const step = () => {
+      if (this.isDestroyed || !this.activeFade) return;
+      const tickNow = this.getFadeClockNow();
+      const { volume, completed } = evaluateVolumeFade(this.activeFade, tickNow);
+      this.applyHowlVolume(volume);
+
+      if (completed) {
+        this.completeActiveFade();
+        return;
+      }
+
+      if (tickNow - this.lastFadeUiNotifyMs >= 90) {
+        this.lastFadeUiNotifyMs = tickNow;
+        this.emitStatusSnapshot();
+      }
+
+      if (typeof requestAnimationFrame !== "undefined") {
+        this.fadeRafId = requestAnimationFrame(step);
+      }
+    };
+
+    if (typeof requestAnimationFrame !== "undefined") {
+      this.fadeRafId = requestAnimationFrame(step);
+    }
+
+    // Fallback para abas em segundo plano onde rAF pode ser pausado pelo navegador
+    this.fadeFallbackTimerId = window.setTimeout(() => {
+      if (!this.isDestroyed && this.activeFade) {
+        const { volume, completed } = evaluateVolumeFade(
+          this.activeFade,
+          this.getFadeClockNow(),
+        );
+        this.applyHowlVolume(volume);
+        if (completed) {
+          this.completeActiveFade();
+        }
+      }
+    }, durationSec * 1000 + 60);
+  }
+
+  public getFadeDuration(): FadeDurationSeconds {
+    return this.fadeDurationSeconds;
+  }
+
+  public setFadeDuration(seconds: FadeDurationSeconds): void {
+    const normalized = normalizeFadeDuration(seconds);
+    this.fadeDurationSeconds = normalized;
+
+    try {
+      localStorage.setItem(FADE_STORAGE_KEY, String(normalized));
+    } catch {
+      // Ignora restrição de storage
+    }
+
+    // Com o relógio desligado (0s), interrompe fade em curso sem esperar tempo restante
+    if (normalized === 0 && this.activeFade) {
+      if (this.activeFade.direction === "out") {
+        this.completeActiveFade();
+      } else {
+        this.cancelActiveFade(true);
+      }
+      return;
+    }
+
+    this.emitStatusSnapshot();
+  }
+
+  public cycleFadeDuration(): FadeDurationSeconds {
+    const next = getNextFadeDuration(this.fadeDurationSeconds);
+    this.setFadeDuration(next);
+    return next;
   }
 
   // ============================================================================
@@ -337,7 +551,6 @@ export class MusicSync {
       } else {
         this.activeHowl.seek(clamped);
       }
-      // Fallback de segurança caso onseek não dispare em alguns WebViews
       window.setTimeout(() => {
         this.isSeeking = false;
       }, 350);
@@ -397,20 +610,28 @@ export class MusicSync {
     this.activeHowlLoaded = false;
     this.updateStatus("loading", null, 0);
 
-    const safeVolume = Math.max(0, Math.min(1, state.volume ?? 1));
+    // Se houver fade ativo, inicia o Howl com o volume interpolado atual (ex.: 0 no fade in)
+    const initialVolume = this.activeFade
+      ? this.effectiveVolume
+      : clampVolume(state.volume ?? 1);
 
     const howl = new Howl({
       src: [normalizedUrl],
       html5: true,
       preload: true,
       loop: Boolean(state.loop),
-      volume: safeVolume,
+      volume: initialVolume,
       onload: () => {
         if (this.activeHowl !== howl || this.isDestroyed) return;
         this.activeHowlLoaded = true;
         this.isBuffering = false;
         this.activeDuration = howl.duration() || 0;
         this.attachHtml5NodeListeners(howl);
+
+        // Garante que o volume interpolado mais recente seja aplicado após carregar
+        if (this.activeFade) {
+          howl.volume(this.effectiveVolume);
+        }
 
         const latestState = this.currentState;
         if (!latestState || normalizeTrackUrl(latestState.track_url) !== normalizedUrl) {
@@ -439,6 +660,9 @@ export class MusicSync {
         this.activeSoundId = soundId;
         this.isBuffering = false;
         this.attachHtml5NodeListeners(howl);
+        if (this.activeFade) {
+          howl.volume(this.effectiveVolume);
+        }
         this.updateStatus("playing", null, this.activeDuration || howl.duration() || 0);
       },
       onpause: () => {
@@ -459,14 +683,19 @@ export class MusicSync {
       },
       onend: () => {
         if (this.activeHowl !== howl || this.isDestroyed) return;
+        if (this.activeFade?.direction === "out") {
+          this.stopFadeTimers();
+          this.activeFade = null;
+        }
         if (this.currentState && !this.currentState.loop && this.isMaster) {
-          this.stop().catch(console.error);
+          this.commitStopImmediate().catch(console.error);
         }
       },
       onloaderror: (_id, err) => {
         if (this.activeHowl !== howl || this.isDestroyed) return;
         this.isBuffering = false;
         this.activeHowlLoaded = false;
+        this.cancelActiveFade(false);
         console.warn("[MusicSync] Erro ao carregar áudio:", err);
         this.updateStatus(
           "error",
@@ -489,6 +718,7 @@ export class MusicSync {
           this.registerAutoplayUnlock();
           this.updateStatus("paused", null, this.activeDuration);
         } else {
+          this.cancelActiveFade(false);
           console.warn("[MusicSync] Erro ao reproduzir áudio:", err);
           this.updateStatus(
             "error",
@@ -514,20 +744,31 @@ export class MusicSync {
 
     if (!state || !state.track_url) {
       this.pendingPlayState = null;
+      this.stopFadeTimers();
+      this.activeFade = null;
       this.disposeActiveHowl();
+      this.effectiveVolume = clampVolume(state?.volume ?? 1);
       this.updateStatus("idle", null, 0);
       return;
     }
 
     const normalizedUrl = normalizeTrackUrl(state.track_url);
-    const safeVolume = Math.max(0, Math.min(1, state.volume ?? 1));
+    const safeVolume = clampVolume(state.volume ?? 1);
     const isNewTrack = forceReload || !this.activeHowl || this.activeHowlUrl !== normalizedUrl;
 
     if (isNewTrack) {
       this.createHowlForTrack(normalizedUrl, state);
     } else if (this.activeHowl) {
       this.activeHowl.loop(Boolean(state.loop));
-      this.activeHowl.volume(safeVolume);
+      if (!this.activeFade) {
+        this.applyHowlVolume(safeVolume);
+      } else if (this.activeFade.direction === "in") {
+        this.activeFade = updateVolumeFadeTarget(
+          this.activeFade,
+          safeVolume,
+          this.getFadeClockNow(),
+        );
+      }
     }
 
     const howl = this.activeHowl;
@@ -535,10 +776,13 @@ export class MusicSync {
 
     if (!state.is_playing) {
       this.pendingPlayState = null;
+      this.stopFadeTimers();
+      this.activeFade = null;
       this.setHowlPlaybackRate(1.0);
       if (howl.playing()) {
         howl.pause();
       }
+      this.applyHowlVolume(safeVolume);
       const pausedPos = Math.max(0, state.paused_position || 0);
       if (this.activeHowlLoaded && Math.abs(this.getCurrentAudioTime() - pausedPos) > 0.2) {
         this.performHardSeek(pausedPos);
@@ -583,11 +827,6 @@ export class MusicSync {
     }
   }
 
-  /**
-   * Monitora periodicamente o desvio entre cliente e relógio do servidor.
-   * Utiliza ajuste suave de velocidade (0.96x-1.04x) para desvios pequenos/médios,
-   * eliminando o travamento e o efeito de "voltar atrás".
-   */
   private checkAndCorrectDrift(): void {
     if (
       this.isDestroyed ||
@@ -679,9 +918,6 @@ export class MusicSync {
     }
   }
 
-  /**
-   * Desbloqueia proativamente o motor Howler e retoma qualquer faixa pendente.
-   */
   public unlockAudio(): void {
     if (this.isDestroyed) return;
     this.audioUnlocked = true;
@@ -804,13 +1040,76 @@ export class MusicSync {
       .channel(playbackChannelName, {
         config: { broadcast: { ack: false, self: false } },
       })
-      .on("broadcast", { event: "ost_sync" }, ({ payload }: { payload: PlaybackState }) => {
-        if (payload && typeof payload === "object" && payload.room_id === this.roomId) {
-          if (!isStalePlaybackState(this.currentState, payload)) {
-            this.applyPlaybackState(payload);
+      .on(
+        "broadcast",
+        { event: "ost_sync" },
+        ({
+          payload,
+        }: {
+          payload: PlaybackState & { fade_duration?: FadeDurationSeconds };
+        }) => {
+          if (payload && typeof payload === "object" && payload.room_id === this.roomId) {
+            if (!isStalePlaybackState(this.currentState, payload)) {
+              const fadeSec = normalizeFadeDuration(payload.fade_duration);
+              const wasPlaying = Boolean(this.currentState?.is_playing);
+              const trackChanged =
+                normalizeTrackUrl(this.currentState?.track_url) !==
+                normalizeTrackUrl(payload.track_url);
+
+              if (payload.is_playing && fadeSec > 0 && (!wasPlaying || trackChanged)) {
+                this.startVolumeFade({
+                  direction: "in",
+                  fromVolume: 0,
+                  targetVolume: clampVolume(payload.volume ?? 1),
+                  durationSeconds: fadeSec,
+                });
+              }
+
+              this.applyPlaybackState(payload);
+            }
           }
-        }
-      })
+        },
+      )
+      .on(
+        "broadcast",
+        { event: "ost_fade" },
+        ({
+          payload,
+        }: {
+          payload: {
+            room_id: string;
+            direction: FadeDirection;
+            duration_sec: FadeDurationSeconds;
+          };
+        }) => {
+          if (
+            !payload ||
+            payload.room_id !== this.roomId ||
+            !this.currentState?.is_playing
+          ) {
+            return;
+          }
+          const durationSec = normalizeFadeDuration(payload.duration_sec);
+          if (durationSec <= 0) return;
+
+          if (payload.direction === "out") {
+            this.startVolumeFade({
+              direction: "out",
+              fromVolume: this.effectiveVolume,
+              targetVolume: 0,
+              durationSeconds: durationSec,
+              finishAction: "none", // Jogador aguarda commit authoritative do Mestre ao zerar
+            });
+          } else {
+            this.startVolumeFade({
+              direction: "in",
+              fromVolume: this.effectiveVolume,
+              targetVolume: this.getTimelineVolume(),
+              durationSeconds: durationSec,
+            });
+          }
+        },
+      )
       .on(
         "postgres_changes",
         {
@@ -866,7 +1165,9 @@ export class MusicSync {
       .subscribe();
   }
 
-  private broadcastPlaybackState(state: PlaybackState): void {
+  private broadcastPlaybackState(
+    state: PlaybackState & { fade_duration?: FadeDurationSeconds },
+  ): void {
     if (!this.playbackChannel) return;
     this.playbackChannel
       .send({
@@ -877,12 +1178,37 @@ export class MusicSync {
       .catch(() => {});
   }
 
+  private broadcastFadeSignal(direction: FadeDirection): void {
+    if (!this.playbackChannel || !this.roomId || this.fadeDurationSeconds <= 0) return;
+    this.playbackChannel
+      .send({
+        type: "broadcast",
+        event: "ost_fade",
+        payload: {
+          room_id: this.roomId,
+          direction,
+          duration_sec: this.fadeDurationSeconds,
+        },
+      })
+      .catch(() => {});
+  }
+
   // ============================================================================
-  // FUNÇÕES DO MESTRE (OTIMIZADAS COM RESPOSTA OTIMISTA + BROADCAST INSTANTÂNEO)
+  // FUNÇÕES DO MESTRE (OTIMIZADAS + FADE IN / FADE OUT NO MESMO CANAL)
   // ============================================================================
 
   public async playTrack(track: Track): Promise<void> {
     if (!this.roomId) throw new Error("Nenhuma sala conectada.");
+
+    const targetVolume = this.getTimelineVolume();
+    const isSameTrack =
+      normalizeTrackUrl(this.currentState?.track_url) === normalizeTrackUrl(track.url);
+
+    // Se estiver fazendo fade out na mesma faixa e o usuário ligar novamente, reverte do volume atual
+    if (isSameTrack && this.activeFade?.direction === "out" && this.currentState?.is_playing) {
+      await this.resume();
+      return;
+    }
 
     const updatedAt = this.nextMonotonicIsoTimestamp();
     const optimisticState: PlaybackState = {
@@ -892,14 +1218,29 @@ export class MusicSync {
       started_at: updatedAt,
       is_playing: true,
       paused_position: 0,
-      volume: this.currentState?.volume ?? 1.0,
+      volume: targetVolume,
       loop: this.currentState?.loop ?? false,
       updated_at: updatedAt,
     };
 
-    // Resposta imediata local + broadcast em <50ms
+    if (this.fadeDurationSeconds > 0) {
+      const startVol = isSameTrack && this.currentState?.is_playing ? this.effectiveVolume : 0;
+      this.startVolumeFade({
+        direction: "in",
+        fromVolume: startVol,
+        targetVolume,
+        durationSeconds: this.fadeDurationSeconds,
+      });
+    } else {
+      this.cancelActiveFade(false);
+      this.effectiveVolume = targetVolume;
+    }
+
     this.applyPlaybackState(optimisticState);
-    this.broadcastPlaybackState(optimisticState);
+    this.broadcastPlaybackState({
+      ...optimisticState,
+      fade_duration: this.fadeDurationSeconds,
+    });
 
     try {
       const { data, error } = await this.supabase
@@ -932,6 +1273,29 @@ export class MusicSync {
 
   public async pause(): Promise<void> {
     if (!this.roomId || !this.currentState || !this.currentState.is_playing) return;
+
+    if (this.fadeDurationSeconds > 0) {
+      if (this.activeFade?.direction === "out") {
+        this.activeFade.finishAction = "pause";
+        return;
+      }
+
+      this.broadcastFadeSignal("out");
+      this.startVolumeFade({
+        direction: "out",
+        fromVolume: this.effectiveVolume,
+        targetVolume: 0,
+        durationSeconds: this.fadeDurationSeconds,
+        finishAction: "pause",
+      });
+      return;
+    }
+
+    await this.commitPauseImmediate();
+  }
+
+  private async commitPauseImmediate(): Promise<void> {
+    if (!this.roomId || !this.currentState) return;
 
     const currentPos =
       this.activeHowlLoaded && this.activeHowl
@@ -976,12 +1340,25 @@ export class MusicSync {
   }
 
   public async resume(): Promise<void> {
-    if (
-      !this.roomId ||
-      !this.currentState ||
-      this.currentState.is_playing ||
-      !this.currentState.track_url
-    ) {
+    if (!this.roomId || !this.currentState || !this.currentState.track_url) {
+      return;
+    }
+
+    const targetVolume = this.getTimelineVolume();
+
+    // Se estiver no meio de um fade out (ainda tocando), reverte suavemente para fade in
+    if (this.currentState.is_playing && this.activeFade?.direction === "out") {
+      this.broadcastFadeSignal("in");
+      this.startVolumeFade({
+        direction: "in",
+        fromVolume: this.effectiveVolume,
+        targetVolume,
+        durationSeconds: this.fadeDurationSeconds,
+      });
+      return;
+    }
+
+    if (this.currentState.is_playing) {
       return;
     }
 
@@ -997,8 +1374,23 @@ export class MusicSync {
       updated_at: updatedAt,
     };
 
+    if (this.fadeDurationSeconds > 0) {
+      this.startVolumeFade({
+        direction: "in",
+        fromVolume: 0,
+        targetVolume,
+        durationSeconds: this.fadeDurationSeconds,
+      });
+    } else {
+      this.cancelActiveFade(false);
+      this.effectiveVolume = targetVolume;
+    }
+
     this.applyPlaybackState(optimisticState);
-    this.broadcastPlaybackState(optimisticState);
+    this.broadcastPlaybackState({
+      ...optimisticState,
+      fade_duration: this.fadeDurationSeconds,
+    });
 
     try {
       const { data, error } = await this.supabase
@@ -1066,6 +1458,31 @@ export class MusicSync {
   public async stop(): Promise<void> {
     if (!this.roomId) return;
 
+    if (this.currentState?.is_playing && this.fadeDurationSeconds > 0) {
+      if (this.activeFade?.direction === "out") {
+        this.activeFade.finishAction = "stop";
+        return;
+      }
+
+      this.broadcastFadeSignal("out");
+      this.startVolumeFade({
+        direction: "out",
+        fromVolume: this.effectiveVolume,
+        targetVolume: 0,
+        durationSeconds: this.fadeDurationSeconds,
+        finishAction: "stop",
+      });
+      return;
+    }
+
+    this.stopFadeTimers();
+    this.activeFade = null;
+    await this.commitStopImmediate();
+  }
+
+  private async commitStopImmediate(): Promise<void> {
+    if (!this.roomId) return;
+
     const updatedAt = this.nextMonotonicIsoTimestamp();
     const optimisticState: PlaybackState = {
       room_id: this.roomId,
@@ -1105,12 +1522,12 @@ export class MusicSync {
   }
 
   /**
-   * Ajusta o volume em tempo real localmente e faz debounce da persistência no Supabase
-   * para evitar enxurrada de requisições ao arrastar o slider.
+   * Atualiza o volume configurado na timeline.
+   * Se houver fade in em andamento, recalcula o alvo dinamicamente a partir do volume atual.
    */
   public async setVolume(volume: number): Promise<void> {
     if (!this.roomId) return;
-    const clampedVolume = Math.max(0, Math.min(1, volume));
+    const clampedVolume = clampVolume(volume);
     const updatedAt = this.nextMonotonicIsoTimestamp();
 
     const optimisticState: PlaybackState = {
@@ -1126,12 +1543,22 @@ export class MusicSync {
       updated_at: updatedAt,
     };
 
-    // Atualiza som e UI instantaneamente sem re-executar play/seek
     this.currentState = optimisticState;
-    if (this.activeHowl) {
-      this.activeHowl.volume(clampedVolume);
+
+    if (this.activeFade) {
+      if (this.activeFade.direction === "in") {
+        this.activeFade = updateVolumeFadeTarget(
+          this.activeFade,
+          clampedVolume,
+          this.getFadeClockNow(),
+        );
+      }
+    } else {
+      this.applyHowlVolume(clampedVolume);
     }
+
     this.notifyStateSubscribers(optimisticState);
+    this.emitStatusSnapshot();
 
     if (this.volumePersistTimer) {
       clearTimeout(this.volumePersistTimer);
@@ -1315,7 +1742,9 @@ export class MusicSync {
         normalizeTrackUrl(this.currentState?.track_url) ===
         normalizeTrackUrl(track.url)
       ) {
-        await this.stop();
+        this.stopFadeTimers();
+        this.activeFade = null;
+        await this.commitStopImmediate();
       }
 
       await this.fetchTracks();
@@ -1329,16 +1758,42 @@ export class MusicSync {
   // INSCRIÇÕES, STATUS E GETTERS
   // ============================================================================
 
-  private updateStatus(status: OstHealthStatus, error: string | null, duration: number): void {
-    const next: OstStatusSnapshot = {
+  private buildStatusSnapshot(
+    status: OstHealthStatus,
+    error: string | null,
+    duration: number,
+  ): OstStatusSnapshot {
+    return {
       status,
       error,
       duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
+      fadeDirection: this.activeFade?.direction ?? null,
+      fadeDurationSeconds: this.fadeDurationSeconds,
+      effectiveVolume: this.effectiveVolume,
     };
+  }
+
+  private emitStatusSnapshot(): void {
+    this.updateStatus(
+      this.statusSnapshot.status,
+      this.statusSnapshot.error,
+      this.statusSnapshot.duration,
+    );
+  }
+
+  private updateStatus(
+    status: OstHealthStatus,
+    error: string | null,
+    duration: number,
+  ): void {
+    const next = this.buildStatusSnapshot(status, error, duration);
     if (
       this.statusSnapshot.status === next.status &&
       this.statusSnapshot.error === next.error &&
-      Math.abs(this.statusSnapshot.duration - next.duration) < 0.05
+      Math.abs(this.statusSnapshot.duration - next.duration) < 0.05 &&
+      this.statusSnapshot.fadeDirection === next.fadeDirection &&
+      this.statusSnapshot.fadeDurationSeconds === next.fadeDurationSeconds &&
+      Math.abs(this.statusSnapshot.effectiveVolume - next.effectiveVolume) < 0.01
     ) {
       return;
     }
@@ -1400,6 +1855,10 @@ export class MusicSync {
 
   public getAudioStatus(): OstStatusSnapshot {
     return this.statusSnapshot;
+  }
+
+  public getEffectiveVolume(): number {
+    return this.effectiveVolume;
   }
 
   public getCurrentAudioTime(): number {

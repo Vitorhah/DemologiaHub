@@ -4,11 +4,16 @@ import {
   arePlaybackStatesEqual,
   computeSignedDrift,
   computeSynchronizedPosition,
+  createVolumeFade,
   decideDriftCorrection,
+  evaluateVolumeFade,
+  getNextFadeDuration,
   isStalePlaybackState,
+  normalizeFadeDuration,
   normalizeTrackUrl,
   PlaybackState,
   selectBestClockOffset,
+  updateVolumeFadeTarget,
 } from "../services/ostUtils";
 
 const baseState: PlaybackState = {
@@ -144,3 +149,59 @@ test("arePlaybackStatesEqual and isStalePlaybackState ignore duplicate or older 
   assert.equal(isStalePlaybackState(newer, baseState), true);
   assert.equal(isStalePlaybackState(baseState, newer), false);
 });
+
+test("getNextFadeDuration cycles 0 -> 2 -> 5 -> 10 -> 0 and normalizes invalid inputs", () => {
+  assert.equal(getNextFadeDuration(0), 2);
+  assert.equal(getNextFadeDuration(2), 5);
+  assert.equal(getNextFadeDuration(5), 10);
+  assert.equal(getNextFadeDuration(10), 0);
+  assert.equal(normalizeFadeDuration("5"), 5);
+  assert.equal(normalizeFadeDuration(99), 0);
+});
+
+test("evaluateVolumeFade linearly interpolates independent of frame rate and supports mid-fade target updates", () => {
+  const fadeIn = createVolumeFade({
+    direction: "in",
+    currentVolume: 0,
+    targetVolume: 0.8,
+    durationSeconds: 10,
+    nowMs: 1000,
+  });
+
+  // At t=2.5s (25%), volume is linearly 0.2
+  const quarter = evaluateVolumeFade(fadeIn, 3500);
+  assert.ok(Math.abs(quarter.volume - 0.2) < 0.0001);
+  assert.equal(quarter.completed, false);
+
+  // At t=5.0s (50%), volume is 0.4; update timeline target to 0.6 -> stays 0.4 at instant t=5.0s (no jump!)
+  const half = evaluateVolumeFade(fadeIn, 6000);
+  assert.ok(Math.abs(half.volume - 0.4) < 0.0001);
+
+  const updated = updateVolumeFadeTarget(fadeIn, 0.6, 6000);
+  const rightAfterUpdate = evaluateVolumeFade(updated, 6000);
+  assert.ok(Math.abs(rightAfterUpdate.volume - 0.4) < 0.0001);
+
+  // Halfway through remaining 5s -> 0.5; end -> 0.6
+  const halfwayRemaining = evaluateVolumeFade(updated, 8500);
+  assert.ok(Math.abs(halfwayRemaining.volume - 0.5) < 0.0001);
+  const done = evaluateVolumeFade(updated, 11000);
+  assert.ok(Math.abs(done.volume - 0.6) < 0.0001);
+  assert.equal(done.completed, true);
+
+  // Reversing mid-fade into fade-out starts from current interpolated volume (0.5)
+  const reversedOut = createVolumeFade({
+    direction: "out",
+    currentVolume: halfwayRemaining.volume,
+    targetVolume: 0,
+    durationSeconds: 5,
+    nowMs: 8500,
+    finishAction: "pause",
+  });
+  const startOut = evaluateVolumeFade(reversedOut, 8500);
+  assert.ok(Math.abs(startOut.volume - 0.5) < 0.0001);
+  const endOut = evaluateVolumeFade(reversedOut, 13500);
+  assert.equal(endOut.volume, 0);
+  assert.equal(endOut.completed, true);
+  assert.equal(reversedOut.finishAction, "pause");
+});
+

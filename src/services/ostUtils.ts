@@ -174,3 +174,115 @@ export function isStalePlaybackState(
 
   return false;
 }
+
+export type FadeDurationSeconds = 0 | 2 | 5 | 10;
+export const FADE_DURATION_CYCLE: readonly FadeDurationSeconds[] = [0, 2, 5, 10];
+
+export type FadeDirection = "in" | "out";
+export type FadeFinishAction = "none" | "pause" | "stop";
+
+export interface ActiveVolumeFade {
+  direction: FadeDirection;
+  fromVolume: number;
+  targetVolume: number;
+  startedAtMs: number;
+  durationMs: number;
+  finishAction: FadeFinishAction;
+}
+
+export function clampVolume(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(0, Math.min(1, value));
+}
+
+export function normalizeFadeDuration(value: unknown): FadeDurationSeconds {
+  const num = typeof value === "string" ? Number(value) : value;
+  if (num === 2 || num === 5 || num === 10) return num;
+  return 0;
+}
+
+export function getNextFadeDuration(
+  current: FadeDurationSeconds,
+): FadeDurationSeconds {
+  const idx = FADE_DURATION_CYCLE.indexOf(current);
+  if (idx === -1) return FADE_DURATION_CYCLE[0];
+  return FADE_DURATION_CYCLE[(idx + 1) % FADE_DURATION_CYCLE.length];
+}
+
+/**
+ * Avalia linearmente o volume atual com base no tempo decorrido (independente de FPS).
+ */
+export function evaluateVolumeFade(
+  fade: ActiveVolumeFade,
+  nowMs: number,
+): { volume: number; completed: boolean } {
+  const target = clampVolume(fade.targetVolume);
+  const from = clampVolume(fade.fromVolume);
+
+  if (fade.durationMs <= 0) {
+    return { volume: target, completed: true };
+  }
+
+  const elapsedMs = Math.max(0, nowMs - fade.startedAtMs);
+  const progress = Math.min(1, elapsedMs / fade.durationMs);
+  const volume = clampVolume(from + (target - from) * progress);
+
+  return {
+    volume,
+    completed: progress >= 1,
+  };
+}
+
+export function createVolumeFade(params: {
+  direction: FadeDirection;
+  currentVolume: number;
+  targetVolume: number;
+  durationSeconds: FadeDurationSeconds;
+  nowMs: number;
+  finishAction?: FadeFinishAction;
+}): ActiveVolumeFade {
+  const {
+    direction,
+    currentVolume,
+    targetVolume,
+    durationSeconds,
+    nowMs,
+    finishAction = "none",
+  } = params;
+
+  return {
+    direction,
+    fromVolume: clampVolume(currentVolume),
+    targetVolume: direction === "out" ? 0 : clampVolume(targetVolume),
+    startedAtMs: nowMs,
+    durationMs: Math.max(0, durationSeconds * 1000),
+    finishAction,
+  };
+}
+
+/**
+ * Atualiza o volume alvo durante um fade in em andamento partindo exatamente
+ * do volume interpolado no instante atual (sem saltos bruscos).
+ */
+export function updateVolumeFadeTarget(
+  fade: ActiveVolumeFade,
+  newTimelineTarget: number,
+  nowMs: number,
+): ActiveVolumeFade {
+  if (fade.direction === "out") {
+    return fade;
+  }
+
+  const { volume: currentVolume } = evaluateVolumeFade(fade, nowMs);
+  const elapsedMs = Math.max(0, nowMs - fade.startedAtMs);
+  const remainingMs = Math.max(16, fade.durationMs - elapsedMs);
+
+  return {
+    ...fade,
+    fromVolume: currentVolume,
+    targetVolume: clampVolume(newTimelineTarget),
+    startedAtMs: nowMs,
+    durationMs: remainingMs,
+  };
+}
+
