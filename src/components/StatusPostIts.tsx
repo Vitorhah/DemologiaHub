@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { Plus, X, Tag } from "lucide-react";
+import { motion } from "motion/react";
+import { SNAPPY_SPRING } from "./MotionPrimitives";
 import {
   StatusEffect,
   STATUS_COLOR_PALETTE,
@@ -27,14 +29,17 @@ export const StatusPostIt: React.FC<StatusPostItProps> = ({
   const tilt = tilts[index % tilts.length];
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, scale: 0.86, rotate: tilt - 2 }}
+      animate={{ opacity: 1, scale: 1, rotate: tilt }}
+      whileHover={{ scale: 1.04 }}
+      transition={SNAPPY_SPRING}
       style={{
         backgroundColor: swatch.bgHex,
         color: swatch.textHex,
         borderColor: swatch.borderHex,
-        transform: `rotate(${tilt}deg)`,
       }}
-      className={`relative border shadow-[0_4px_10px_rgba(0,0,0,0.55)] font-mono font-bold uppercase tracking-wider select-none transition-transform duration-150 hover:scale-[1.03] ${
+      className={`relative border shadow-[0_4px_10px_rgba(0,0,0,0.55)] font-mono font-bold uppercase tracking-wider select-none ${
         compact
           ? "pl-2 pr-3 py-1 text-[10px] min-w-[68px] max-w-[125px]"
           : "pl-2.5 pr-3.5 py-1.5 text-[11px] min-w-[82px] max-w-[140px]"
@@ -74,7 +79,7 @@ export const StatusPostIt: React.FC<StatusPostItProps> = ({
         }}
         className="pointer-events-none absolute bottom-0 right-0 w-0 h-0 border-t-[8px] border-r-[8px] opacity-85"
       />
-    </div>
+    </motion.div>
   );
 };
 

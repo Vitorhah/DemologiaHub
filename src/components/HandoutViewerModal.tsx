@@ -399,6 +399,7 @@ export const HandoutViewerModal: React.FC<HandoutViewerModalProps> = ({
                   <img
                     src={handout.secretImageUrl}
                     alt="Segredo do Handout"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     className="max-w-full max-h-[40dvh] object-contain"
                   />

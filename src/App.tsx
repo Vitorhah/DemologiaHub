@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from "react";
 import {
   Menu,
   X,
@@ -26,27 +26,17 @@ import { supabase, supabaseUrl, supabaseAnonKey } from "./lib/supabase";
 import { MusicSync, PlaybackState } from "./services/musicSync";
 import { useHandoutsSync } from "./services/useHandoutsSync";
 import { PasswordAuthModal } from "./components/PasswordAuthModal";
-import { MasterHeaderBar } from "./components/MasterHeaderBar";
-import { MasterOstPanel } from "./components/MasterOstPanel";
-import { MasterPlayersView } from "./components/MasterPlayersView";
-import { MasterExtrasView } from "./components/MasterExtrasView";
-import { MasterGameModeModal } from "./components/MasterGameModeModal";
 import { ModeTransitionEffect } from "./components/ModeTransitionEffect";
-import { CadernoDeCampoView } from "./components/CadernoDeCampoView";
 import { StatMathInput } from "./components/StatMathInput";
-import { TabletopGrid } from "./components/TabletopGrid";
 import { QuickDiceSection } from "./components/QuickDiceSection";
 import { RollingTerminal } from "./components/RollingTerminal";
 import { FormulaShortcutsSection } from "./components/FormulaShortcutsSection";
-import { DossierVariablesSection } from "./components/DossierVariablesSection";
-import { DossierInventorySection } from "./components/DossierInventorySection";
 import { NavigationSidebar } from "./components/NavigationSidebar";
-import { ChatContainer, clearMessages } from "./components/chat";
-import { HandoutsView } from "./components/HandoutsView";
-import { HandoutViewerModal } from "./components/HandoutViewerModal";
+import { clearMessages } from "./components/chat/chatStorage";
 import { HandoutNotificationToast } from "./components/HandoutNotificationToast";
 import { RollNotificationToast, RollToastData } from "./components/RollNotificationToast";
 import { StatusPostIt } from "./components/StatusPostIts";
+import { LazyModuleBoundary } from "./components/LazyModuleBoundary";
 import { isSystemRecordId } from "./utils/handoutsLogic";
 import { splitStatusEffectsForHud, StatusEffect } from "./utils/statusEffects";
 import {
@@ -54,6 +44,8 @@ import {
   getDefaultAttributeRollFormula,
   normalizeCustomFormulas,
   CustomRollFormula,
+  canSelectExtraSheetForRoll,
+  resolveRollActiveFichaId,
 } from "./utils/diceFormula";
 import {
   isOcultistaSheetName,
@@ -66,10 +58,17 @@ import {
   canRemoveStatusVariable,
   canRenameStatusVariable,
 } from "./utils/statusVariables";
-import { MasterUtilitiesView } from "./components/MasterUtilitiesView";
 import { useMinigamesSync } from "./services/useMinigamesSync";
-import { PlayerMinigameOverlay } from "./components/minigames/PlayerMinigameOverlay";
-import { MasterMinigameNotificationToast } from "./components/minigames/MasterMinigameNotificationToast";
+import { useMasterDataPushSync } from "./services/useMasterDataPushSync";
+import { PlayerDataPushFadeOverlay } from "./components/PlayerDataPushFadeOverlay";
+import {
+  applyMasterDataToSheetState,
+  summarizeMasterPush,
+} from "./utils/masterDataPush";
+import {
+  playDiceRollSound,
+  unlockDiceAudioContext,
+} from "./utils/diceSound";
 import { GameMode, GameModeConfig, HandoutItem } from "./types";
 import { DEMOLOGIA_LOGO_URL } from "./constants/branding";
 import { MotionConfig, AnimatePresence } from "motion/react";
@@ -79,6 +78,50 @@ import {
   MotionAccordion,
   MotionTabSwitch,
 } from "./components/MotionPrimitives";
+
+const MasterHeaderBar = React.lazy(() =>
+  import("./components/MasterHeaderBar").then((m) => ({ default: m.MasterHeaderBar }))
+);
+const MasterOstPanel = React.lazy(() =>
+  import("./components/MasterOstPanel").then((m) => ({ default: m.MasterOstPanel }))
+);
+const MasterPlayersView = React.lazy(() =>
+  import("./components/MasterPlayersView").then((m) => ({ default: m.MasterPlayersView }))
+);
+const MasterExtrasView = React.lazy(() =>
+  import("./components/MasterExtrasView").then((m) => ({ default: m.MasterExtrasView }))
+);
+const MasterGameModeModal = React.lazy(() =>
+  import("./components/MasterGameModeModal").then((m) => ({ default: m.MasterGameModeModal }))
+);
+const MasterUtilitiesView = React.lazy(() =>
+  import("./components/MasterUtilitiesView").then((m) => ({ default: m.MasterUtilitiesView }))
+);
+const CadernoDeCampoView = React.lazy(() =>
+  import("./components/CadernoDeCampoView").then((m) => ({ default: m.CadernoDeCampoView }))
+);
+const TabletopGrid = React.lazy(() =>
+  import("./components/TabletopGrid").then((m) => ({ default: m.TabletopGrid }))
+);
+const ChatContainer = React.lazy(() =>
+  import("./components/chat/ChatContainer").then((m) => ({ default: m.ChatContainer }))
+);
+const HandoutsView = React.lazy(() =>
+  import("./components/HandoutsView").then((m) => ({ default: m.HandoutsView }))
+);
+const HandoutViewerModal = React.lazy(() =>
+  import("./components/HandoutViewerModal").then((m) => ({ default: m.HandoutViewerModal }))
+);
+const PlayerMinigameOverlay = React.lazy(() =>
+  import("./components/minigames/PlayerMinigameOverlay").then((m) => ({
+    default: m.PlayerMinigameOverlay,
+  }))
+);
+const MasterMinigameNotificationToast = React.lazy(() =>
+  import("./components/minigames/MasterMinigameNotificationToast").then((m) => ({
+    default: m.MasterMinigameNotificationToast,
+  }))
+);
 
 const MestreStatInput = StatMathInput;
 
@@ -223,12 +266,21 @@ export default function App() {
     };
   }, [extraFichas]);
 
+  const [isMestreAuth, setIsMestreAuth] = useState(false);
   const [activeFichaId, setActiveFichaId] = useState("main"); // 'main' or the ID of an extra ficha
 
+  useEffect(() => {
+    if (!isMestreAuth && activeFichaId !== "main") {
+      setActiveFichaId("main");
+    }
+  }, [isMestreAuth, activeFichaId]);
+
+  const effectiveActiveFichaId = resolveRollActiveFichaId(isMestreAuth, activeFichaId);
+
   const rawState =
-    activeFichaId === "main"
+    effectiveActiveFichaId === "main"
       ? mainState
-      : extraFichas.find((f) => f.id === activeFichaId) || mainState;
+      : extraFichas.find((f) => f.id === effectiveActiveFichaId) || mainState;
 
   const state = {
     ...defaultState,
@@ -269,12 +321,12 @@ export default function App() {
   };
 
   const setState = (updater: any) => {
-    if (activeFichaId === "main") {
+    if (effectiveActiveFichaId === "main") {
       setMainState(updater);
     } else {
       setExtraFichas((prev) =>
         prev.map((f) => {
-          if (f.id === activeFichaId) {
+          if (f.id === effectiveActiveFichaId) {
             const fullF = {
               ...defaultState,
               ...f,
@@ -359,7 +411,6 @@ export default function App() {
     userUidRef.current = userUid;
   }, [userUid]);
   const [players, setPlayers] = useState<any[]>([]);
-  const [isMestreAuth, setIsMestreAuth] = useState(false);
   const [initiatives, setInitiatives] = useState<Record<string, number>>({});
   const [mestreTab, setMestreTab] = useState<
     "fichas" | "ost" | "extras" | "handouts" | "utilities"
@@ -388,6 +439,7 @@ export default function App() {
   const handleUnlockOstAudio = () => {
     if (ostAudioAccepted) return;
     musicSync.unlockAudio();
+    unlockDiceAudioContext();
     setOstAudioAccepted(true);
   };
 
@@ -508,6 +560,46 @@ export default function App() {
     isOnline,
   });
 
+  const handleApplyMasterDataPush = useCallback((payload: any) => {
+    const summary = summarizeMasterPush(payload);
+    setMainState((prev: any) => {
+      const updated = applyMasterDataToSheetState(prev, payload);
+      const historyList = Array.isArray(updated.history) ? updated.history : [];
+      const nextWithLog = {
+        ...updated,
+        history: summary
+          ? [
+              `<span style="color: #dc2626;">[Mestre] Dados recebidos: ${summary}</span>`,
+              ...historyList,
+            ].slice(0, 60)
+          : historyList,
+      };
+      try {
+        localStorage.setItem("rpgSheetState", JSON.stringify(nextWithLog));
+      } catch {}
+      return nextWithLog;
+    });
+  }, []);
+
+  const handleMasterPlayersPatchedLocally = useCallback(
+    (updatedRows: Record<string, any>) => {
+      setPlayers((current) =>
+        current.map((p) =>
+          updatedRows[p.id] ? { id: p.id, ...updatedRows[p.id] } : p
+        )
+      );
+    },
+    []
+  );
+
+  const masterDataPushSync = useMasterDataPushSync({
+    userUid,
+    isMestreAuth,
+    isOnline,
+    onApplyPush: handleApplyMasterDataPush,
+    onPlayersUpdatedLocally: handleMasterPlayersPatchedLocally,
+  });
+
   const activeQuickViewHandout = useMemo(() => {
     if (!quickViewHandout) return null;
     return (
@@ -515,6 +607,52 @@ export default function App() {
       quickViewHandout
     );
   }, [quickViewHandout, handoutsSync.handouts]);
+
+  const [hasOpenedQuickHandout, setHasOpenedQuickHandout] = useState(false);
+  const [hasOpenedModeModal, setHasOpenedModeModal] = useState(false);
+  const [hasOpenedMinigame, setHasOpenedMinigame] = useState(false);
+
+  useEffect(() => {
+    if (activeQuickViewHandout) setHasOpenedQuickHandout(true);
+  }, [activeQuickViewHandout]);
+
+  useEffect(() => {
+    if (showModeModal) setHasOpenedModeModal(true);
+  }, [showModeModal]);
+
+  useEffect(() => {
+    if (minigamesSync.activeAssignment) setHasOpenedMinigame(true);
+  }, [minigamesSync.activeAssignment]);
+
+  const quickViewFolderName = useMemo(() => {
+    if (!activeQuickViewHandout?.folderId) return null;
+    return (
+      handoutsSync.folders.find((f) => f.id === activeQuickViewHandout.folderId)
+        ?.name || null
+    );
+  }, [activeQuickViewHandout?.folderId, handoutsSync.folders]);
+
+  const ocultistaCount = useMemo(() => {
+    return (
+      players.filter((p) => isOcultistaSheetName(p.name)).length +
+      extraFichas.filter((f) => f.synchronized && isOcultistaSheetName(f.name))
+        .length
+    );
+  }, [players, extraFichas]);
+
+  const handleOpenModeModal = useCallback(() => setShowModeModal(true), []);
+  const handleCloseModeModal = useCallback(() => setShowModeModal(false), []);
+  const handleCloseQuickViewHandout = useCallback(() => setQuickViewHandout(null), []);
+  const handleBackToFicha = useCallback(() => setCurrentPage("ficha"), []);
+  const handleOpenSidebar = useCallback(() => setMenuOpen(true), []);
+  const chatCurrentUser = useMemo(
+    () => ({
+      id: userUid || "local_player",
+      name: state?.name || (isMestreAuth ? "Mestre" : "Agente"),
+      isMaster: isMestreAuth,
+    }),
+    [userUid, state?.name, isMestreAuth],
+  );
 
   const toggleFichaSync = async (ficha: any) => {
     if (!userUid) {
@@ -1158,6 +1296,7 @@ export default function App() {
           .not("id", "like", "EXTRA_FICHA_%")
           .not("id", "like", "HANDOUTS_INDIV_%")
           .not("id", "like", "MINIGAME_%")
+          .not("id", "like", "MASTER_PUSH_%")
           .not("id", "like", "CHAT_%")
           .not("id", "eq", "MASTER_STATE")
           .not("id", "eq", "MASTER_EVENTS")
@@ -1268,6 +1407,10 @@ export default function App() {
     vibrate(50);
     const roll = parseAndRoll(formulaToRoll);
     if (roll) {
+      playDiceRollSound({
+        ostAudioAccepted,
+        critical: roll.critical,
+      });
       const displayFormula = label ? `${label} (${roll.formula})` : roll.formula;
       setLastRollResult({ ...roll, formula: displayFormula });
       setRollToast({
@@ -1296,6 +1439,10 @@ export default function App() {
     const roll = parseAndRoll(formulaToRoll);
     if (!roll) return false;
     vibrate(50);
+    playDiceRollSound({
+      ostAudioAccepted,
+      critical: roll.critical,
+    });
     const displayFormula = label ? `${label} (${roll.formula})` : roll.formula;
     setRollToast({
       id: Date.now(),
@@ -1835,10 +1982,13 @@ export default function App() {
     Math.max(0, Math.min(100, (state.sm.current / state.sm.max) * 100)) || 0;
   const icons = ["X", "O", "∆", "□"];
 
+  const hudStatusEffects = useMemo(
+    () => splitStatusEffectsForHud(state.statusEffects || []),
+    [state.statusEffects]
+  );
+
   const renderHud = () => {
-    const { leftEffects, rightEffects } = splitStatusEffectsForHud(
-      state.statusEffects || []
-    );
+    const { leftEffects, rightEffects } = hudStatusEffects;
 
     return (
       <div className="hud-container relative pointer-events-auto">
@@ -1854,6 +2004,7 @@ export default function App() {
               className="eye-logo"
               src={DEMOLOGIA_LOGO_URL}
               alt={isRlMode ? "Símbolo Real L" : "Símbolo Demologia"}
+              decoding="async"
             />
           </div>
 
@@ -1923,7 +2074,9 @@ export default function App() {
         <div className="bar-wrapper">
           <div
             className="bar-fill hp-fill"
-            style={{ width: `${hpPercent}%` }}
+            style={{
+              transform: `scaleX(${Math.max(0, Math.min(1, (hpPercent || 0) / 100))}) translateZ(0)`,
+            }}
           ></div>
         </div>
         <div className="status-inputs">
@@ -1954,7 +2107,9 @@ export default function App() {
             <div className="bar-wrapper mt-2 sm:mt-2.5">
               <div
                 className="bar-fill pe-fill"
-                style={{ width: `${pePercent}%` }}
+                style={{
+                  transform: `scaleX(${Math.max(0, Math.min(1, (pePercent || 0) / 100))}) translateZ(0)`,
+                }}
               ></div>
             </div>
             <div className="status-inputs">
@@ -1987,7 +2142,9 @@ export default function App() {
             <div className="bar-wrapper mt-2 sm:mt-2.5">
               <div
                 className="bar-fill sm-fill"
-                style={{ width: `${smPercent}%` }}
+                style={{
+                  transform: `scaleX(${Math.max(0, Math.min(1, (smPercent || 0) / 100))}) translateZ(0)`,
+                }}
                 title={`Sanidade Mental: ${state.sm.current}/${state.sm.max}`}
               ></div>
             </div>
@@ -2467,14 +2624,18 @@ GRANT ALL ON TABLE public.players TO service_role;`}
 
       <ModeTransitionEffect activeMode={activeMode} />
 
-      <MasterGameModeModal
-        isOpen={showModeModal}
-        onClose={() => setShowModeModal(false)}
-        currentGlobalMode={gameModeConfig.globalMode || "demologia"}
-        playerModes={gameModeConfig.playerModes || {}}
-        players={players}
-        onApplyMode={handleApplyGameMode}
-      />
+      {(showModeModal || hasOpenedModeModal) && (
+        <Suspense fallback={null}>
+          <MasterGameModeModal
+            isOpen={showModeModal}
+            onClose={handleCloseModeModal}
+            currentGlobalMode={gameModeConfig.globalMode || "demologia"}
+            playerModes={gameModeConfig.playerModes || {}}
+            players={players}
+            onApplyMode={handleApplyGameMode}
+          />
+        </Suspense>
+      )}
 
       <AnimatePresence>
       {playerToKick && (
@@ -2587,7 +2748,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           setActiveFichaId={setActiveFichaId}
           setShowUpdateLog={setShowUpdateLog}
           gameMode={activeMode}
-          onOpenModeModal={isMestreAuth ? () => setShowModeModal(true) : undefined}
+          onOpenModeModal={isMestreAuth ? handleOpenModeModal : undefined}
           isOnline={isOnline}
           unreadHandoutsCount={handoutsSync.unreadCount}
         />
@@ -3279,34 +3440,39 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 : "bg-[#0e0e13]/95 border-[#22222c]"
             }`}
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <span
-                className={`text-[10px] uppercase tracking-wider px-2 py-0.5 border shrink-0 ${
-                  activeFichaId !== "main"
-                    ? "bg-blue-950/40 text-blue-300 border-blue-500/40"
-                    : isRlMode
-                      ? "bg-purple-950/40 text-purple-200 border-purple-500/40"
-                      : "bg-[#1a090c] text-[#ff9aa0] border-[var(--op-red)]/40"
-                }`}
-              >
-                {activeFichaId !== "main" ? "Ficha Extra" : "Ficha Normal"}
-              </span>
-              <span className="text-xs sm:text-sm font-bold text-white truncate">
-                {state.name || "Sem Nome"}
-              </span>
-            </div>
+              {(() => {
+                const isUsingExtraSheet = effectiveActiveFichaId !== "main";
+                return (
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className={`text-[10px] uppercase tracking-wider px-2 py-0.5 border shrink-0 ${
+                        isUsingExtraSheet
+                          ? "bg-blue-950/40 text-blue-300 border-blue-500/40"
+                          : isRlMode
+                            ? "bg-purple-950/40 text-purple-200 border-purple-500/40"
+                            : "bg-[#1a090c] text-[#ff9aa0] border-[var(--op-red)]/40"
+                      }`}
+                    >
+                      {isUsingExtraSheet ? "Ficha Extra" : "Ficha Normal"}
+                    </span>
+                    <span className="text-xs sm:text-sm font-bold text-white truncate">
+                      {state.name || "Sem Nome"}
+                    </span>
+                  </div>
+                );
+              })()}
 
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
               {(() => {
-                const isDiceInSheetActive =
-                  activeFichaId !== "main"
-                    ? state.diceInSheet !== false
-                    : diceInNormalSheet;
+                const isUsingExtraSheet = effectiveActiveFichaId !== "main";
+                const isDiceInSheetActive = isUsingExtraSheet
+                  ? state.diceInSheet !== false
+                  : diceInNormalSheet;
                 return (
                   <button
                     type="button"
                     onClick={() => {
-                      if (activeFichaId === "main") {
+                      if (!isUsingExtraSheet) {
                         setDiceInNormalSheet((prev) => !prev);
                       } else {
                         setState((prev: any) => ({
@@ -3341,7 +3507,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 );
               })()}
 
-              {extraFichas.length > 0 && (
+              {canSelectExtraSheetForRoll(isMestreAuth, extraFichas.length) && (
                 <div className="flex items-center gap-2 flex-1 sm:flex-initial">
                   <label
                     htmlFor="dice-active-sheet-select"
@@ -3351,8 +3517,12 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   </label>
                   <select
                     id="dice-active-sheet-select"
-                    value={activeFichaId}
-                    onChange={(e) => setActiveFichaId(e.target.value)}
+                    value={effectiveActiveFichaId}
+                    onChange={(e) => {
+                      if (isMestreAuth) {
+                        setActiveFichaId(e.target.value);
+                      }
+                    }}
                     className={`flex-1 sm:flex-initial min-h-[38px] px-2.5 py-1 text-xs font-mono text-white border rounded-none outline-none cursor-pointer ${
                       isRlMode
                         ? "bg-[#140e24] border-purple-500/35 focus:border-[#c084fc]"
@@ -3401,7 +3571,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 }
                 onExecuteFormula={executeCustomFormulaRoll}
                 sheetName={state.name || "Sem Nome"}
-                isExtraSheet={activeFichaId !== "main"}
+                isExtraSheet={effectiveActiveFichaId !== "main"}
                 isRlMode={isRlMode}
               />
             </div>
@@ -3410,15 +3580,17 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       )}
 
       {currentPage === "grid" && (
-        <TabletopGrid
-          supabase={supabase}
-          globalChannelRef={globalChannelRef}
-          userUid={userUid}
-          players={players}
-          isMestreAuth={isMestreAuth}
-          globalGridState={globalGridState}
-          setGlobalGridState={setGlobalGridState}
-        />
+        <LazyModuleBoundary isRlMode={isRlMode} label="Carregando Grid Tático...">
+          <TabletopGrid
+            supabase={supabase}
+            globalChannelRef={globalChannelRef}
+            userUid={userUid}
+            players={players}
+            isMestreAuth={isMestreAuth}
+            globalGridState={globalGridState}
+            setGlobalGridState={setGlobalGridState}
+          />
+        </LazyModuleBoundary>
       )}
 
       {currentPage === "conexao" && (
@@ -3588,178 +3760,181 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       )}
 
       {currentPage === "chat" && (
-        <div className="flex-1 w-full flex flex-col justify-start items-center pt-14 lg:pt-6 px-2 sm:px-4 lg:px-6 pb-4">
-          <div className="w-full max-w-5xl flex-1 flex flex-col min-h-[calc(100dvh-4.5rem)] lg:min-h-[calc(100dvh-3rem)]">
-            <ChatContainer
-              currentUser={{
-                id: userUid || "local_player",
-                name: state?.name || (isMestreAuth ? "Mestre" : "Agente"),
-                isMaster: isMestreAuth,
-              }}
-              onlineCount={players.length + 1}
-              isOnline={isOnline}
-              onBackToFicha={() => setCurrentPage("ficha")}
-            />
+        <div className="w-full h-[100dvh] max-h-[100dvh] overflow-hidden flex flex-col items-center pt-14 lg:pt-6 px-2 sm:px-4 lg:px-6 pb-3 sm:pb-4">
+          <div className="w-full max-w-5xl flex-1 min-h-0 flex flex-col">
+            <LazyModuleBoundary isRlMode={isRlMode} label="Carregando Chat...">
+              <ChatContainer
+                currentUser={chatCurrentUser}
+                onlineCount={players.length + 1}
+                isOnline={isOnline}
+                onBackToFicha={handleBackToFicha}
+              />
+            </LazyModuleBoundary>
           </div>
         </div>
       )}
 
       {currentPage === "handouts" && (
         <div className="pt-14 lg:pt-6 pb-28">
-          <HandoutsView
-            handouts={handoutsSync.handouts}
-            folders={handoutsSync.folders}
-            unreadIds={handoutsSync.unreadIds}
-            syncStatus={handoutsSync.syncStatus}
-            isMestre={isMestreAuth}
-            players={players}
-            onMarkAsRead={handoutsSync.markAsRead}
-            onSaveHandout={handoutsSync.saveHandout}
-            onDeleteHandout={handoutsSync.deleteHandout}
-            onUpdateVisibility={handoutsSync.updateHandoutVisibility}
-            onToggleSecret={handoutsSync.toggleHandoutSecret}
-            onCreateFolder={handoutsSync.createFolder}
-            onDeleteFolder={handoutsSync.deleteFolder}
-          />
+          <LazyModuleBoundary isRlMode={isRlMode} label="Carregando Handouts...">
+            <HandoutsView
+              handouts={handoutsSync.handouts}
+              folders={handoutsSync.folders}
+              unreadIds={handoutsSync.unreadIds}
+              syncStatus={handoutsSync.syncStatus}
+              isMestre={isMestreAuth}
+              players={players}
+              onMarkAsRead={handoutsSync.markAsRead}
+              onSaveHandout={handoutsSync.saveHandout}
+              onDeleteHandout={handoutsSync.deleteHandout}
+              onUpdateVisibility={handoutsSync.updateHandoutVisibility}
+              onToggleSecret={handoutsSync.toggleHandoutSecret}
+              onCreateFolder={handoutsSync.createFolder}
+              onDeleteFolder={handoutsSync.deleteFolder}
+            />
+          </LazyModuleBoundary>
         </div>
       )}
 
       {currentPage === "mestre" && (
         <div className="min-h-[100dvh] pb-24 font-sans">
-          <MasterHeaderBar
-            activeTab={mestreTab}
-            setActiveTab={setMestreTab}
-            playersCount={players.length}
-            extrasCount={extraFichas.length}
-            handoutsCount={handoutsSync.handouts.length}
-            isOstPlaying={Boolean(playbackState?.is_playing)}
-            onRollInitiative={handleRollAllInitiatives}
-            onOpenMenu={() => setMenuOpen(true)}
-            onReturnToMainSheet={() => {
-              setActiveFichaId("main");
-              setCurrentPage("ficha");
-            }}
-            viewMode={mestreViewMode}
-            setViewMode={setMestreViewMode}
-            onClearChatHistory={handleClearChatHistory}
-            currentGlobalMode={gameModeConfig.globalMode}
-            onOpenModeModal={() => setShowModeModal(true)}
-          />
+          <LazyModuleBoundary isRlMode={isRlMode} label="Carregando Painel do Mestre...">
+            <MasterHeaderBar
+              activeTab={mestreTab}
+              setActiveTab={setMestreTab}
+              playersCount={players.length}
+              extrasCount={extraFichas.length}
+              handoutsCount={handoutsSync.handouts.length}
+              isOstPlaying={Boolean(playbackState?.is_playing)}
+              onRollInitiative={handleRollAllInitiatives}
+              onOpenMenu={handleOpenSidebar}
+              onReturnToMainSheet={() => {
+                setActiveFichaId("main");
+                setCurrentPage("ficha");
+              }}
+              viewMode={mestreViewMode}
+              setViewMode={setMestreViewMode}
+              onClearChatHistory={handleClearChatHistory}
+              currentGlobalMode={gameModeConfig.globalMode}
+              onOpenModeModal={handleOpenModeModal}
+            />
 
-          <MotionTabSwitch viewKey={mestreTab} className="w-full">
-          {mestreTab === "fichas" && (
-            <div>
-              <MasterPlayersView
-                players={players}
-                extraFichas={extraFichas}
-                initiatives={initiatives}
-                viewMode={mestreViewMode}
-                onClearChatHistory={handleClearChatHistory}
-                onRollInitiative={handleRollAllInitiatives}
-                playerModes={gameModeConfig.playerModes || {}}
-                currentGlobalMode={gameModeConfig.globalMode}
-                onTogglePlayerMode={handleTogglePlayerMode}
-                onKickPlayer={(player) => setPlayerToKick(player)}
-                onOpenInteractiveSheet={(sheetId) => {
-                  setActiveFichaId(sheetId);
-                  setCurrentPage("ficha_extra");
-                }}
-                onUpdateStat={(player, stat, val, isExtraSheet, rawExtraSheetId) => {
-                  if (isExtraSheet && rawExtraSheetId) {
-                    setExtraFichas((prev) =>
-                      prev.map((f) =>
-                        f.id === rawExtraSheetId
-                          ? { ...f, [stat]: { ...f[stat], current: val }, last_local_edit: Date.now() }
-                          : f
-                      )
-                    );
-                  } else {
-                    setPlayers((current) =>
-                      current.map((pl) =>
-                        pl.id === player.id ? { ...pl, [stat]: { ...pl[stat], current: val } } : pl
-                      )
-                    );
-                  }
-                  editPlayerStatExact(player, stat, val);
-                }}
-                onUpdateStatusEffects={updatePlayerStatusEffects}
-              />
-            </div>
-          )}
+            <MotionTabSwitch viewKey={mestreTab} className="w-full">
+            {mestreTab === "fichas" && (
+              <div>
+                <MasterPlayersView
+                  players={players}
+                  extraFichas={extraFichas}
+                  initiatives={initiatives}
+                  viewMode={mestreViewMode}
+                  onClearChatHistory={handleClearChatHistory}
+                  onRollInitiative={handleRollAllInitiatives}
+                  playerModes={gameModeConfig.playerModes || {}}
+                  currentGlobalMode={gameModeConfig.globalMode}
+                  onTogglePlayerMode={handleTogglePlayerMode}
+                  onKickPlayer={(player) => setPlayerToKick(player)}
+                  onOpenInteractiveSheet={(sheetId) => {
+                    setActiveFichaId(sheetId);
+                    setCurrentPage("ficha_extra");
+                  }}
+                  onUpdateStat={(player, stat, val, isExtraSheet, rawExtraSheetId) => {
+                    if (isExtraSheet && rawExtraSheetId) {
+                      setExtraFichas((prev) =>
+                        prev.map((f) =>
+                          f.id === rawExtraSheetId
+                            ? { ...f, [stat]: { ...f[stat], current: val }, last_local_edit: Date.now() }
+                            : f
+                        )
+                      );
+                    } else {
+                      setPlayers((current) =>
+                        current.map((pl) =>
+                          pl.id === player.id ? { ...pl, [stat]: { ...pl[stat], current: val } } : pl
+                        )
+                      );
+                    }
+                    editPlayerStatExact(player, stat, val);
+                  }}
+                  onUpdateStatusEffects={updatePlayerStatusEffects}
+                />
+              </div>
+            )}
 
-          {mestreTab === "ost" && (
-            <div className="pt-3">
-              <MasterOstPanel musicSync={musicSync} />
-            </div>
-          )}
+            {mestreTab === "ost" && (
+              <div className="pt-3">
+                <MasterOstPanel musicSync={musicSync} />
+              </div>
+            )}
 
-          {mestreTab === "extras" && (
-            <div>
-              <MasterExtrasView
-                extraFichas={extraFichas}
-                setExtraFichas={setExtraFichas}
-                defaultState={defaultState}
-                activeFichaId={activeFichaId}
-                setActiveFichaId={setActiveFichaId}
-                setCurrentPage={setCurrentPage}
-                setMestreTab={setMestreTab}
-                toggleFichaSync={toggleFichaSync}
-                supabase={supabase}
-                currentGlobalMode={gameModeConfig.globalMode || "demologia"}
-              />
-            </div>
-          )}
+            {mestreTab === "extras" && (
+              <div>
+                <MasterExtrasView
+                  extraFichas={extraFichas}
+                  setExtraFichas={setExtraFichas}
+                  defaultState={defaultState}
+                  activeFichaId={activeFichaId}
+                  setActiveFichaId={setActiveFichaId}
+                  setCurrentPage={setCurrentPage}
+                  setMestreTab={setMestreTab}
+                  toggleFichaSync={toggleFichaSync}
+                  supabase={supabase}
+                  currentGlobalMode={gameModeConfig.globalMode || "demologia"}
+                />
+              </div>
+            )}
 
-          {mestreTab === "handouts" && (
-            <div className="pt-4">
-              <HandoutsView
-                handouts={handoutsSync.handouts}
-                folders={handoutsSync.folders}
-                unreadIds={handoutsSync.unreadIds}
-                syncStatus={handoutsSync.syncStatus}
-                isMestre={true}
-                players={players}
-                onMarkAsRead={handoutsSync.markAsRead}
-                onSaveHandout={handoutsSync.saveHandout}
-                onDeleteHandout={handoutsSync.deleteHandout}
-                onUpdateVisibility={handoutsSync.updateHandoutVisibility}
-                onToggleSecret={handoutsSync.toggleHandoutSecret}
-                onCreateFolder={handoutsSync.createFolder}
-                onDeleteFolder={handoutsSync.deleteFolder}
-              />
-            </div>
-          )}
+            {mestreTab === "handouts" && (
+              <div className="pt-4">
+                <HandoutsView
+                  handouts={handoutsSync.handouts}
+                  folders={handoutsSync.folders}
+                  unreadIds={handoutsSync.unreadIds}
+                  syncStatus={handoutsSync.syncStatus}
+                  isMestre={true}
+                  players={players}
+                  onMarkAsRead={handoutsSync.markAsRead}
+                  onSaveHandout={handoutsSync.saveHandout}
+                  onDeleteHandout={handoutsSync.deleteHandout}
+                  onUpdateVisibility={handoutsSync.updateHandoutVisibility}
+                  onToggleSecret={handoutsSync.toggleHandoutSecret}
+                  onCreateFolder={handoutsSync.createFolder}
+                  onDeleteFolder={handoutsSync.deleteFolder}
+                />
+              </div>
+            )}
 
-          {mestreTab === "utilities" && (
-            <div className="pt-2">
-              <MasterUtilitiesView
-                ocultistaCount={
-                  players.filter((p) => isOcultistaSheetName(p.name)).length +
-                  extraFichas.filter((f) => f.synchronized && isOcultistaSheetName(f.name)).length
-                }
-                onDisconnectDefaultSheets={handleDisconnectDefaultSheets}
-                players={players}
-                minigameResults={minigamesSync.recentResults}
-                isSendingMinigame={minigamesSync.isSending}
-                onSendMinigame={minigamesSync.sendMinigame}
-                onClearMinigameResults={minigamesSync.clearRecentResults}
-              />
-            </div>
-          )}
-          </MotionTabSwitch>
+            {mestreTab === "utilities" && (
+              <div className="pt-2">
+                <MasterUtilitiesView
+                  ocultistaCount={ocultistaCount}
+                  onDisconnectDefaultSheets={handleDisconnectDefaultSheets}
+                  players={players}
+                  minigameResults={minigamesSync.recentResults}
+                  isSendingMinigame={minigamesSync.isSending}
+                  onSendMinigame={minigamesSync.sendMinigame}
+                  onClearMinigameResults={minigamesSync.clearRecentResults}
+                  isSendingDataPush={masterDataPushSync.isSending}
+                  onSendDataToPlayers={masterDataPushSync.sendDataToPlayers}
+                />
+              </div>
+            )}
+            </MotionTabSwitch>
+          </LazyModuleBoundary>
         </div>
       )}
 
       {currentPage === "caderno" && (
         <div className="min-h-[100dvh] w-full flex flex-col pt-3 sm:pt-5 pb-16">
-          <CadernoDeCampoView
-            onBackToSheet={() => setCurrentPage("ficha")}
-            onOpenSidebar={() => setMenuOpen(true)}
-            userUid={userUid}
-            isOnline={isOnline}
-            playerName={state?.name || "Agente"}
-            onQuickRoll={(formula, label) => executeRoll(formula, label)}
-          />
+          <LazyModuleBoundary isRlMode={isRlMode} label="Carregando Caderno de Campo...">
+            <CadernoDeCampoView
+              onBackToSheet={handleBackToFicha}
+              onOpenSidebar={handleOpenSidebar}
+              userUid={userUid}
+              isOnline={isOnline}
+              playerName={state?.name || "Agente"}
+              onQuickRoll={(formula, label) => executeRoll(formula, label)}
+            />
+          </LazyModuleBoundary>
         </div>
       )}
       </MotionTabSwitch>
@@ -3867,34 +4042,40 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         }}
       />
 
-      <HandoutViewerModal
-        handout={activeQuickViewHandout}
-        isMestre={isMestreAuth}
-        folderName={
-          activeQuickViewHandout?.folderId
-            ? handoutsSync.folders.find(
-                (f) => f.id === activeQuickViewHandout.folderId
-              )?.name || null
-            : null
-        }
-        onClose={() => setQuickViewHandout(null)}
-        onToggleRevealSecret={
-          isMestreAuth ? handoutsSync.toggleHandoutSecret : undefined
-        }
-      />
+      {(activeQuickViewHandout || hasOpenedQuickHandout) && (
+        <Suspense fallback={null}>
+          <HandoutViewerModal
+            handout={activeQuickViewHandout}
+            isMestre={isMestreAuth}
+            folderName={quickViewFolderName}
+            onClose={handleCloseQuickViewHandout}
+            onToggleRevealSecret={
+              isMestreAuth ? handoutsSync.toggleHandoutSecret : undefined
+            }
+          />
+        </Suspense>
+      )}
 
-      <PlayerMinigameOverlay
-        assignment={minigamesSync.activeAssignment}
-        onFinish={minigamesSync.submitResult}
-        onDismiss={minigamesSync.dismissActiveMinigame}
-      />
+      {(minigamesSync.activeAssignment || hasOpenedMinigame) && (
+        <Suspense fallback={null}>
+          <PlayerMinigameOverlay
+            assignment={minigamesSync.activeAssignment}
+            onFinish={minigamesSync.submitResult}
+            onDismiss={minigamesSync.dismissActiveMinigame}
+          />
+        </Suspense>
+      )}
 
       {isMestreAuth && (
-        <MasterMinigameNotificationToast
-          notification={minigamesSync.toastNotification}
-          onDismiss={minigamesSync.dismissToast}
-        />
+        <Suspense fallback={null}>
+          <MasterMinigameNotificationToast
+            notification={minigamesSync.toastNotification}
+            onDismiss={minigamesSync.dismissToast}
+          />
+        </Suspense>
       )}
+
+      <PlayerDataPushFadeOverlay phase={masterDataPushSync.fadePhase} />
       </div>
     </div>
     </MotionConfig>

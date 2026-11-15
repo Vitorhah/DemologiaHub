@@ -256,3 +256,18 @@ export function removeCustomFormula(
 ): CustomRollFormula[] {
   return list.filter((f) => f.id !== id);
 }
+
+export function canSelectExtraSheetForRoll(
+  isMestreAuth: boolean,
+  extraFichasCount: number
+): boolean {
+  return Boolean(isMestreAuth && extraFichasCount > 0);
+}
+
+export function resolveRollActiveFichaId(
+  isMestreAuth: boolean,
+  activeFichaId: string
+): string {
+  return isMestreAuth && activeFichaId ? activeFichaId : "main";
+}
+

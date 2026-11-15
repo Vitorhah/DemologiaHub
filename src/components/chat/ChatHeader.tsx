@@ -8,13 +8,13 @@ interface ChatHeaderProps {
   syncStatus?: SyncStatus;
 }
 
-export function ChatHeader({
+export const ChatHeader = React.memo(function ChatHeader({
   roomId,
   onlineCount = 1,
   syncStatus = "connected",
 }: ChatHeaderProps) {
   return (
-    <header className="relative w-full bg-[var(--op-bg-secondary)] border-b border-[var(--op-border)] px-4 py-3 select-none z-20 rounded-none">
+    <header className="relative w-full shrink-0 bg-[var(--op-bg-secondary)] border-b border-[var(--op-border)] px-4 py-3 select-none z-20 rounded-none">
       <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
         {/* Lado Esquerdo: Ícone e Nome da Sala */}
         <div className="flex items-center gap-3 min-w-0">
@@ -64,4 +64,4 @@ export function ChatHeader({
       </div>
     </header>
   );
-}
+});

@@ -1,7 +1,21 @@
-import React, { useState } from "react";
-import { Wrench, UserX, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import React, { useState, useEffect, Suspense } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Wrench, UserX, Loader2, CheckCircle2, AlertTriangle, Send } from "lucide-react";
 import { MinigameConfig, MinigameResultPayload } from "../types/minigames";
-import { MasterMinigamesPanel } from "./minigames/MasterMinigamesPanel";
+import { MasterDataPushPayload } from "../types/masterDataPush";
+import { CLINICAL_EASE } from "./MotionPrimitives";
+import { LazyModuleFallback } from "./LazyModuleBoundary";
+
+const LazyMasterMinigamesPanel = React.lazy(() =>
+  import("./minigames/MasterMinigamesPanel").then((m) => ({
+    default: m.MasterMinigamesPanel,
+  }))
+);
+const LazyMasterSendDataModal = React.lazy(() =>
+  import("./MasterSendDataModal").then((m) => ({
+    default: m.MasterSendDataModal,
+  }))
+);
 
 export interface MasterUtilitiesViewProps {
   ocultistaCount: number;
@@ -9,7 +23,7 @@ export interface MasterUtilitiesViewProps {
     removedCount: number;
     error?: string;
   }>;
-  players: { id: string; name?: string }[];
+  players: { id: string; name?: string; variables?: Record<string, any> }[];
   minigameResults: MinigameResultPayload[];
   isSendingMinigame: boolean;
   onSendMinigame: (
@@ -17,6 +31,11 @@ export interface MasterUtilitiesViewProps {
     targetPlayerIds: string[]
   ) => Promise<{ ok: boolean; error?: string }>;
   onClearMinigameResults: () => void;
+  isSendingDataPush: boolean;
+  onSendDataToPlayers: (
+    targetPlayerIds: string[],
+    payload: MasterDataPushPayload
+  ) => Promise<{ ok: boolean; updatedCount: number; error?: string }>;
 }
 
 export function MasterUtilitiesView({
@@ -27,12 +46,21 @@ export function MasterUtilitiesView({
   isSendingMinigame,
   onSendMinigame,
   onClearMinigameResults,
+  isSendingDataPush,
+  onSendDataToPlayers,
 }: MasterUtilitiesViewProps) {
   const [isCleaning, setIsCleaning] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "info" | "error";
     text: string;
   } | null>(null);
+  const [showSendDataModal, setShowSendDataModal] = useState(false);
+  const [hasOpenedSendDataModal, setHasOpenedSendDataModal] = useState(false);
+  const [sendDataFeedback, setSendDataFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (showSendDataModal) setHasOpenedSendDataModal(true);
+  }, [showSendDataModal]);
 
   const handleDisconnectClick = async () => {
     if (isCleaning) return;
@@ -123,39 +151,104 @@ export function MasterUtilitiesView({
           </button>
         </div>
 
-        {feedback && (
-          <div
-            role="status"
-            className={`px-3 py-2.5 text-xs border flex items-center gap-2 ${
-              feedback.type === "error"
-                ? "bg-red-950/45 border-red-700/60 text-red-300"
-                : feedback.type === "success"
-                  ? "bg-emerald-950/40 border-emerald-600/50 text-emerald-300"
-                  : "bg-[#13131b] border-[#282834] text-[#b4b5c2]"
-            }`}
-          >
-            {feedback.type === "error" ? (
-              <AlertTriangle size={14} className="shrink-0 text-red-400" />
-            ) : (
-              <CheckCircle2
-                size={14}
-                className={`shrink-0 ${
-                  feedback.type === "success" ? "text-emerald-400" : "text-[#8a8b99]"
-                }`}
-              />
-            )}
-            <span>{feedback.text}</span>
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {feedback && (
+            <motion.div
+              key={feedback.text}
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.16, ease: CLINICAL_EASE }}
+              role="status"
+              className={`px-3 py-2.5 text-xs border flex items-center gap-2 ${
+                feedback.type === "error"
+                  ? "bg-red-950/45 border-red-700/60 text-red-300"
+                  : feedback.type === "success"
+                    ? "bg-emerald-950/40 border-emerald-600/50 text-emerald-300"
+                    : "bg-[#13131b] border-[#282834] text-[#b4b5c2]"
+              }`}
+            >
+              {feedback.type === "error" ? (
+                <AlertTriangle size={14} className="shrink-0 text-red-400" />
+              ) : (
+                <CheckCircle2
+                  size={14}
+                  className={`shrink-0 ${
+                    feedback.type === "success" ? "text-emerald-400" : "text-[#8a8b99]"
+                  }`}
+                />
+              )}
+              <span>{feedback.text}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      <MasterMinigamesPanel
-        players={players}
-        recentResults={minigameResults}
-        isSending={isSendingMinigame}
-        onSendMinigame={onSendMinigame}
-        onClearResults={onClearMinigameResults}
-      />
+      {/* Enviar Dados: Skills, Tributos e 6 Status Padrões */}
+      <div className="bg-[#0c0c10] border border-[#202028] rounded-none p-4 sm:p-5 flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+              Enviar Dados
+            </h3>
+            <p className="text-xs text-[#8c8d9c] mt-1">
+              Mande Skills, Tributos e Altere status dos players.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSendDataFeedback(null);
+              setShowSendDataModal(true);
+            }}
+            className="min-h-[44px] px-4 py-2.5 bg-gradient-to-r from-[#8f171c] to-[#5c0e12] hover:from-[#b52a30] hover:to-[#7a1319] active:scale-[0.98] border border-[#ff8085]/35 text-white text-xs font-bold uppercase tracking-wider rounded-none transition-all cursor-pointer touch-manipulation flex items-center justify-center gap-2 shrink-0"
+          >
+            <Send size={14} />
+            <span>Enviar Dados</span>
+          </button>
+        </div>
+
+        <AnimatePresence initial={false}>
+          {sendDataFeedback && (
+            <motion.div
+              key={sendDataFeedback}
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.16, ease: CLINICAL_EASE }}
+              role="status"
+              className="px-3 py-2.5 text-xs border bg-emerald-950/40 border-emerald-600/50 text-emerald-300 flex items-center gap-2"
+            >
+              <CheckCircle2 size={14} className="shrink-0 text-emerald-400" />
+              <span>{sendDataFeedback}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <Suspense fallback={<LazyModuleFallback label="Carregando minigames..." />}>
+        <LazyMasterMinigamesPanel
+          players={players}
+          recentResults={minigameResults}
+          isSending={isSendingMinigame}
+          onSendMinigame={onSendMinigame}
+          onClearResults={onClearMinigameResults}
+        />
+      </Suspense>
+
+      {(showSendDataModal || hasOpenedSendDataModal) && (
+        <Suspense fallback={null}>
+          <LazyMasterSendDataModal
+            isOpen={showSendDataModal}
+            players={players}
+            isSending={isSendingDataPush}
+            onClose={() => setShowSendDataModal(false)}
+            onSubmit={onSendDataToPlayers}
+            onSuccessFeedback={(msg) => setSendDataFeedback(msg)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

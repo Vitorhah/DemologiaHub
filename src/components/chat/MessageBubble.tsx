@@ -8,7 +8,7 @@ export interface MessageBubbleProps {
   showTime?: boolean;
 }
 
-export function MessageBubble({ message, isSelf, showTime = true }: MessageBubbleProps) {
+export const MessageBubble = React.memo(function MessageBubble({ message, isSelf, showTime = true }: MessageBubbleProps) {
   const formattedTime = new Date(message.timestamp).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -16,7 +16,7 @@ export function MessageBubble({ message, isSelf, showTime = true }: MessageBubbl
 
   return (
     <div
-      className={`flex flex-col group ${
+      className={`flex flex-col group [contain:content] will-change-transform ${
         isSelf ? "items-end" : "items-start"
       } w-full`}
     >
@@ -44,4 +44,4 @@ export function MessageBubble({ message, isSelf, showTime = true }: MessageBubbl
       </div>
     </div>
   );
-}
+});

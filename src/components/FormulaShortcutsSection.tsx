@@ -29,7 +29,7 @@ export interface FormulaShortcutsSectionProps {
   isRlMode?: boolean;
 }
 
-export function FormulaShortcutsSection({
+export const FormulaShortcutsSection = React.memo(function FormulaShortcutsSection({
   formulas,
   onUpdateFormulas,
   onExecuteFormula,
@@ -434,4 +434,4 @@ export function FormulaShortcutsSection({
       )}
     </div>
   );
-}
+});

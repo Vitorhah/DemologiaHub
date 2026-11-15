@@ -8,7 +8,7 @@ export interface MessageGroupProps {
   group: MessageGroupData;
 }
 
-export function MessageGroup({ group }: MessageGroupProps) {
+export const MessageGroup = React.memo(function MessageGroup({ group }: MessageGroupProps) {
   const { senderName, isSelf, isMaster, messages, timestamp } = group;
 
   const formattedTime = new Date(timestamp).toLocaleTimeString([], {
@@ -20,7 +20,7 @@ export function MessageGroup({ group }: MessageGroupProps) {
 
   return (
     <div
-      className={`w-full flex flex-col my-3.5 transition-all duration-150 ${
+      className={`w-full flex flex-col my-3.5 [contain:content] will-change-transform ${
         isSelf ? "items-end" : "items-start"
       }`}
     >
@@ -105,4 +105,4 @@ export function MessageGroup({ group }: MessageGroupProps) {
       </div>
     </div>
   );
-}
+});

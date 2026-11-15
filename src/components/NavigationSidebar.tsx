@@ -179,9 +179,9 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
         collapsed ? "lg:w-[68px]" : "lg:w-56 xl:w-60"
       } lg:shrink-0 lg:sticky lg:top-0 lg:h-[100dvh] lg:z-30 transition-[width] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-[width]`}
     >
-      {/* Backdrop mobile com fade escuro de opacidade reduzida e desfoque */}
+      {/* Backdrop mobile com fade escuro leve para manter 60fps */}
       <div
-        className={`fixed inset-0 z-50 bg-[#06060a]/55 backdrop-blur-md transition-opacity duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] lg:hidden ${
+        className={`fixed inset-0 z-50 bg-[#06060a]/72 backdrop-blur-[3px] transition-opacity duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-[opacity] lg:hidden ${
           menuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
         onClick={() => setMenuOpen(false)}
@@ -192,7 +192,7 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
       <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className={`fixed top-0 left-0 bottom-0 z-50 w-64 max-w-[82vw] lg:static lg:w-full lg:max-w-none lg:h-[100dvh] bg-[#0a0a0e]/95 backdrop-blur-md border-r border-[#1c1c24] flex flex-col justify-between p-3 shadow-2xl lg:shadow-none transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform select-none ${
+        className={`fixed top-0 left-0 bottom-0 z-50 w-64 max-w-[82vw] lg:static lg:w-full lg:max-w-none lg:h-[100dvh] bg-[#0a0a0e]/95 border-r border-[#1c1c24] flex flex-col justify-between p-3 shadow-2xl lg:shadow-none transition-transform duration-220 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform select-none ${
           menuOpen
             ? "translate-x-0 pointer-events-auto"
             : "-translate-x-full pointer-events-none lg:translate-x-0 lg:pointer-events-auto"

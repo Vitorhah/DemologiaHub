@@ -1,15 +1,16 @@
 import { supabase } from "../../lib/supabase";
 import { ChatMessage, ChatRoomData, SyncStatus } from "./types";
+import {
+  areMessagesEqual,
+  MAX_CHAT_MESSAGES,
+  mergeMessages,
+  sanitizeRoomId,
+} from "./chatUtils";
+
+export { sanitizeRoomId, mergeMessages, areMessagesEqual };
 
 const CHAT_STORAGE_PREFIX = "demologia_chat_";
 const CHAT_UPDATE_EVENT = "demologia_chat_update";
-
-export function sanitizeRoomId(roomId: string): string {
-  return (roomId || "mesa_principal")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "_");
-}
 
 function getStorageKey(roomId: string): string {
   return `${CHAT_STORAGE_PREFIX}${sanitizeRoomId(roomId)}`;
@@ -17,23 +18,6 @@ function getStorageKey(roomId: string): string {
 
 function getRemoteRecordId(roomId: string): string {
   return `CHAT_${sanitizeRoomId(roomId)}`;
-}
-
-/**
- * Mescla duas listas de mensagens deduplicando por ID e ordenando cronologicamente.
- */
-export function mergeMessages(
-  listA: ChatMessage[],
-  listB: ChatMessage[],
-): ChatMessage[] {
-  const map = new Map<string, ChatMessage>();
-  for (const m of listA) {
-    if (m && m.id) map.set(m.id, m);
-  }
-  for (const m of listB) {
-    if (m && m.id) map.set(m.id, m);
-  }
-  return Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
 }
 
 /**
@@ -47,7 +31,7 @@ export function loadMessages(roomId: string): ChatMessage[] {
 
     const parsed: ChatRoomData = JSON.parse(raw);
     if (parsed && Array.isArray(parsed.messages)) {
-      return parsed.messages.sort((a, b) => a.timestamp - b.timestamp);
+      return [...parsed.messages].sort((a, b) => a.timestamp - b.timestamp);
     }
   } catch (error) {
     console.error("[ChatStorage] Falha ao carregar mensagens locais:", error);
@@ -56,7 +40,7 @@ export function loadMessages(roomId: string): ChatMessage[] {
 }
 
 /**
- * Salva mensagens no LocalStorage e dispara evento local.
+ * Salva mensagens no LocalStorage (limitado a MAX_CHAT_MESSAGES) e dispara evento local.
  */
 export function saveMessages(
   roomId: string,
@@ -64,18 +48,23 @@ export function saveMessages(
   notify = true,
 ): void {
   try {
-    const key = getStorageKey(roomId);
-    const sorted = messages.sort((a, b) => a.timestamp - b.timestamp);
+    const sanitized = sanitizeRoomId(roomId);
+    const key = getStorageKey(sanitized);
+    const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+    const bounded =
+      sorted.length > MAX_CHAT_MESSAGES
+        ? sorted.slice(-MAX_CHAT_MESSAGES)
+        : sorted;
     const payload: ChatRoomData = {
-      roomId: sanitizeRoomId(roomId),
-      messages: sorted,
+      roomId: sanitized,
+      messages: bounded,
     };
     localStorage.setItem(key, JSON.stringify(payload));
 
     if (notify && typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent(CHAT_UPDATE_EVENT, {
-          detail: { roomId: sanitizeRoomId(roomId), messages: sorted },
+          detail: { roomId: sanitized, messages: bounded },
         }),
       );
     }
@@ -142,11 +131,12 @@ export async function fetchRemoteMessages(
       const localList = loadMessages(sanitized);
       const merged = mergeMessages(localList, remoteList);
 
-      // Atualiza o cache local se houver novidades
-      if (merged.length !== localList.length) {
+      // Atualiza o cache local somente se houver diferenças reais
+      if (!areMessagesEqual(merged, localList)) {
         saveMessages(sanitized, merged, true);
+        return merged;
       }
-      return merged;
+      return localList;
     }
   } catch (err) {
     console.warn("[ChatStorage] Falha ao buscar histórico remoto:", err);
@@ -308,14 +298,14 @@ export function subscribeToChat(
         if (payload && payload.id) {
           const local = loadMessages(sanitized);
           const merged = mergeMessages(local, [payload]);
-          saveMessages(sanitized, merged, true);
-          onMessagesUpdate(merged);
+          if (!areMessagesEqual(merged, local)) {
+            saveMessages(sanitized, merged, true);
+          }
         }
       })
       // Limpeza de histórico via broadcast
       .on("broadcast", { event: "chat_clear" }, () => {
         saveMessages(sanitized, [], true);
-        onMessagesUpdate([]);
       })
       // Mudanças na tabela 'players' (persistência compartilhada)
       .on(
@@ -329,13 +319,13 @@ export function subscribeToChat(
         (payload: any) => {
           if (payload.eventType === "DELETE") {
             saveMessages(sanitized, [], true);
-            onMessagesUpdate([]);
           } else if (payload.new?.data?.messages && Array.isArray(payload.new.data.messages)) {
             const remote: ChatMessage[] = payload.new.data.messages;
             const local = loadMessages(sanitized);
             const merged = mergeMessages(local, remote);
-            saveMessages(sanitized, merged, true);
-            onMessagesUpdate(merged);
+            if (!areMessagesEqual(merged, local)) {
+              saveMessages(sanitized, merged, true);
+            }
           }
         },
       )

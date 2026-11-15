@@ -8,8 +8,12 @@ interface MessageInputProps {
 
 const MAX_MESSAGE_LENGTH = 2000;
 
-export function MessageInput({ onSendMessage, disabled = false }: MessageInputProps) {
+export const MessageInput = React.memo(function MessageInput({
+  onSendMessage,
+  disabled = false,
+}: MessageInputProps) {
   const [text, setText] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize do textarea até um limite
@@ -30,10 +34,11 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
     if (!trimmed || disabled) return;
 
     if (trimmed.length > MAX_MESSAGE_LENGTH) {
-      alert(`A mensagem excede o limite de ${MAX_MESSAGE_LENGTH} caracteres.`);
+      setErrorMsg(`A mensagem excede o limite de ${MAX_MESSAGE_LENGTH} caracteres.`);
       return;
     }
 
+    setErrorMsg(null);
     onSendMessage(trimmed);
     setText("");
 
@@ -66,7 +71,10 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
             ref={textareaRef}
             rows={1}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (errorMsg) setErrorMsg(null);
+            }}
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder="Digite uma mensagem..."
@@ -105,6 +113,15 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
         </button>
       </div>
 
+      {errorMsg && (
+        <div
+          role="alert"
+          className="max-w-5xl mx-auto mt-1.5 px-1 text-[11px] font-mono text-red-400"
+        >
+          {errorMsg}
+        </div>
+      )}
+
       {/* Dica de Teclado no Desktop */}
       <div className="max-w-5xl mx-auto flex items-center justify-between mt-1.5 px-1 text-[10px] font-mono text-[#585966] select-none">
         <span className="hidden sm:inline">
@@ -113,4 +130,4 @@ export function MessageInput({ onSendMessage, disabled = false }: MessageInputPr
       </div>
     </div>
   );
-}
+});

@@ -336,6 +336,7 @@ export const HandoutFormModal: React.FC<HandoutFormModalProps> = ({
                 <img
                   src={imageUrl}
                   alt="Pré-visualização frente"
+                  decoding="async"
                   referrerPolicy="no-referrer"
                   className="max-h-36 object-contain border border-[#242430] bg-black/50 p-1"
                 />

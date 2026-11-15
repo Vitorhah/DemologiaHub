@@ -1099,6 +1099,8 @@ export function TabletopGrid({
                         <img 
                           src={obj.customImage}
                           alt={obj.name}
+                          loading="lazy"
+                          decoding="async"
                           className="w-full h-full rounded-full object-cover select-none pointer-events-none"
                           referrerPolicy="no-referrer"
                         />

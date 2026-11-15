@@ -6,6 +6,8 @@ import {
   normalizeCustomFormulas,
   upsertCustomFormula,
   removeCustomFormula,
+  canSelectExtraSheetForRoll,
+  resolveRollActiveFichaId,
 } from "./diceFormula";
 
 test("getDefaultAttributeRollFormula returns 1d4+FOR for FOR and 2d6+ATTR for others", () => {
@@ -110,3 +112,16 @@ test("custom formula CRUD helpers normalize, add, update, and remove per-sheet f
   assert.equal(removed.length, 1);
   assert.equal(removed[0].name, "Ritual");
 });
+
+test("only authenticated master can select or roll with extra sheets", () => {
+  assert.equal(canSelectExtraSheetForRoll(false, 0), false);
+  assert.equal(canSelectExtraSheetForRoll(false, 3), false);
+  assert.equal(canSelectExtraSheetForRoll(true, 0), false);
+  assert.equal(canSelectExtraSheetForRoll(true, 2), true);
+
+  assert.equal(resolveRollActiveFichaId(false, "extra_123"), "main");
+  assert.equal(resolveRollActiveFichaId(false, "main"), "main");
+  assert.equal(resolveRollActiveFichaId(true, "extra_123"), "extra_123");
+  assert.equal(resolveRollActiveFichaId(true, ""), "main");
+});
+

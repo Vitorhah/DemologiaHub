@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, Suspense } from "react";
 import {
   FolderOpen,
   FolderPlus,
@@ -27,10 +27,15 @@ import {
   HandoutVisibility,
 } from "../types/handouts";
 import { filterHandouts } from "../utils/handoutsLogic";
-import { HandoutViewerModal } from "./HandoutViewerModal";
-import { HandoutFormModal } from "./HandoutFormModal";
 import { AnimatePresence } from "motion/react";
-import { MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
+import { MotionAccordion, MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
+
+const LazyHandoutViewerModal = React.lazy(() =>
+  import("./HandoutViewerModal").then((m) => ({ default: m.HandoutViewerModal }))
+);
+const LazyHandoutFormModal = React.lazy(() =>
+  import("./HandoutFormModal").then((m) => ({ default: m.HandoutFormModal }))
+);
 
 interface HandoutsViewProps {
   handouts: HandoutItem[];
@@ -80,10 +85,20 @@ export const HandoutsView: React.FC<HandoutsViewProps> = ({
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
 
   const [viewingHandoutId, setViewingHandoutId] = useState<string | null>(null);
+  const [hasOpenedViewer, setHasOpenedViewer] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  const [hasOpenedForm, setHasOpenedForm] = useState(false);
   const [editingHandout, setEditingHandout] = useState<HandoutItem | null>(null);
   const [deletingHandoutId, setDeletingHandoutId] = useState<string | null>(null);
   const [indivPickerHandoutId, setIndivPickerHandoutId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (viewingHandoutId) setHasOpenedViewer(true);
+  }, [viewingHandoutId]);
+
+  useEffect(() => {
+    if (formOpen) setHasOpenedForm(true);
+  }, [formOpen]);
 
   useEffect(() => {
     if (externalOpenHandout) {
@@ -188,7 +203,7 @@ export const HandoutsView: React.FC<HandoutsViewProps> = ({
       </div>
 
       {/* NEW FOLDER INLINE CREATOR (Master) */}
-      {isMestre && showNewFolderInput && (
+      <MotionAccordion isOpen={Boolean(isMestre && showNewFolderInput)}>
         <form
           onSubmit={handleCreateFolderSubmit}
           className="bg-[#0e0e14] border border-[#242430] p-3 flex flex-col sm:flex-row gap-2"
@@ -217,7 +232,7 @@ export const HandoutsView: React.FC<HandoutsViewProps> = ({
             </button>
           </div>
         </form>
-      )}
+      </MotionAccordion>
 
       {/* SEARCH + FILTERS */}
       <div className="bg-[#0c0c10] border border-[#202028] p-3.5 space-y-3">
@@ -451,6 +466,8 @@ export const HandoutsView: React.FC<HandoutsViewProps> = ({
                       <img
                         src={item.imageUrl}
                         alt={item.title}
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
                       />
@@ -639,39 +656,45 @@ export const HandoutsView: React.FC<HandoutsViewProps> = ({
       )}
 
       {/* VIEWER MODAL */}
-      <HandoutViewerModal
-        handout={activeViewingHandout}
-        isMestre={isMestre}
-        folderName={
-          activeViewingHandout?.folderId
-            ? folderNameMap[activeViewingHandout.folderId] || null
-            : null
-        }
-        onClose={() => setViewingHandoutId(null)}
-        onToggleRevealSecret={isMestre ? onToggleSecret : undefined}
-        onEdit={
-          isMestre
-            ? (h) => {
-                setEditingHandout(h);
-                setFormOpen(true);
-              }
-            : undefined
-        }
-      />
+      {(activeViewingHandout || hasOpenedViewer) && (
+        <Suspense fallback={null}>
+          <LazyHandoutViewerModal
+            handout={activeViewingHandout}
+            isMestre={isMestre}
+            folderName={
+              activeViewingHandout?.folderId
+                ? folderNameMap[activeViewingHandout.folderId] || null
+                : null
+            }
+            onClose={() => setViewingHandoutId(null)}
+            onToggleRevealSecret={isMestre ? onToggleSecret : undefined}
+            onEdit={
+              isMestre
+                ? (h) => {
+                    setEditingHandout(h);
+                    setFormOpen(true);
+                  }
+                : undefined
+            }
+          />
+        </Suspense>
+      )}
 
       {/* FORM MODAL */}
-      {isMestre && (
-        <HandoutFormModal
-          isOpen={formOpen}
-          editingHandout={editingHandout}
-          folders={folders}
-          players={players}
-          onClose={() => {
-            setFormOpen(false);
-            setEditingHandout(null);
-          }}
-          onSave={onSaveHandout}
-        />
+      {isMestre && (formOpen || hasOpenedForm) && (
+        <Suspense fallback={null}>
+          <LazyHandoutFormModal
+            isOpen={formOpen}
+            editingHandout={editingHandout}
+            folders={folders}
+            players={players}
+            onClose={() => {
+              setFormOpen(false);
+              setEditingHandout(null);
+            }}
+            onSave={onSaveHandout}
+          />
+        </Suspense>
       )}
 
       {/* DELETE CONFIRMATION MODAL */}

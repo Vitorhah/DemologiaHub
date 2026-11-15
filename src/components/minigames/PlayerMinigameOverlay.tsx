@@ -1,11 +1,21 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { MINIGAME_META, MinigameAssignment } from "../../types/minigames";
 import { CLINICAL_EASE, SNAPPY_SPRING } from "../MotionPrimitives";
-import { TimingMinigame } from "./TimingMinigame";
-import { LockpickMinigame } from "./LockpickMinigame";
-import { EmfMinigame } from "./EmfMinigame";
-import { AimMinigame } from "./AimMinigame";
+import { LazyModuleFallback } from "../LazyModuleBoundary";
+
+const TimingMinigame = React.lazy(() =>
+  import("./TimingMinigame").then((m) => ({ default: m.TimingMinigame }))
+);
+const LockpickMinigame = React.lazy(() =>
+  import("./LockpickMinigame").then((m) => ({ default: m.LockpickMinigame }))
+);
+const EmfMinigame = React.lazy(() =>
+  import("./EmfMinigame").then((m) => ({ default: m.EmfMinigame }))
+);
+const AimMinigame = React.lazy(() =>
+  import("./AimMinigame").then((m) => ({ default: m.AimMinigame }))
+);
 
 interface PlayerMinigameOverlayProps {
   assignment: MinigameAssignment | null;
@@ -196,7 +206,7 @@ export const PlayerMinigameOverlay: React.FC<PlayerMinigameOverlayProps> = ({
               </p>
 
               {outcome === "playing" ? (
-                <>
+                <Suspense fallback={<LazyModuleFallback label="Iniciando módulo..." />}>
                   {assignment.config.type === "timing" && (
                     <TimingMinigame
                       config={assignment.config}
@@ -237,7 +247,7 @@ export const PlayerMinigameOverlay: React.FC<PlayerMinigameOverlayProps> = ({
                       onMiss={handleMiss}
                     />
                   )}
-                </>
+                </Suspense>
               ) : (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.96 }}

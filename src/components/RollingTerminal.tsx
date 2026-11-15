@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import { MotionAccordion } from "./MotionPrimitives";
 
 interface RollingTerminalProps {
   diceInput: string;
@@ -12,7 +13,7 @@ interface RollingTerminalProps {
   isRlMode?: boolean;
 }
 
-export function RollingTerminal({
+export const RollingTerminal = React.memo(function RollingTerminal({
   diceInput,
   setDiceInput,
   onRoll,
@@ -98,7 +99,7 @@ export function RollingTerminal({
           </button>
         </div>
 
-        {showHistory ? (
+        <MotionAccordion isOpen={showHistory}>
           <div
             className={`dice-history !max-h-36 sm:!max-h-44 ${
               isRlMode
@@ -128,7 +129,8 @@ export function RollingTerminal({
               ))
             )}
           </div>
-        ) : (
+        </MotionAccordion>
+        <MotionAccordion isOpen={!showHistory}>
           <div
             onClick={() => setShowHistory(true)}
             className={`mt-2 py-2.5 px-3 rounded-none border border-dashed text-center text-[11px] font-mono cursor-pointer transition-all touch-manipulation select-none ${
@@ -139,8 +141,8 @@ export function RollingTerminal({
           >
             Histórico ocultado ({history.length} registro{history.length === 1 ? "" : "s"}). Toque para expandir.
           </div>
-        )}
+        </MotionAccordion>
       </div>
     </div>
   );
-}
+});
