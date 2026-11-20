@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { MotionAccordion } from "./MotionPrimitives";
+import { sanitizeRollHistoryHtml } from "../utils/security";
 
 interface RollingTerminalProps {
   diceInput: string;
@@ -124,7 +125,7 @@ export const RollingTerminal = React.memo(function RollingTerminal({
                 <div
                   key={i}
                   className="log-entry break-words"
-                  dangerouslySetInnerHTML={{ __html: h }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeRollHistoryHtml(h) }}
                 />
               ))
             )}

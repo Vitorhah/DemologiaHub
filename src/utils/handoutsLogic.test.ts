@@ -60,6 +60,7 @@ test("isSystemRecordId detects all system records including HANDOUTS_*", () => {
   assert.equal(isSystemRecordId("MINIGAME_ASSIGN_p1"), true);
   assert.equal(isSystemRecordId("MINIGAME_RESULTS"), true);
   assert.equal(isSystemRecordId("MASTER_PUSH_p1"), true);
+  assert.equal(isSystemRecordId("MASTER_LIBRARY"), true);
   assert.equal(isSystemRecordId("550e8400-e29b-41d4-a716-446655440000"), false);
 });
 

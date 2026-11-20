@@ -17,6 +17,7 @@ import {
   normalizeHandoutItem,
   sanitizeHandoutForPlayer,
 } from "../utils/handoutsLogic";
+import { createVisibilityPoller } from "../utils/visibilityPolling";
 
 interface UseHandoutsSyncOptions {
   userUid: string | null;
@@ -306,16 +307,17 @@ export function useHandoutsSync({
       }
     };
 
-    if (isMestreAuth) {
-      fetchMasterVault();
-    } else {
-      fetchPlayerVisibleHandouts();
-    }
-
-    const pollInterval = setInterval(() => {
-      if (isMestreAuth) fetchMasterVault();
-      else fetchPlayerVisibleHandouts();
-    }, 15000);
+    const poller = createVisibilityPoller(
+      () => {
+        if (isMestreAuth) fetchMasterVault();
+        else fetchPlayerVisibleHandouts();
+      },
+      {
+        intervalMs: 20000,
+        minWakeGapMs: 1500,
+        runImmediately: true,
+      }
+    );
 
     const indivRecordId = `${HANDOUTS_INDIV_PREFIX}${userUid}`;
 
@@ -434,7 +436,7 @@ export function useHandoutsSync({
 
     return () => {
       isMounted = false;
-      clearInterval(pollInterval);
+      poller.stop();
       supabase.removeChannel(channel);
       channelRef.current = null;
     };

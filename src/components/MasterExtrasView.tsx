@@ -11,10 +11,35 @@ import {
   Zap,
   Brain,
   FileText,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { StatMathInput } from "./StatMathInput";
+import { MasterEpEditor } from "./MasterEpEditor";
+import { MasterLvEditor } from "./MasterLvEditor";
 import { StatusEffectsEditor } from "./StatusPostIts";
+import { MasterUltimoSuspiroControls } from "./MasterUltimoSuspiroControls";
+import { PdiSection } from "./PdiSection";
+import { PdiEditorModal } from "./PdiEditorModal";
 import { StatusEffect } from "../utils/statusEffects";
+import {
+  PdiItem,
+  normalizePdis,
+  removePdiItem,
+  togglePdiActive,
+  upsertPdiItem,
+} from "../utils/pdi";
+import { normalizeEpValue } from "../utils/epLogic";
+import { normalizeLevel } from "../utils/levelSystem";
+import {
+  DEFAULT_CHARACTER_PROFILE,
+  normalizeCharacterProfile,
+} from "../utils/profiles";
+import {
+  normalizeUltimoSuspiroState,
+  reconcileHpChangeForUltimoSuspiro,
+} from "../utils/ultimoSuspiro";
 import { AnimatePresence } from "motion/react";
 import { MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
 
@@ -25,10 +50,45 @@ export interface MasterExtrasViewProps {
   activeFichaId: string;
   setActiveFichaId: (id: string) => void;
   setCurrentPage: (page: string) => void;
-  setMestreTab: (tab: "fichas" | "ost" | "extras" | "handouts" | "utilities") => void;
+  setMestreTab: (tab: "fichas" | "ost" | "extras" | "handouts" | "biblioteca" | "utilities") => void;
   toggleFichaSync: (ficha: any) => void;
   supabase: any;
   currentGlobalMode?: "demologia" | "rl";
+  isMaster?: boolean;
+  onUpdatePdis?: (
+    player: any,
+    pdis: PdiItem[],
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => void;
+  onUpdateEp?: (
+    player: any,
+    nextEp: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => Promise<{ ok: boolean; error?: string } | void> | void;
+  onUpdateLv?: (
+    player: any,
+    nextLv: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => Promise<{ ok: boolean; error?: string } | void> | void;
+  onAdvanceUltimoSuspiroTurn?: (
+    player: any,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => void;
+  onFinalizeUltimoSuspiroDeath?: (
+    player: any,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => void;
+  onRevivePlayer?: (
+    player: any,
+    targetHp: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => void;
 }
 
 export function MasterExtrasView({
@@ -42,8 +102,39 @@ export function MasterExtrasView({
   toggleFichaSync,
   supabase,
   currentGlobalMode = "demologia",
+  isMaster = false,
+  onUpdatePdis,
+  onUpdateEp,
+  onUpdateLv,
+  onAdvanceUltimoSuspiroTurn,
+  onFinalizeUltimoSuspiroDeath,
+  onRevivePlayer,
 }: MasterExtrasViewProps) {
   const [deletingFichaId, setDeletingFichaId] = useState<string | null>(null);
+  const [expandedPdiId, setExpandedPdiId] = useState<string | null>(null);
+  const [pdiEditorTarget, setPdiEditorTarget] = useState<{
+    ficha: any;
+    initialPdi: PdiItem | null;
+  } | null>(null);
+
+  const commitExtraPdis = (ficha: any, nextPdis: PdiItem[]) => {
+    const cleanPdis = normalizePdis(nextPdis, []);
+    if (onUpdatePdis) {
+      onUpdatePdis(ficha, cleanPdis, true, ficha.id);
+      return;
+    }
+    setExtraFichas(
+      extraFichas.map((f) =>
+        f.id === ficha.id
+          ? {
+              ...f,
+              pdis: cleanPdis,
+              last_local_edit: f.synchronized ? Date.now() : f.last_local_edit,
+            }
+          : f,
+      ),
+    );
+  };
 
   const handleAddNew = () => {
     setExtraFichas([
@@ -54,6 +145,9 @@ export function MasterExtrasView({
         notes: "",
         statusEffects: [],
         customFormulas: [],
+        pdis: [],
+        rituals: [],
+        profile: DEFAULT_CHARACTER_PROFILE,
       },
       ...extraFichas,
     ]);
@@ -138,6 +232,8 @@ export function MasterExtrasView({
 
             const skillsCount = ficha.skills?.length ?? 0;
             const variablesCount = Object.keys(ficha.variables || {}).length;
+            const ultimoSuspiro = normalizeUltimoSuspiroState(ficha.ultimoSuspiro, hpCurrent);
+            const isDead = ultimoSuspiro.status === "dead";
 
             return (
               <div
@@ -220,37 +316,63 @@ export function MasterExtrasView({
                   {/* HP & Status Condicional */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                     {/* HP */}
-                    <div className="bg-[#111117] border border-[#1e1e28] rounded-none p-2.5">
+                    <div
+                      className={`bg-[#111117] border rounded-none p-2.5 ${
+                        isDead ? "border-[#3f3f46]" : "border-[#1e1e28]"
+                      }`}
+                    >
                       <div className="flex items-center justify-between text-[10px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
-                        <span className="text-[var(--op-red-bright)] flex items-center gap-1">
+                        <span
+                          className={`${
+                            isDead ? "text-[#71717a]" : "text-[var(--op-red-bright)]"
+                          } flex items-center gap-1`}
+                        >
                           <Heart size={10} /> HP
                         </span>
-                        <span>{hpCurrent}/{hpMax}</span>
+                        <span className={isDead ? "text-[#71717a]" : undefined}>
+                          {hpCurrent}/{hpMax}
+                        </span>
                       </div>
-                      <div className="h-1.5 bg-[#181820] rounded-none overflow-hidden mb-2">
+                      <div
+                        className={`h-1.5 rounded-none overflow-hidden mb-2 ${
+                          isDead ? "bg-[#3f3f46]" : "bg-[#181820]"
+                        }`}
+                      >
                         <div
-                          className="h-full bg-[var(--op-red)] transition-all duration-200"
-                          style={{ width: `${hpPct}%` }}
+                          className={`h-full transition-all duration-200 ${
+                            isDead ? "bg-[#52525b]" : "bg-[var(--op-red)]"
+                          }`}
+                          style={{ width: `${isDead ? 100 : hpPct}%` }}
                         />
                       </div>
                       <div className="flex gap-1.5">
                         <div className="w-1/2">
                           <StatMathInput
                             value={hpCurrent}
+                            disabled={isDead}
                             onSave={(val) => {
                               setExtraFichas(
-                                extraFichas.map((f) =>
-                                  f.id === ficha.id
-                                    ? {
-                                        ...f,
-                                        hp: { ...f.hp, current: val },
-                                        last_local_edit: f.synchronized ? Date.now() : undefined,
-                                      }
-                                    : f,
-                                ),
+                                extraFichas.map((f) => {
+                                  if (f.id !== ficha.id) return f;
+                                  const reconciled = reconcileHpChangeForUltimoSuspiro({
+                                    prevUltimoSuspiro: f.ultimoSuspiro,
+                                    prevHp: f.hp?.current ?? hpCurrent,
+                                    nextHp: val,
+                                    maxHp: f.hp?.max ?? hpMax,
+                                    isMaster,
+                                  });
+                                  return {
+                                    ...f,
+                                    hp: { ...f.hp, current: reconciled.hpCurrent },
+                                    ultimoSuspiro: reconciled.ultimoSuspiro,
+                                    last_local_edit: f.synchronized ? Date.now() : undefined,
+                                  };
+                                }),
                               );
                             }}
-                            className="w-full min-h-[34px] bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-white text-xs text-center py-1 rounded-none outline-none font-bold"
+                            className={`w-full min-h-[34px] bg-[#0c0c10] border border-[#202028] focus:border-[var(--op-red)] text-xs text-center py-1 rounded-none outline-none font-bold ${
+                              isDead ? "text-[#71717a] cursor-not-allowed" : "text-white"
+                            }`}
                             placeholder="Atual"
                           />
                         </div>
@@ -396,6 +518,115 @@ export function MasterExtrasView({
                     )}
                   </div>
 
+                  {/* Controles de Último Suspiro / Ressurreição do Mestre */}
+                  <MasterUltimoSuspiroControls
+                    ultimoSuspiro={ultimoSuspiro}
+                    maxHp={hpMax}
+                    characterName={ficha.name || "Ficha Extra"}
+                    isMaster={isMaster}
+                    onAdvanceTurn={
+                      onAdvanceUltimoSuspiroTurn
+                        ? () =>
+                            onAdvanceUltimoSuspiroTurn(
+                              { ...ficha, id: `EXTRA_FICHA_${ficha.id}` },
+                              true,
+                              ficha.id,
+                            )
+                        : undefined
+                    }
+                    onFinalizeDeath={
+                      onFinalizeUltimoSuspiroDeath
+                        ? () =>
+                            onFinalizeUltimoSuspiroDeath(
+                              { ...ficha, id: `EXTRA_FICHA_${ficha.id}` },
+                              true,
+                              ficha.id,
+                            )
+                        : undefined
+                    }
+                    onRevive={
+                      onRevivePlayer
+                        ? (targetHp) =>
+                            onRevivePlayer(
+                              { ...ficha, id: `EXTRA_FICHA_${ficha.id}` },
+                              targetHp,
+                              true,
+                              ficha.id,
+                            )
+                        : undefined
+                    }
+                  />
+
+                  {/* EP (Exposição Paranormal - exclusivo do Mestre) */}
+                  {isMaster && (
+                    <MasterEpEditor
+                      isMaster={isMaster}
+                      characterName={ficha.name || "Ficha Extra"}
+                      value={normalizeEpValue(ficha.ep, 0)}
+                      onConfirm={(nextEp) => {
+                        if (onUpdateEp) {
+                          return onUpdateEp(
+                            { ...ficha, id: `EXTRA_FICHA_${ficha.id}` },
+                            nextEp,
+                            true,
+                            ficha.id,
+                          );
+                        }
+                        setExtraFichas((prev) =>
+                          prev.map((f) =>
+                            f.id === ficha.id
+                              ? {
+                                  ...f,
+                                  ep: normalizeEpValue(nextEp, 0),
+                                  last_local_edit: f.synchronized ? Date.now() : undefined,
+                                }
+                              : f,
+                          ),
+                        );
+                      }}
+                    />
+                  )}
+
+                  {/* LV (Nível - exclusivo do Mestre) */}
+                  {isMaster && (
+                    <MasterLvEditor
+                      isMaster={isMaster}
+                      characterName={ficha.name || "Ficha Extra"}
+                      value={normalizeLevel(
+                        ficha.lv,
+                        ficha.variables,
+                        normalizeCharacterProfile(ficha.profile),
+                      )}
+                      variables={ficha.variables}
+                      profile={normalizeCharacterProfile(ficha.profile)}
+                      onConfirm={(nextLv) => {
+                        if (onUpdateLv) {
+                          return onUpdateLv(
+                            { ...ficha, id: `EXTRA_FICHA_${ficha.id}` },
+                            nextLv,
+                            true,
+                            ficha.id,
+                          );
+                        }
+                        setExtraFichas((prev) =>
+                          prev.map((f) =>
+                            f.id === ficha.id
+                              ? {
+                                  ...f,
+                                  lv: normalizeLevel(
+                                    nextLv,
+                                    f.variables,
+                                    normalizeCharacterProfile(f.profile),
+                                  ),
+                                  last_local_edit: f.synchronized ? Date.now() : undefined,
+                                }
+                              : f,
+                          ),
+                        );
+                      }}
+                    />
+                  )}
+
                   {/* Resumo */}
                   <div className="grid grid-cols-2 gap-2 mb-2.5">
                     <div className="bg-[#111117] border border-[#1e1e28] rounded-none py-1.5 text-center">
@@ -463,6 +694,70 @@ export function MasterExtrasView({
                       }}
                     />
                   </div>
+
+                  {/* PDI — Poderes de Intenção */}
+                  {currentGlobalMode !== "rl" && (() => {
+                    const fichaPdis = normalizePdis(ficha.pdis, []);
+                    const activePdiCount = fichaPdis.filter((item) => item.active).length;
+                    return (
+                      <div className="pt-2 border-t border-[#1e1e28] space-y-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedPdiId((prev) =>
+                              prev === ficha.id ? null : ficha.id,
+                            )
+                          }
+                          className="w-full flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#9ca3af] hover:text-white py-1 cursor-pointer"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Sparkles size={11} className="text-[var(--op-red-bright)]" />
+                            PDI ({activePdiCount}/{fichaPdis.length})
+                          </span>
+                          {expandedPdiId === ficha.id ? (
+                            <ChevronUp size={13} />
+                          ) : (
+                            <ChevronDown size={13} />
+                          )}
+                        </button>
+
+                        {expandedPdiId !== ficha.id && activePdiCount > 0 && (
+                          <div className="flex flex-wrap gap-1 pb-1">
+                            {fichaPdis
+                              .filter((item) => item.active)
+                              .map((item) => (
+                                <span
+                                  key={item.id}
+                                  className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 rounded-none"
+                                >
+                                  {item.name}
+                                </span>
+                              ))}
+                          </div>
+                        )}
+
+                        {expandedPdiId === ficha.id && (
+                          <PdiSection
+                            pdis={fichaPdis}
+                            canEdit={true}
+                            compact
+                            onToggle={(pdiId) =>
+                              commitExtraPdis(ficha, togglePdiActive(fichaPdis, pdiId))
+                            }
+                            onAdd={() =>
+                              setPdiEditorTarget({ ficha, initialPdi: null })
+                            }
+                            onEdit={(item) =>
+                              setPdiEditorTarget({ ficha, initialPdi: item })
+                            }
+                            onDelete={(pdiId) =>
+                              commitExtraPdis(ficha, removePdiItem(fichaPdis, pdiId))
+                            }
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="mt-3 flex gap-2">
@@ -547,6 +842,24 @@ export function MasterExtrasView({
             );
           })()}
       </AnimatePresence>
+      {pdiEditorTarget && (
+        <PdiEditorModal
+          isOpen={true}
+          initialPdi={pdiEditorTarget.initialPdi}
+          targetName={pdiEditorTarget.ficha?.name || "Ficha Extra"}
+          onClose={() => setPdiEditorTarget(null)}
+          onSave={(draft) => {
+            const target = pdiEditorTarget.ficha;
+            const currentPdis = normalizePdis(target?.pdis, []);
+            commitExtraPdis(target, upsertPdiItem(currentPdis, draft));
+          }}
+          onDelete={(pdiId) => {
+            const target = pdiEditorTarget.ficha;
+            const currentPdis = normalizePdis(target?.pdis, []);
+            commitExtraPdis(target, removePdiItem(currentPdis, pdiId));
+          }}
+        />
+      )}
     </div>
   );
 }

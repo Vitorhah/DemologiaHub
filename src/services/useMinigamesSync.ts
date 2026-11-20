@@ -11,6 +11,7 @@ import {
   MINIGAME_RESULTS_RECORD_ID,
   normalizeMinigameConfig,
 } from "../utils/minigamesLogic";
+import { createVisibilityPoller } from "../utils/visibilityPolling";
 
 interface UseMinigamesSyncOptions {
   userUid: string | null;
@@ -153,16 +154,21 @@ export function useMinigamesSync({
       } catch {}
     };
 
-    fetchPlayerAssignment();
     if (isMestreAuth) {
       isInitialMasterResultsLoadRef.current = true;
-      fetchMasterResults();
     }
 
-    const pollTimer = setInterval(() => {
-      fetchPlayerAssignment();
-      if (isMestreAuth) fetchMasterResults();
-    }, 10000);
+    const poller = createVisibilityPoller(
+      () => {
+        fetchPlayerAssignment();
+        if (isMestreAuth) fetchMasterResults();
+      },
+      {
+        intervalMs: 15000,
+        minWakeGapMs: 1500,
+        runImmediately: true,
+      }
+    );
 
     const channel = supabase
       .channel("minigames_realtime_channel", {
@@ -213,7 +219,7 @@ export function useMinigamesSync({
 
     return () => {
       isMounted = false;
-      clearInterval(pollTimer);
+      poller.stop();
       supabase.removeChannel(channel);
       channelRef.current = null;
     };

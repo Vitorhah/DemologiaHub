@@ -58,8 +58,100 @@ import {
   canRemoveStatusVariable,
   canRenameStatusVariable,
 } from "./utils/statusVariables";
+import {
+  normalizeEpValue,
+  protectPlayerEpOnSave,
+  resolveMasterEpUpdate,
+} from "./utils/epLogic";
+import {
+  getAttributeLimitForLevel,
+  getAttributeLimitForStat,
+  isAttributeOverLimit,
+  migrateSheetForLevelSystem,
+  normalizeLevel,
+  parseAndValidateLevelChange,
+  protectPlayerLevelOnSave,
+  resolveAttributeUpdateWithProfile,
+  resolveMasterLevelUpdate,
+} from "./utils/levelSystem";
+import {
+  CharacterProfileId,
+  DEFAULT_CHARACTER_PROFILE,
+  getProfileBonusEntries,
+  getProfileBonusForStat,
+  getProfileDefinition,
+  isCharacterProfileId,
+  normalizeCharacterProfile,
+} from "./utils/profiles";
+import {
+  buildPlayersRevisionSignature,
+  createVisibilityPoller,
+} from "./utils/visibilityPolling";
+import {
+  isValidModeConfigPayload,
+  isValidTargetBroadcastPayload,
+  sanitizeImportedSheetJson,
+  sanitizeRollHistoryHtml,
+} from "./utils/security";
+import { SheetLevelControl } from "./components/SheetLevelControl";
+import { UltimoSuspiroBadge } from "./components/UltimoSuspiroBadge";
+import { UltimoSuspiroMinigameModal } from "./components/UltimoSuspiroMinigameModal";
+import { MasterUltimoSuspiroControls } from "./components/MasterUltimoSuspiroControls";
+import { PdiSection } from "./components/PdiSection";
+import { PdiEditorModal } from "./components/PdiEditorModal";
+import {
+  PROFILE_THEME_MAP,
+  ProfileSymbolIcon,
+} from "./components/CharacterProfileButton";
+import { ProfileSelectorModal } from "./components/ProfileSelectorModal";
+import { RitualsSection } from "./components/RitualsSection";
+import { UseRitualModal } from "./components/UseRitualModal";
+import {
+  RITUAL_AFFILIATIONS,
+  RITUAL_TEST_FORMULA,
+  RitualItem,
+  RitualTestOutcome,
+  createDefaultRitual,
+  evaluateRitualTestOutcome,
+  getRitualCapacityState,
+  normalizeRitualAffiliations,
+  normalizeRitualCost,
+  normalizeRitualDifficulty,
+  normalizeRitualLevel,
+  normalizeRituals,
+} from "./utils/rituals";
+import {
+  DEFAULT_PDIS,
+  PdiItem,
+  getActivePdiBadgesForStat,
+  normalizePdis,
+  protectPlayerPdisOnSave,
+  removePdiItem,
+  togglePdiActive,
+  upsertPdiItem,
+} from "./utils/pdi";
+import {
+  advanceUltimoSuspiroTurn,
+  applySurvivalTestResult,
+  canCharacterAct,
+  canTriggerSurvivalTest,
+  CoinSide,
+  createDefaultUltimoSuspiroState,
+  extractVitAttribute,
+  formatUltimoSuspiroNotification,
+  normalizeUltimoSuspiroState,
+  protectUltimoSuspiroOnSave,
+  reconcileHpChangeForUltimoSuspiro,
+  resolveLastChanceCoinFlip,
+  resolveMasterFinalizeDeath,
+  resolveMasterRevive,
+  UltimoSuspiroEventType,
+  UltimoSuspiroRollSummary,
+  UltimoSuspiroState,
+} from "./utils/ultimoSuspiro";
 import { useMinigamesSync } from "./services/useMinigamesSync";
 import { useMasterDataPushSync } from "./services/useMasterDataPushSync";
+import { useMasterLibrarySync } from "./services/useMasterLibrarySync";
 import { PlayerDataPushFadeOverlay } from "./components/PlayerDataPushFadeOverlay";
 import {
   applyMasterDataToSheetState,
@@ -96,6 +188,9 @@ const MasterGameModeModal = React.lazy(() =>
 );
 const MasterUtilitiesView = React.lazy(() =>
   import("./components/MasterUtilitiesView").then((m) => ({ default: m.MasterUtilitiesView }))
+);
+const MasterLibraryView = React.lazy(() =>
+  import("./components/MasterLibraryView").then((m) => ({ default: m.MasterLibraryView }))
 );
 const CadernoDeCampoView = React.lazy(() =>
   import("./components/CadernoDeCampoView").then((m) => ({ default: m.CadernoDeCampoView }))
@@ -186,6 +281,8 @@ const defaultState = {
   hp: { current: defaultInitialMax.hpMax, max: defaultInitialMax.hpMax },
   pe: { current: defaultInitialMax.peMax, max: defaultInitialMax.peMax },
   sm: { current: defaultInitialMax.smMax, max: defaultInitialMax.smMax },
+  ep: 0,
+  lv: 1,
   autoMaxStats: true,
   variables: defaultInitialVariables,
   skills: [
@@ -220,6 +317,10 @@ const defaultState = {
   history: [] as string[],
   statusEffects: [] as StatusEffect[],
   customFormulas: [] as CustomRollFormula[],
+  ultimoSuspiro: createDefaultUltimoSuspiroState(),
+  pdis: DEFAULT_PDIS,
+  rituals: [] as RitualItem[],
+  profile: DEFAULT_CHARACTER_PROFILE as CharacterProfileId,
 };
 
 export default function App() {
@@ -236,18 +337,74 @@ export default function App() {
             }
           } catch {}
         }
-        return parsed;
+        const hydratedHpCurrent = parsed?.hp?.current ?? parsed?.hpCurrent ?? defaultInitialMax.hpMax;
+        const normalizedUs = normalizeUltimoSuspiroState(parsed?.ultimoSuspiro, hydratedHpCurrent);
+        const normalizedProfile = normalizeCharacterProfile(parsed?.profile);
+        return {
+          ...parsed,
+          hp: {
+            current: normalizedUs.status === "dead" ? 0 : hydratedHpCurrent,
+            max: parsed?.hp?.max ?? parsed?.hpMax ?? defaultInitialMax.hpMax,
+          },
+          ep: normalizeEpValue(parsed?.ep, 0),
+          lv: normalizeLevel(
+            parsed?.lv,
+            parsed?.variables,
+            isCharacterProfileId(parsed?.profile) ? normalizedProfile : undefined,
+          ),
+          profile: normalizedProfile,
+          ultimoSuspiro: normalizedUs,
+          pdis: normalizePdis(parsed?.pdis, []),
+          rituals: normalizeRituals(parsed?.rituals),
+        };
       }
       return defaultState;
     } catch {
       return defaultState;
     }
   });
+  const authoritativeEpRef = useRef<number>(normalizeEpValue(mainState?.ep, 0));
+  const authoritativeLvRef = useRef<number>(
+    normalizeLevel(mainState?.lv, mainState?.variables, mainState?.profile),
+  );
+  const authoritativeUltimoSuspiroRef = useRef<UltimoSuspiroState>(
+    normalizeUltimoSuspiroState(mainState?.ultimoSuspiro, mainState?.hp?.current),
+  );
+  const authoritativePdisRef = useRef<PdiItem[]>(
+    normalizePdis(mainState?.pdis, []),
+  );
+  const seenUltimoSuspiroEventsRef = useRef<Set<string>>(new Set());
+  const [isUltimoSuspiroModalOpen, setIsUltimoSuspiroModalOpen] = useState(false);
+  const [isPdiModalOpen, setIsPdiModalOpen] = useState(false);
+  const [editingPdiItem, setEditingPdiItem] = useState<PdiItem | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   const [extraFichas, setExtraFichas] = useState<any[]>(() => {
     try {
       const cached = localStorage.getItem("local_extra_fichas");
-      if (cached) return JSON.parse(cached);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          return parsed.map((f: any) => {
+            const prof = normalizeCharacterProfile(f?.profile);
+            return {
+              ...f,
+              profile: prof,
+              lv: normalizeLevel(
+                f?.lv,
+                f?.variables,
+                isCharacterProfileId(f?.profile) ? prof : undefined,
+              ),
+              ultimoSuspiro: normalizeUltimoSuspiroState(
+                f?.ultimoSuspiro,
+                f?.hp?.current ?? f?.hpCurrent ?? defaultInitialMax.hpMax,
+              ),
+              pdis: normalizePdis(f?.pdis, []),
+              rituals: normalizeRituals(f?.rituals),
+            };
+          });
+        }
+      }
     } catch (e) {}
     return [];
   });
@@ -311,6 +468,13 @@ export default function App() {
         rawState.san?.max ??
         defaultState.sm.max,
     },
+    ep: normalizeEpValue(rawState.ep, 0),
+    profile: normalizeCharacterProfile(rawState.profile),
+    lv: normalizeLevel(
+      rawState.lv,
+      rawState.variables || defaultState.variables,
+      normalizeCharacterProfile(rawState.profile),
+    ),
     variables: rawState.variables || defaultState.variables,
     skills: rawState.skills || defaultState.skills,
     inventory: rawState.inventory || defaultState.inventory,
@@ -318,15 +482,44 @@ export default function App() {
     tributo: rawState.tributo || defaultState.tributo,
     statusEffects: Array.isArray(rawState.statusEffects) ? rawState.statusEffects : [],
     customFormulas: normalizeCustomFormulas(rawState.customFormulas),
+    ultimoSuspiro: normalizeUltimoSuspiroState(
+      rawState.ultimoSuspiro,
+      rawState.hp?.current ?? rawState.hpCurrent ?? defaultState.hp.current,
+    ),
+    pdis: normalizePdis(rawState.pdis, []),
+    rituals: normalizeRituals(rawState.rituals),
   };
 
   const setState = (updater: any) => {
     if (effectiveActiveFichaId === "main") {
-      setMainState(updater);
+      setMainState((prev: any) => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        const guardedEp = protectPlayerEpOnSave(
+          next,
+          authoritativeEpRef.current,
+          isMestreAuth,
+        );
+        const guardedLv = protectPlayerLevelOnSave(
+          guardedEp,
+          authoritativeLvRef.current,
+          isMestreAuth,
+        );
+        const guardedUs = protectUltimoSuspiroOnSave(
+          guardedLv,
+          authoritativeUltimoSuspiroRef.current,
+          isMestreAuth,
+        );
+        return protectPlayerPdisOnSave(
+          guardedUs,
+          authoritativePdisRef.current,
+          isMestreAuth,
+        );
+      });
     } else {
       setExtraFichas((prev) =>
         prev.map((f) => {
           if (f.id === effectiveActiveFichaId) {
+            const normalizedExtraProfile = normalizeCharacterProfile(f.profile);
             const fullF = {
               ...defaultState,
               ...f,
@@ -352,11 +545,36 @@ export default function App() {
                   f.san?.max ??
                   defaultState.sm.max,
               },
+              ep: normalizeEpValue(f.ep, 0),
+              profile: normalizedExtraProfile,
+              lv: normalizeLevel(f.lv, f.variables, normalizedExtraProfile),
               statusEffects: Array.isArray(f.statusEffects) ? f.statusEffects : [],
               customFormulas: normalizeCustomFormulas(f.customFormulas),
+              ultimoSuspiro: normalizeUltimoSuspiroState(
+                f.ultimoSuspiro,
+                f.hp?.current ?? f.hpCurrent ?? defaultState.hp.current,
+              ),
+              pdis: normalizePdis(f.pdis, []),
+              rituals: normalizeRituals(f.rituals),
             };
-            const next =
+            const rawNext =
               typeof updater === "function" ? updater(fullF) : updater;
+            const guardedEp = protectPlayerEpOnSave(rawNext, fullF.ep, isMestreAuth);
+            const guardedLv = protectPlayerLevelOnSave(
+              guardedEp,
+              fullF.lv,
+              isMestreAuth,
+            );
+            const guardedUs = protectUltimoSuspiroOnSave(
+              guardedLv,
+              fullF.ultimoSuspiro,
+              isMestreAuth,
+            );
+            const next = protectPlayerPdisOnSave(
+              guardedUs,
+              fullF.pdis,
+              isMestreAuth,
+            );
             if (next.name !== f.name && isOcultistaSheetName(next.name)) {
               next.manualOcultistaSync = false;
             }
@@ -373,6 +591,8 @@ export default function App() {
 
   const [activeSkill, setActiveSkill] = useState<number | null>(null);
   const [editingSkill, setEditingSkill] = useState<number | null>(null);
+  const [activeRitual, setActiveRitual] = useState<number | null>(null);
+  const [editingRitual, setEditingRitual] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState("ficha");
   const [activeTributo, setActiveTributo] = useState(false);
@@ -405,6 +625,9 @@ export default function App() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [useSkillModalId, setUseSkillModalId] = useState<number | null>(null);
   const [skillModalTested, setSkillModalTested] = useState(false);
+  const [useRitualModalId, setUseRitualModalId] = useState<number | null>(null);
+  const [ritualModalOutcome, setRitualModalOutcome] =
+    useState<RitualTestOutcome | null>(null);
   const [userUid, setUserUid] = useState<string | null>(null);
   const userUidRef = useRef<string | null>(null);
   useEffect(() => {
@@ -413,7 +636,7 @@ export default function App() {
   const [players, setPlayers] = useState<any[]>([]);
   const [initiatives, setInitiatives] = useState<Record<string, number>>({});
   const [mestreTab, setMestreTab] = useState<
-    "fichas" | "ost" | "extras" | "handouts" | "utilities"
+    "fichas" | "ost" | "extras" | "handouts" | "biblioteca" | "utilities"
   >("fichas");
   const [rollToast, setRollToast] = useState<RollToastData | null>(null);
   const dismissRollToast = useCallback(() => setRollToast(null), []);
@@ -564,6 +787,9 @@ export default function App() {
     const summary = summarizeMasterPush(payload);
     setMainState((prev: any) => {
       const updated = applyMasterDataToSheetState(prev, payload);
+      if (payload?.pdi) {
+        authoritativePdisRef.current = normalizePdis(updated.pdis, []);
+      }
       const historyList = Array.isArray(updated.history) ? updated.history : [];
       const nextWithLog = {
         ...updated,
@@ -598,6 +824,12 @@ export default function App() {
     isOnline,
     onApplyPush: handleApplyMasterDataPush,
     onPlayersUpdatedLocally: handleMasterPlayersPatchedLocally,
+  });
+
+  const masterLibrarySync = useMasterLibrarySync({
+    userUid,
+    isMestreAuth,
+    isOnline,
   });
 
   const activeQuickViewHandout = useMemo(() => {
@@ -790,26 +1022,60 @@ export default function App() {
   useEffect(() => {
     const flushLocalStorage = () => {
       try {
-        localStorage.setItem("rpgSheetState", JSON.stringify(mainStateLatestRef.current));
+        const guardedMain = protectPlayerPdisOnSave(
+          protectUltimoSuspiroOnSave(
+            protectPlayerLevelOnSave(
+              protectPlayerEpOnSave(
+                mainStateLatestRef.current,
+                authoritativeEpRef.current,
+                isMestreAuth,
+              ),
+              authoritativeLvRef.current,
+              isMestreAuth,
+            ),
+            authoritativeUltimoSuspiroRef.current,
+            isMestreAuth,
+          ),
+          authoritativePdisRef.current,
+          isMestreAuth,
+        );
+        localStorage.setItem("rpgSheetState", JSON.stringify(guardedMain));
         localStorage.setItem("local_extra_fichas", JSON.stringify(extraFichasLatestRef.current));
       } catch (e) {}
     };
     window.addEventListener("beforeunload", flushLocalStorage);
     return () => window.removeEventListener("beforeunload", flushLocalStorage);
-  }, []);
+  }, [isMestreAuth]);
 
   useEffect(() => {
-    mainStateLatestRef.current = mainState;
+    const guardedMain = protectPlayerPdisOnSave(
+      protectUltimoSuspiroOnSave(
+        protectPlayerLevelOnSave(
+          protectPlayerEpOnSave(
+            mainState,
+            authoritativeEpRef.current,
+            isMestreAuth,
+          ),
+          authoritativeLvRef.current,
+          isMestreAuth,
+        ),
+        authoritativeUltimoSuspiroRef.current,
+        isMestreAuth,
+      ),
+      authoritativePdisRef.current,
+      isMestreAuth,
+    );
+    mainStateLatestRef.current = guardedMain;
     if (localSaveTimerRef.current) clearTimeout(localSaveTimerRef.current);
     localSaveTimerRef.current = setTimeout(() => {
       try {
-        localStorage.setItem("rpgSheetState", JSON.stringify(mainState));
+        localStorage.setItem("rpgSheetState", JSON.stringify(guardedMain));
       } catch (e) {}
     }, 250);
 
     if (
       shouldAutoSyncMainSheet({
-        name: mainState.name,
+        name: guardedMain.name,
         userUid,
         isOnline,
         currentPage,
@@ -820,11 +1086,28 @@ export default function App() {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
 
       debounceTimerRef.current = setTimeout(() => {
+        const payloadToSync = protectPlayerPdisOnSave(
+          protectUltimoSuspiroOnSave(
+            protectPlayerLevelOnSave(
+              protectPlayerEpOnSave(
+                mainStateLatestRef.current,
+                authoritativeEpRef.current,
+                isMestreAuth,
+              ),
+              authoritativeLvRef.current,
+              isMestreAuth,
+            ),
+            authoritativeUltimoSuspiroRef.current,
+            isMestreAuth,
+          ),
+          authoritativePdisRef.current,
+          isMestreAuth,
+        );
         supabase
           .from("players")
           .upsert({
             id: userUid,
-            data: mainState,
+            data: payloadToSync,
             updated_at: new Date().toISOString(),
           })
           .then(
@@ -849,7 +1132,7 @@ export default function App() {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       pendingUpdatesRef.current = false;
     }
-  }, [mainState, userUid, isOnline, currentPage, ocultistaManualSync]);
+  }, [mainState, userUid, isOnline, currentPage, ocultistaManualSync, isMestreAuth]);
 
   const handleManualSyncOcultista = async (activateAutoAfter = false) => {
     if (!userUid) {
@@ -867,9 +1150,14 @@ export default function App() {
     if (activateAutoAfter) setOcultistaManualSync(true);
 
     try {
+      const guardedData = protectPlayerEpOnSave(
+        mainStateLatestRef.current,
+        authoritativeEpRef.current,
+        isMestreAuth,
+      );
       const { error } = await supabase.from("players").upsert({
         id: userUid,
-        data: mainStateLatestRef.current,
+        data: guardedData,
         updated_at: new Date().toISOString(),
       });
       if (error) {
@@ -956,44 +1244,132 @@ export default function App() {
               console.warn("Error fetching own state:", error.message);
               return;
             }
-            if (data?.data && !pendingUpdatesRef.current) {
-              setMainState((prev: any) => {
-                const newHp = data.data.hp;
-                const newPe = data.data.pe;
-                const newSm = data.data.sm;
-                const newStatusEffects = Array.isArray(data.data.statusEffects)
-                  ? data.data.statusEffects
-                  : prev.statusEffects || [];
-                const statusChanged =
-                  JSON.stringify(prev.statusEffects || []) !==
-                  JSON.stringify(newStatusEffects);
-                if (
-                  prev.hp.current !== newHp.current ||
-                  prev.pe.current !== newPe.current ||
-                  (newSm && prev.sm?.current !== newSm.current) ||
-                  prev.hp.max !== newHp.max ||
-                  prev.pe.max !== newPe.max ||
-                  (newSm && prev.sm?.max !== newSm.max) ||
-                  statusChanged
-                ) {
+            if (data?.data) {
+              const newEp = normalizeEpValue(data.data.ep, authoritativeEpRef.current);
+              authoritativeEpRef.current = newEp;
+              const hasRemoteProfile = isCharacterProfileId(data.data.profile);
+              const incomingProfile = hasRemoteProfile
+                ? normalizeCharacterProfile(data.data.profile)
+                : undefined;
+              const incomingAuthLv = normalizeLevel(
+                data.data.lv ?? authoritativeLvRef.current,
+                data.data.variables,
+                incomingProfile,
+              );
+              authoritativeLvRef.current = incomingAuthLv;
+
+              const incomingUs = normalizeUltimoSuspiroState(
+                data.data.ultimoSuspiro,
+                data.data.hp?.current,
+              );
+              authoritativeUltimoSuspiroRef.current = incomingUs;
+
+              const hasRemotePdis = Array.isArray(data.data.pdis);
+              const incomingPdis = hasRemotePdis
+                ? normalizePdis(data.data.pdis, [])
+                : authoritativePdisRef.current;
+              if (hasRemotePdis) {
+                authoritativePdisRef.current = incomingPdis;
+              }
+
+              if (!pendingUpdatesRef.current) {
+                setMainState((prev: any) => {
+                  const newHp = data.data.hp;
+                  const newPe = data.data.pe;
+                  const newSm = data.data.sm;
+                  const newStatusEffects = Array.isArray(data.data.statusEffects)
+                    ? data.data.statusEffects
+                    : prev.statusEffects || [];
+                  const statusChanged =
+                    JSON.stringify(prev.statusEffects || []) !==
+                    JSON.stringify(newStatusEffects);
+                  const epChanged = normalizeEpValue(prev.ep, 0) !== newEp;
+                  const nextProfile = incomingProfile ?? normalizeCharacterProfile(prev.profile);
+                  const profileChanged =
+                    Boolean(incomingProfile) &&
+                    normalizeCharacterProfile(prev.profile) !== nextProfile;
+                  const newLv = normalizeLevel(incomingAuthLv, prev.variables, nextProfile);
+                  const lvChanged = normalizeLevel(prev.lv, prev.variables, nextProfile) !== newLv;
+                  const usChanged =
+                    JSON.stringify(prev.ultimoSuspiro || null) !==
+                    JSON.stringify(incomingUs);
+                  const nextPdis = hasRemotePdis
+                    ? incomingPdis
+                    : normalizePdis(prev.pdis, []);
+                  const pdisChanged =
+                    hasRemotePdis &&
+                    JSON.stringify(normalizePdis(prev.pdis, [])) !==
+                      JSON.stringify(nextPdis);
+                  if (
+                    prev.hp.current !== newHp.current ||
+                    prev.pe.current !== newPe.current ||
+                    (newSm && prev.sm?.current !== newSm.current) ||
+                    prev.hp.max !== newHp.max ||
+                    prev.pe.max !== newPe.max ||
+                    (newSm && prev.sm?.max !== newSm.max) ||
+                    statusChanged ||
+                    epChanged ||
+                    lvChanged ||
+                    profileChanged ||
+                    usChanged ||
+                    pdisChanged
+                  ) {
+                    return {
+                      ...prev,
+                      hp: newHp,
+                      pe: newPe,
+                      sm: newSm || prev.sm,
+                      ep: newEp,
+                      lv: newLv,
+                      profile: nextProfile,
+                      statusEffects: newStatusEffects,
+                      ultimoSuspiro: incomingUs,
+                      pdis: nextPdis,
+                    };
+                  }
+                  return prev;
+                });
+              } else {
+                setMainState((prev: any) => {
+                  const activeProf = normalizeCharacterProfile(prev.profile);
+                  const nextLv = normalizeLevel(incomingAuthLv, prev.variables, activeProf);
+                  const epDiff = normalizeEpValue(prev.ep, 0) !== newEp;
+                  const lvDiff = normalizeLevel(prev.lv, prev.variables, activeProf) !== nextLv;
+                  const usDiff =
+                    JSON.stringify(prev.ultimoSuspiro || null) !==
+                    JSON.stringify(incomingUs);
+                  const nextPdis = hasRemotePdis
+                    ? incomingPdis
+                    : normalizePdis(prev.pdis, []);
+                  const pdisDiff =
+                    hasRemotePdis &&
+                    JSON.stringify(normalizePdis(prev.pdis, [])) !==
+                      JSON.stringify(nextPdis);
+                  if (!epDiff && !lvDiff && !usDiff && !pdisDiff) return prev;
                   return {
                     ...prev,
-                    hp: newHp,
-                    pe: newPe,
-                    sm: newSm || prev.sm,
-                    statusEffects: newStatusEffects,
+                    ep: newEp,
+                    lv: nextLv,
+                    ultimoSuspiro: incomingUs,
+                    pdis: nextPdis,
+                    hp:
+                      incomingUs.status === "dead"
+                        ? { ...prev.hp, current: 0 }
+                        : prev.hp,
                   };
-                }
-                return prev;
-              });
+                });
+              }
             }
           },
           (err) => console.warn("Fetch own state failed:", err.message),
         );
     };
 
-    fetchOwnState();
-    const fallbackInterval = setInterval(fetchOwnState, 15000);
+    const poller = createVisibilityPoller(fetchOwnState, {
+      intervalMs: 20000,
+      minWakeGapMs: 1500,
+      runImmediately: true,
+    });
 
     const channel = supabase
       .channel(`player_changes_${userUid}`)
@@ -1006,36 +1382,120 @@ export default function App() {
           filter: `id=eq.${userUid}`,
         },
         (payload) => {
-          if (payload.new && payload.new.data && !pendingUpdatesRef.current) {
-            setMainState((prev: any) => {
-              const newHp = payload.new.data.hp;
-              const newPe = payload.new.data.pe;
-              const newSm = payload.new.data.sm;
-              const newStatusEffects = Array.isArray(payload.new.data.statusEffects)
-                ? payload.new.data.statusEffects
-                : prev.statusEffects || [];
-              const statusChanged =
-                JSON.stringify(prev.statusEffects || []) !==
-                JSON.stringify(newStatusEffects);
-              if (
-                prev.hp.current !== newHp.current ||
-                prev.pe.current !== newPe.current ||
-                (newSm && prev.sm?.current !== newSm.current) ||
-                prev.hp.max !== newHp.max ||
-                prev.pe.max !== newPe.max ||
-                (newSm && prev.sm?.max !== newSm.max) ||
-                statusChanged
-              ) {
+          if (payload.new && payload.new.data) {
+            const newEp = normalizeEpValue(payload.new.data.ep, authoritativeEpRef.current);
+            authoritativeEpRef.current = newEp;
+            const hasRemoteProfile = isCharacterProfileId(payload.new.data.profile);
+            const incomingProfile = hasRemoteProfile
+              ? normalizeCharacterProfile(payload.new.data.profile)
+              : undefined;
+            const incomingAuthLv = normalizeLevel(
+              payload.new.data.lv ?? authoritativeLvRef.current,
+              payload.new.data.variables,
+              incomingProfile,
+            );
+            authoritativeLvRef.current = incomingAuthLv;
+            const incomingUs = normalizeUltimoSuspiroState(
+              payload.new.data.ultimoSuspiro,
+              payload.new.data.hp?.current,
+            );
+            authoritativeUltimoSuspiroRef.current = incomingUs;
+
+            const hasRemotePdis = Array.isArray(payload.new.data.pdis);
+            const incomingPdis = hasRemotePdis
+              ? normalizePdis(payload.new.data.pdis, [])
+              : authoritativePdisRef.current;
+            if (hasRemotePdis) {
+              authoritativePdisRef.current = incomingPdis;
+            }
+
+            if (!pendingUpdatesRef.current) {
+              setMainState((prev: any) => {
+                const newHp = payload.new.data.hp;
+                const newPe = payload.new.data.pe;
+                const newSm = payload.new.data.sm;
+                const newStatusEffects = Array.isArray(payload.new.data.statusEffects)
+                  ? payload.new.data.statusEffects
+                  : prev.statusEffects || [];
+                const statusChanged =
+                  JSON.stringify(prev.statusEffects || []) !==
+                  JSON.stringify(newStatusEffects);
+                const epChanged = normalizeEpValue(prev.ep, 0) !== newEp;
+                const nextProfile = incomingProfile ?? normalizeCharacterProfile(prev.profile);
+                const profileChanged =
+                  Boolean(incomingProfile) &&
+                  normalizeCharacterProfile(prev.profile) !== nextProfile;
+                const newLv = normalizeLevel(incomingAuthLv, prev.variables, nextProfile);
+                const lvChanged = normalizeLevel(prev.lv, prev.variables, nextProfile) !== newLv;
+                const usChanged =
+                  JSON.stringify(prev.ultimoSuspiro || null) !==
+                  JSON.stringify(incomingUs);
+                const nextPdis = hasRemotePdis
+                  ? incomingPdis
+                  : normalizePdis(prev.pdis, []);
+                const pdisChanged =
+                  hasRemotePdis &&
+                  JSON.stringify(normalizePdis(prev.pdis, [])) !==
+                    JSON.stringify(nextPdis);
+                if (
+                  prev.hp.current !== newHp.current ||
+                  prev.pe.current !== newPe.current ||
+                  (newSm && prev.sm?.current !== newSm.current) ||
+                  prev.hp.max !== newHp.max ||
+                  prev.pe.max !== newPe.max ||
+                  (newSm && prev.sm?.max !== newSm.max) ||
+                  statusChanged ||
+                  epChanged ||
+                  lvChanged ||
+                  profileChanged ||
+                  usChanged ||
+                  pdisChanged
+                ) {
+                  return {
+                    ...prev,
+                    hp: newHp,
+                    pe: newPe,
+                    sm: newSm || prev.sm,
+                    ep: newEp,
+                    lv: newLv,
+                    profile: nextProfile,
+                    statusEffects: newStatusEffects,
+                    ultimoSuspiro: incomingUs,
+                    pdis: nextPdis,
+                  };
+                }
+                return prev;
+              });
+            } else {
+              setMainState((prev: any) => {
+                const activeProf = normalizeCharacterProfile(prev.profile);
+                const nextLv = normalizeLevel(incomingAuthLv, prev.variables, activeProf);
+                const epDiff = normalizeEpValue(prev.ep, 0) !== newEp;
+                const lvDiff = normalizeLevel(prev.lv, prev.variables, activeProf) !== nextLv;
+                const usDiff =
+                  JSON.stringify(prev.ultimoSuspiro || null) !==
+                  JSON.stringify(incomingUs);
+                const nextPdis = hasRemotePdis
+                  ? incomingPdis
+                  : normalizePdis(prev.pdis, []);
+                const pdisDiff =
+                  hasRemotePdis &&
+                  JSON.stringify(normalizePdis(prev.pdis, [])) !==
+                    JSON.stringify(nextPdis);
+                if (!epDiff && !lvDiff && !usDiff && !pdisDiff) return prev;
                 return {
                   ...prev,
-                  hp: newHp,
-                  pe: newPe,
-                  sm: newSm || prev.sm,
-                  statusEffects: newStatusEffects,
+                  ep: newEp,
+                  lv: nextLv,
+                  ultimoSuspiro: incomingUs,
+                  pdis: nextPdis,
+                  hp:
+                    incomingUs.status === "dead"
+                      ? { ...prev.hp, current: 0 }
+                      : prev.hp,
                 };
-              }
-              return prev;
-            });
+              });
+            }
           }
         },
       )
@@ -1063,7 +1523,7 @@ export default function App() {
       .subscribe();
 
     return () => {
-      clearInterval(fallbackInterval);
+      poller.stop();
       supabase.removeChannel(channel);
     };
   }, [userUid, currentPage]);
@@ -1117,8 +1577,11 @@ export default function App() {
         );
     };
 
-    fetchMasterState();
-    const fallbackInterval = setInterval(fetchMasterState, 15000);
+    const poller = createVisibilityPoller(fetchMasterState, {
+      intervalMs: 20000,
+      minWakeGapMs: 1500,
+      runImmediately: true,
+    });
 
     const channel = supabase
       .channel("global_state_updates", {
@@ -1150,7 +1613,7 @@ export default function App() {
         },
       )
       .on("broadcast", { event: "mode_update" }, ({ payload }) => {
-        if (payload) {
+        if (isValidModeConfigPayload(payload)) {
           setGameModeConfig((prev: any) => {
             if (JSON.stringify(prev) !== JSON.stringify(payload)) {
               try {
@@ -1163,7 +1626,7 @@ export default function App() {
         }
       })
       .on("broadcast", { event: "grid_broadcast" }, ({ payload }) => {
-        if (payload) {
+        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
           setGlobalGridState((prev: any) => {
             if (JSON.stringify(prev) !== JSON.stringify(payload))
               return payload;
@@ -1172,7 +1635,7 @@ export default function App() {
         }
       })
       .on("broadcast", { event: "status_effects_update" }, ({ payload }) => {
-        if (!payload || !payload.playerId) return;
+        if (!isValidTargetBroadcastPayload(payload)) return;
         const incomingEffects: StatusEffect[] = Array.isArray(payload.statusEffects)
           ? payload.statusEffects
           : [];
@@ -1190,12 +1653,196 @@ export default function App() {
           );
         }
       })
+      .on("broadcast", { event: "pdis_update" }, ({ payload }) => {
+        if (!isValidTargetBroadcastPayload(payload)) return;
+        const incomingPdis = normalizePdis(payload.pdis, []);
+        if (payload.playerId === userUidRef.current) {
+          authoritativePdisRef.current = incomingPdis;
+          setMainState((prev: any) => ({
+            ...prev,
+            pdis: incomingPdis,
+          }));
+        } else if (String(payload.playerId).startsWith("EXTRA_FICHA_")) {
+          const sheetId = String(payload.playerId).replace("EXTRA_FICHA_", "");
+          setExtraFichas((prev) =>
+            prev.map((f) =>
+              f.id === sheetId ? { ...f, pdis: incomingPdis } : f
+            )
+          );
+        }
+        setPlayers((current) =>
+          current.map((pl) =>
+            pl.id === payload.playerId ? { ...pl, pdis: incomingPdis } : pl
+          )
+        );
+      })
+      .on("broadcast", { event: "ep_update" }, ({ payload }) => {
+        if (!isValidTargetBroadcastPayload(payload)) return;
+        const incomingEp = normalizeEpValue(payload.ep, 0);
+        if (payload.playerId === userUidRef.current) {
+          authoritativeEpRef.current = incomingEp;
+          setMainState((prev: any) =>
+            normalizeEpValue(prev.ep, 0) !== incomingEp
+              ? { ...prev, ep: incomingEp }
+              : prev
+          );
+        } else if (String(payload.playerId).startsWith("EXTRA_FICHA_")) {
+          const sheetId = String(payload.playerId).replace("EXTRA_FICHA_", "");
+          setExtraFichas((prev) =>
+            prev.map((f) =>
+              f.id === sheetId ? { ...f, ep: incomingEp } : f
+            )
+          );
+        }
+      })
+      .on("broadcast", { event: "lv_update" }, ({ payload }) => {
+        if (!isValidTargetBroadcastPayload(payload)) return;
+        if (payload.playerId === userUidRef.current) {
+          setMainState((prev: any) => {
+            const prof = normalizeCharacterProfile(prev?.profile);
+            const incomingLv = normalizeLevel(payload.lv, prev?.variables, prof);
+            authoritativeLvRef.current = incomingLv;
+            return normalizeLevel(prev?.lv, prev?.variables, prof) !== incomingLv
+              ? { ...prev, lv: incomingLv }
+              : prev;
+          });
+        } else if (String(payload.playerId).startsWith("EXTRA_FICHA_")) {
+          const sheetId = String(payload.playerId).replace("EXTRA_FICHA_", "");
+          setExtraFichas((prev) =>
+            prev.map((f) =>
+              f.id === sheetId
+                ? {
+                    ...f,
+                    lv: normalizeLevel(
+                      payload.lv,
+                      f.variables,
+                      normalizeCharacterProfile(f.profile),
+                    ),
+                  }
+                : f
+            )
+          );
+        }
+      })
+      .on("broadcast", { event: "profile_update" }, ({ payload }) => {
+        if (!isValidTargetBroadcastPayload(payload)) return;
+        const incomingProfile = normalizeCharacterProfile(payload.profile);
+        if (payload.playerId === userUidRef.current) {
+          setMainState((prev: any) =>
+            normalizeCharacterProfile(prev?.profile) !== incomingProfile
+              ? { ...prev, profile: incomingProfile }
+              : prev,
+          );
+        } else if (String(payload.playerId).startsWith("EXTRA_FICHA_")) {
+          const sheetId = String(payload.playerId).replace("EXTRA_FICHA_", "");
+          setExtraFichas((prev) =>
+            prev.map((f) =>
+              f.id === sheetId ? { ...f, profile: incomingProfile } : f,
+            ),
+          );
+        }
+        setPlayers((current) =>
+          current.map((pl) =>
+            pl.id === payload.playerId ? { ...pl, profile: incomingProfile } : pl,
+          ),
+        );
+      })
+      .on("broadcast", { event: "ultimo_suspiro_event" }, ({ payload }) => {
+        if (!payload || typeof payload !== "object") return;
+        const eventId = typeof payload.eventId === "string" ? payload.eventId : "";
+        if (eventId && seenUltimoSuspiroEventsRef.current.has(eventId)) return;
+        if (eventId) {
+          seenUltimoSuspiroEventsRef.current.add(eventId);
+          if (seenUltimoSuspiroEventsRef.current.size > 60) {
+            const first = seenUltimoSuspiroEventsRef.current.values().next().value;
+            if (first) seenUltimoSuspiroEventsRef.current.delete(first);
+          }
+        }
+
+        const targetId = typeof payload.playerId === "string" ? payload.playerId : "";
+        const incomingUs = payload.ultimoSuspiro
+          ? normalizeUltimoSuspiroState(payload.ultimoSuspiro, payload.hpCurrent)
+          : undefined;
+        const incomingHp =
+          typeof payload.hpCurrent === "number" && Number.isFinite(payload.hpCurrent)
+            ? Math.max(0, Math.trunc(payload.hpCurrent))
+            : undefined;
+
+        if (incomingUs && targetId) {
+          if (targetId === userUidRef.current) {
+            authoritativeUltimoSuspiroRef.current = incomingUs;
+            setMainState((prev: any) => ({
+              ...prev,
+              ultimoSuspiro: incomingUs,
+              hp:
+                incomingHp !== undefined
+                  ? { ...prev.hp, current: incomingHp }
+                  : prev.hp,
+            }));
+          } else if (targetId.startsWith("EXTRA_FICHA_")) {
+            const sheetId = targetId.replace("EXTRA_FICHA_", "");
+            setExtraFichas((prev) =>
+              prev.map((f) =>
+                f.id === sheetId
+                  ? {
+                      ...f,
+                      ultimoSuspiro: incomingUs,
+                      hp:
+                        incomingHp !== undefined
+                          ? { ...f.hp, current: incomingHp }
+                          : f.hp,
+                    }
+                  : f,
+              ),
+            );
+          } else {
+            setPlayers((current) =>
+              current.map((pl) =>
+                pl.id === targetId
+                  ? {
+                      ...pl,
+                      ultimoSuspiro: incomingUs,
+                      hp:
+                        incomingHp !== undefined
+                          ? { ...pl.hp, current: incomingHp }
+                          : pl.hp,
+                    }
+                  : pl,
+              ),
+            );
+          }
+        }
+
+        const events: UltimoSuspiroEventType[] = Array.isArray(payload.events)
+          ? payload.events
+          : [];
+        if (events.length > 0) {
+          const headlineEvent = events[events.length - 1];
+          const notif = formatUltimoSuspiroNotification(
+            headlineEvent,
+            typeof payload.characterName === "string" ? payload.characterName : "Personagem",
+            {
+              failures: incomingUs?.failures,
+              healedHp: typeof payload.healedHp === "number" ? payload.healedHp : undefined,
+              roll: payload.roll,
+            },
+          );
+          setRollToast({
+            id: Date.now(),
+            kind: "ultimo_suspiro",
+            formula: notif.title,
+            result: notif.badgeText,
+            details: notif.message,
+            eventSeverity: notif.severity,
+          });
+        }
+      })
       .subscribe();
 
     globalChannelRef.current = channel;
 
     return () => {
-      clearInterval(fallbackInterval);
+      poller.stop();
       supabase.removeChannel(channel);
     };
   }, []);
@@ -1218,8 +1865,15 @@ export default function App() {
               let updated = [...prev];
               data.forEach((row) => {
                 const sheetId = row.id.replace("EXTRA_FICHA_", "");
+                const sheetProfile = normalizeCharacterProfile(row.data?.profile);
                 const sheetData = {
                   ...row.data,
+                  profile: sheetProfile,
+                  lv: normalizeLevel(
+                    row.data?.lv,
+                    row.data?.variables,
+                    isCharacterProfileId(row.data?.profile) ? sheetProfile : undefined,
+                  ),
                   id: sheetId,
                   synchronized: true,
                 };
@@ -1239,8 +1893,11 @@ export default function App() {
         });
     };
 
-    fetchExtraFichasGlobal();
-    const fallbackInterval = setInterval(fetchExtraFichasGlobal, 15000);
+    const poller = createVisibilityPoller(fetchExtraFichasGlobal, {
+      intervalMs: 20000,
+      minWakeGapMs: 1500,
+      runImmediately: true,
+    });
 
     const channel = supabase
       .channel("global_extra_fichas_channel")
@@ -1258,8 +1915,15 @@ export default function App() {
             } else if (newRec && newRec.data) {
               setExtraFichas((prev) => {
                 const existingIndex = prev.findIndex((f) => f.id === sheetId);
+                const sheetProfile = normalizeCharacterProfile(newRec.data?.profile);
                 const sheetData = {
                   ...newRec.data,
+                  profile: sheetProfile,
+                  lv: normalizeLevel(
+                    newRec.data?.lv,
+                    newRec.data?.variables,
+                    isCharacterProfileId(newRec.data?.profile) ? sheetProfile : undefined,
+                  ),
                   id: sheetId,
                   synchronized: true,
                 };
@@ -1281,7 +1945,7 @@ export default function App() {
       .subscribe();
 
     return () => {
-      clearInterval(fallbackInterval);
+      poller.stop();
       supabase.removeChannel(channel);
     };
   }, [userUid, isOnline]);
@@ -1304,6 +1968,7 @@ export default function App() {
           .not("id", "eq", "HANDOUTS_SHARED")
           .not("id", "eq", "TABLETOP_GRID")
           .not("id", "eq", "CADERNO_CAMPO_SHARED")
+          .not("id", "eq", "MASTER_LIBRARY")
           .then(
             ({ data, error }) => {
               if (error) {
@@ -1323,12 +1988,25 @@ export default function App() {
                 setPlayers((current) => {
                   const mapped = data
                     .filter((d) => !isSystemRecordId(d.id))
-                    .map((d) => ({
-                      id: d.id,
-                      ...(d.data || {}),
-                    }));
-                  if (JSON.stringify(current) !== JSON.stringify(mapped))
+                    .map((d) => {
+                      const prof = normalizeCharacterProfile(d.data?.profile);
+                      return {
+                        id: d.id,
+                        ...(d.data || {}),
+                        profile: prof,
+                        lv: normalizeLevel(
+                          d.data?.lv,
+                          d.data?.variables,
+                          isCharacterProfileId(d.data?.profile) ? prof : undefined,
+                        ),
+                      };
+                    });
+                  if (
+                    buildPlayersRevisionSignature(current) !==
+                    buildPlayersRevisionSignature(mapped)
+                  ) {
                     return mapped;
+                  }
                   return current;
                 });
               }
@@ -1337,10 +2015,11 @@ export default function App() {
           );
       };
 
-      fetchPlayersList();
-      const fallbackInterval = setInterval(() => {
-        fetchPlayersList();
-      }, 15000);
+      const poller = createVisibilityPoller(fetchPlayersList, {
+        intervalMs: 20000,
+        minWakeGapMs: 1500,
+        runImmediately: true,
+      });
 
       const channel = supabase
         .channel("players_list_channel")
@@ -1362,7 +2041,17 @@ export default function App() {
                 return existing.filter((p) => p.id !== oldRec?.id);
               }
               if (!newRec?.id) return existing;
-              const formatted = { id: newRec.id, ...(newRec.data || {}) };
+              const prof = normalizeCharacterProfile(newRec.data?.profile);
+              const formatted = {
+                id: newRec.id,
+                ...(newRec.data || {}),
+                profile: prof,
+                lv: normalizeLevel(
+                  newRec.data?.lv,
+                  newRec.data?.variables,
+                  isCharacterProfileId(newRec.data?.profile) ? prof : undefined,
+                ),
+              };
               const index = existing.findIndex((p) => p.id === newRec.id);
               if (index >= 0) existing[index] = formatted;
               else existing.push(formatted);
@@ -1373,7 +2062,7 @@ export default function App() {
         .subscribe();
 
       return () => {
-        clearInterval(fallbackInterval);
+        poller.stop();
         supabase.removeChannel(channel);
       };
     }
@@ -1388,7 +2077,7 @@ export default function App() {
     customVars?: Record<string, number>,
   ) => {
     const varsToUse = customVars || state.variables;
-    return evaluateDiceFormula(formula, varsToUse);
+    return evaluateDiceFormula(formula, varsToUse, Math.random, state.pdis);
   };
 
   const triggerShake = () => {
@@ -1403,7 +2092,235 @@ export default function App() {
     }));
   };
 
+  const emitUltimoSuspiroEvents = (params: {
+    targetPlayerId?: string;
+    characterName: string;
+    ultimoSuspiro: UltimoSuspiroState;
+    nextHp: number;
+    events: UltimoSuspiroEventType[];
+    roll?: UltimoSuspiroRollSummary;
+    healedHp?: number;
+    logToActiveHistory?: boolean;
+  }) => {
+    if (!params.events || params.events.length === 0) return;
+
+    const eventId = `us_evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    seenUltimoSuspiroEventsRef.current.add(eventId);
+    if (seenUltimoSuspiroEventsRef.current.size > 60) {
+      const first = seenUltimoSuspiroEventsRef.current.values().next().value;
+      if (first) seenUltimoSuspiroEventsRef.current.delete(first);
+    }
+
+    const headlineEvent = params.events[params.events.length - 1];
+    const headlineNotif = formatUltimoSuspiroNotification(
+      headlineEvent,
+      params.characterName,
+      {
+        failures: params.ultimoSuspiro.failures,
+        healedHp: params.healedHp,
+        roll: params.roll,
+      },
+    );
+
+    setRollToast({
+      id: Date.now(),
+      kind: "ultimo_suspiro",
+      formula: headlineNotif.title,
+      result: headlineNotif.badgeText,
+      details: headlineNotif.message,
+      eventSeverity: headlineNotif.severity,
+    });
+
+    if (params.logToActiveHistory) {
+      const logLines = params.events.map((evt) => {
+        const notif = formatUltimoSuspiroNotification(evt, params.characterName, {
+          failures: params.ultimoSuspiro.failures,
+          healedHp: params.healedHp,
+          roll: params.roll,
+        });
+        const color =
+          notif.severity === "critical" || notif.severity === "resurrection"
+            ? "#34d399"
+            : notif.severity === "dead"
+              ? "#a1a1aa"
+              : "#f87171";
+        return `<span style="color: ${color};"><b>${notif.title}</b>: ${sanitizeRollHistoryHtml(notif.message)}</span>`;
+      });
+      for (const line of logLines) {
+        addToHistory(line);
+      }
+    }
+
+    try {
+      globalChannelRef.current?.send({
+        type: "broadcast",
+        event: "ultimo_suspiro_event",
+        payload: {
+          eventId,
+          playerId: params.targetPlayerId || "",
+          characterName: params.characterName,
+          ultimoSuspiro: params.ultimoSuspiro,
+          hpCurrent: params.nextHp,
+          events: params.events,
+          roll: params.roll,
+          healedHp: params.healedHp,
+        },
+      });
+    } catch (err) {
+      console.warn("Erro ao enviar broadcast ultimo_suspiro_event:", err);
+    }
+  };
+
+  const handleUltimoSuspiroAttemptStart = () => {
+    const currentTargetId =
+      effectiveActiveFichaId === "main"
+        ? userUid || ""
+        : `EXTRA_FICHA_${effectiveActiveFichaId}`;
+    emitUltimoSuspiroEvents({
+      targetPlayerId: currentTargetId,
+      characterName: state.name || "Personagem",
+      ultimoSuspiro: state.ultimoSuspiro,
+      nextHp: state.hp.current,
+      events: ["attempting"],
+      logToActiveHistory: true,
+    });
+  };
+
+  const handleUltimoSuspiroResolve = (payload: {
+    testResult: UltimoSuspiroRollSummary;
+    turnToken: string;
+  }) => {
+    const outcome = applySurvivalTestResult({
+      prevUltimoSuspiro: state.ultimoSuspiro,
+      currentHp: state.hp.current,
+      maxHp: state.hp.max,
+      testResult: payload.testResult,
+      turnToken: payload.turnToken,
+    });
+
+    if (outcome.ignored) {
+      return {
+        appliedHp: state.hp.current,
+        nextFailures: state.ultimoSuspiro.failures,
+        isDead: state.ultimoSuspiro.status === "dead",
+        coinFlipAvailable: outcome.coinFlipAvailable,
+        ignored: true,
+      };
+    }
+
+    if (effectiveActiveFichaId === "main") {
+      authoritativeUltimoSuspiroRef.current = outcome.ultimoSuspiro;
+    }
+
+    setState((prev: any) => ({
+      ...prev,
+      hp: {
+        ...prev.hp,
+        current: outcome.nextHp,
+      },
+      ultimoSuspiro: outcome.ultimoSuspiro,
+    }));
+
+    playDiceRollSound({
+      ostAudioAccepted,
+      critical: payload.testResult.isCritical ? "crit" : "fumble",
+    });
+    vibrate(payload.testResult.isCritical ? [40, 40, 80] : [120, 60, 120]);
+
+    const currentTargetId =
+      effectiveActiveFichaId === "main"
+        ? userUid || ""
+        : `EXTRA_FICHA_${effectiveActiveFichaId}`;
+
+    emitUltimoSuspiroEvents({
+      targetPlayerId: currentTargetId,
+      characterName: state.name || "Personagem",
+      ultimoSuspiro: outcome.ultimoSuspiro,
+      nextHp: outcome.nextHp,
+      events: outcome.events,
+      roll: payload.testResult,
+      healedHp: payload.testResult.isCritical ? outcome.nextHp : 0,
+      logToActiveHistory: true,
+    });
+
+    return {
+      appliedHp: outcome.nextHp,
+      nextFailures: outcome.ultimoSuspiro.failures,
+      isDead: outcome.ultimoSuspiro.status === "dead",
+      coinFlipAvailable: outcome.coinFlipAvailable,
+      ignored: false,
+    };
+  };
+
+  const handleUltimoSuspiroCoinFlip = (payload: {
+    choice: CoinSide;
+    landed: CoinSide;
+  }) => {
+    const outcome = resolveLastChanceCoinFlip({
+      prevUltimoSuspiro: state.ultimoSuspiro,
+      choice: payload.choice,
+      coinRoller: () => payload.landed,
+    });
+
+    if (outcome.ignored) {
+      return {
+        won: false,
+        nextFailures: state.ultimoSuspiro.failures,
+        isDead: state.ultimoSuspiro.status === "dead",
+        ignored: true,
+      };
+    }
+
+    if (effectiveActiveFichaId === "main") {
+      authoritativeUltimoSuspiroRef.current = outcome.ultimoSuspiro;
+    }
+
+    setState((prev: any) => ({
+      ...prev,
+      ultimoSuspiro: outcome.ultimoSuspiro,
+    }));
+
+    playDiceRollSound({
+      ostAudioAccepted,
+      critical: outcome.won ? "crit" : "fumble",
+    });
+    vibrate(outcome.won ? [45, 35, 90] : [160, 70, 160]);
+
+    const currentTargetId =
+      effectiveActiveFichaId === "main"
+        ? userUid || ""
+        : `EXTRA_FICHA_${effectiveActiveFichaId}`;
+
+    emitUltimoSuspiroEvents({
+      targetPlayerId: currentTargetId,
+      characterName: state.name || "Personagem",
+      ultimoSuspiro: outcome.ultimoSuspiro,
+      nextHp: 0,
+      events: outcome.events,
+      logToActiveHistory: true,
+    });
+
+    return {
+      coinFlip: outcome.coinFlip,
+      won: outcome.won,
+      nextFailures: outcome.ultimoSuspiro.failures,
+      isDead: outcome.ultimoSuspiro.status === "dead",
+      ignored: false,
+    };
+  };
+
   const executeRoll = (formulaToRoll: string, label?: string) => {
+    if (state.ultimoSuspiro.status === "dead" && !isMestreAuth) {
+      setRollToast({
+        id: Date.now(),
+        kind: "ultimo_suspiro",
+        formula: "MORTE DEFINITIVA",
+        result: "3/3",
+        details: "Personagem morto não pode realizar ações. Apenas o Mestre pode reviver.",
+        eventSeverity: "dead",
+      });
+      return;
+    }
     vibrate(50);
     const roll = parseAndRoll(formulaToRoll);
     if (roll) {
@@ -1436,6 +2353,17 @@ export default function App() {
     formulaToRoll: string,
     label?: string,
   ): boolean => {
+    if (state.ultimoSuspiro.status === "dead" && !isMestreAuth) {
+      setRollToast({
+        id: Date.now(),
+        kind: "ultimo_suspiro",
+        formula: "MORTE DEFINITIVA",
+        result: "3/3",
+        details: "Personagem morto não pode realizar ações. Apenas o Mestre pode reviver.",
+        eventSeverity: "dead",
+      });
+      return false;
+    }
     const roll = parseAndRoll(formulaToRoll);
     if (!roll) return false;
     vibrate(50);
@@ -1464,6 +2392,55 @@ export default function App() {
     val: number,
   ) => {
     if ((stat === "hp" || stat === "sm") && field === "current") vibrate(100);
+    if (stat === "hp" && field === "current") {
+      const reconciled = reconcileHpChangeForUltimoSuspiro({
+        prevUltimoSuspiro: state.ultimoSuspiro,
+        prevHp: state.hp.current,
+        nextHp: val || 0,
+        maxHp: state.hp.max,
+        isMaster: isMestreAuth,
+      });
+
+      if (reconciled.blockedDeadEdit) {
+        setRollToast({
+          id: Date.now(),
+          kind: "ultimo_suspiro",
+          formula: "MORTE DEFINITIVA",
+          result: "3/3",
+          details: "Cura normal não reverte morte definitiva. Apenas o Mestre pode reviver.",
+          eventSeverity: "dead",
+        });
+        return;
+      }
+
+      if (effectiveActiveFichaId === "main") {
+        authoritativeUltimoSuspiroRef.current = reconciled.ultimoSuspiro;
+      }
+
+      setState((prev: any) => ({
+        ...prev,
+        hp: { ...prev.hp, current: reconciled.hpCurrent },
+        ultimoSuspiro: reconciled.ultimoSuspiro,
+      }));
+
+      if (reconciled.events.length > 0) {
+        vibrate([120, 60, 120]);
+        const currentTargetId =
+          effectiveActiveFichaId === "main"
+            ? userUid || ""
+            : `EXTRA_FICHA_${effectiveActiveFichaId}`;
+        emitUltimoSuspiroEvents({
+          targetPlayerId: currentTargetId,
+          characterName: state.name || "Personagem",
+          ultimoSuspiro: reconciled.ultimoSuspiro,
+          nextHp: reconciled.hpCurrent,
+          events: reconciled.events,
+          logToActiveHistory: true,
+        });
+      }
+      return;
+    }
+
     setState((prev: any) => ({
       ...prev,
       [stat]: { ...prev[stat], [field]: val || 0 },
@@ -1507,8 +2484,67 @@ export default function App() {
 
   const updateVariable = (key: string, val: number) => {
     setState((prev: any) => {
-      const newVars = { ...prev.variables, [key]: val || 0 };
+      const activeProf = normalizeCharacterProfile(prev?.profile);
+      const currentLv = normalizeLevel(prev?.lv, prev?.variables, activeProf);
+      const currentVal = Number(prev?.variables?.[key]) || 0;
+      const resolvedVal = resolveAttributeUpdateWithProfile({
+        currentVal,
+        requestedVal: val || 0,
+        lv: currentLv,
+        statKey: key,
+        profile: activeProf,
+        min: 0,
+      });
+      const newVars = { ...prev.variables, [key]: resolvedVal };
       return applyAutoMaxToState(prev, newVars);
+    });
+  };
+
+  const handleSelectProfile = (nextProfile: CharacterProfileId) => {
+    const cleanProfile = normalizeCharacterProfile(nextProfile);
+    setState((prev: any) => ({
+      ...prev,
+      profile: cleanProfile,
+    }));
+    const targetId =
+      effectiveActiveFichaId === "main"
+        ? userUid
+        : `EXTRA_FICHA_${effectiveActiveFichaId}`;
+    if (targetId && isOnline) {
+      try {
+        globalChannelRef.current?.send({
+          type: "broadcast",
+          event: "profile_update",
+          payload: {
+            playerId: targetId,
+            profile: cleanProfile,
+          },
+        });
+      } catch (err) {
+        console.warn("Erro ao enviar broadcast profile_update:", err);
+      }
+    }
+  };
+
+  const updateLevel = (nextLv: number) => {
+    if (!isMestreAuth) return;
+    setState((prev: any) => {
+      const activeProf = normalizeCharacterProfile(prev?.profile);
+      const validation = parseAndValidateLevelChange(
+        nextLv,
+        prev?.variables,
+        activeProf,
+      );
+      if (!validation.ok || validation.value === undefined) {
+        return prev;
+      }
+      if (effectiveActiveFichaId === "main") {
+        authoritativeLvRef.current = validation.value;
+      }
+      return {
+        ...prev,
+        lv: validation.value,
+      };
     });
   };
 
@@ -1634,7 +2670,21 @@ export default function App() {
     }));
   };
 
-  const useSkill = (skill: any, type: "test" | "damage") => {
+  const useSkill = (skill: any, type: "test" | "damage"): boolean => {
+    if (!canCharacterAct(state.ultimoSuspiro) && !isMestreAuth) {
+      const isDead = state.ultimoSuspiro.status === "dead";
+      setRollToast({
+        id: Date.now(),
+        kind: "ultimo_suspiro",
+        formula: isDead ? "MORTE DEFINITIVA" : "ÚLTIMO SUSPIRO",
+        result: `${state.ultimoSuspiro.failures}/3`,
+        details: isDead
+          ? "Personagem morto não pode usar habilidades. Apenas o Mestre pode reviver."
+          : "Personagem incapacitado em Último Suspiro. Clique na caveira para o teste de sobrevivência.",
+        eventSeverity: isDead ? "dead" : "danger",
+      });
+      return false;
+    }
     vibrate([50, 50]);
 
     if (type === "test" && skill.cost > 0) {
@@ -1645,8 +2695,14 @@ export default function App() {
         }));
         addToHistory(`<i>Gastou ${skill.cost} PE com ${skill.name}</i>`);
       } else {
+        setRollToast({
+          id: Date.now(),
+          formula: `${skill.name || "Habilidade"} · PE INSUFICIENTE`,
+          result: `${state.pe.current}/${skill.cost} PE`,
+          details: `Necessário ${skill.cost} PE para usar esta habilidade.`,
+        });
         addToHistory('<span style="color: #ffaa00;">PE Insuficiente!</span>');
-        return;
+        return false;
       }
     }
 
@@ -1655,7 +2711,7 @@ export default function App() {
       addToHistory(
         `<b>${skill.name || "Habilidade"}</b>: Usou a habilidade (Sem fórmula definida).`,
       );
-      return;
+      return true;
     }
 
     const roll = parseAndRoll(formula);
@@ -1718,11 +2774,253 @@ export default function App() {
           );
         }
       }
+      return true;
     } else {
       addToHistory(
         '<span style="color: #ffaa00;">Fórmula da skill inválida.</span>',
       );
+      return false;
     }
+  };
+
+  const handleUseSkillAction = (skill: any) => {
+    const rolled = useSkill(skill, "test");
+    if (!rolled) return;
+    const hasDamage = Boolean(skill.damage && String(skill.damage).trim() !== "");
+    if (!hasDamage) {
+      setUseSkillModalId(null);
+      setSkillModalTested(false);
+      setActiveSkill(null);
+      return;
+    }
+    setSkillModalTested(true);
+    setUseSkillModalId(skill.id);
+  };
+
+  const toggleRitual = (id: number) => {
+    vibrate(30);
+    setActiveRitual((prev) => (prev === id ? null : id));
+  };
+
+  const addRitual = () => {
+    const cap = getRitualCapacityState(
+      state.rituals,
+      state.variables,
+      state.profile,
+    );
+    if (!cap.canAdd) return;
+    const newId = Date.now();
+    setState((prev: any) => {
+      const currentRituals = normalizeRituals(prev.rituals);
+      const prevCap = getRitualCapacityState(
+        currentRituals,
+        prev.variables,
+        prev.profile,
+      );
+      if (!prevCap.canAdd) return prev;
+      return {
+        ...prev,
+        rituals: [...currentRituals, createDefaultRitual(newId)],
+      };
+    });
+    setActiveRitual(newId);
+    setEditingRitual(newId);
+  };
+
+  const updateRitual = (id: number, field: keyof RitualItem, val: any) => {
+    setState((prev: any) => ({
+      ...prev,
+      rituals: normalizeRituals(prev.rituals).map((r) => {
+        if (r.id !== id) return r;
+        if (field === "level") {
+          return { ...r, level: normalizeRitualLevel(val) };
+        }
+        if (field === "difficulty") {
+          return { ...r, difficulty: normalizeRitualDifficulty(val, 0) };
+        }
+        if (field === "cost") {
+          return { ...r, cost: normalizeRitualCost(val) };
+        }
+        if (field === "affiliations") {
+          return { ...r, affiliations: normalizeRitualAffiliations(val) };
+        }
+        if (field === "needsTest") {
+          return { ...r, needsTest: Boolean(val) };
+        }
+        return { ...r, [field]: val };
+      }),
+    }));
+  };
+
+  const removeRitual = (id: number) => {
+    setState((prev: any) => ({
+      ...prev,
+      rituals: normalizeRituals(prev.rituals).filter((r) => r.id !== id),
+    }));
+    setActiveRitual((prev) => (prev === id ? null : prev));
+    setEditingRitual((prev) => (prev === id ? null : prev));
+    setUseRitualModalId((prev) => (prev === id ? null : prev));
+  };
+
+  const castRitualTest = (ritual: RitualItem): RitualTestOutcome | null => {
+    if (!canCharacterAct(state.ultimoSuspiro) && !isMestreAuth) {
+      const isDead = state.ultimoSuspiro.status === "dead";
+      setRollToast({
+        id: Date.now(),
+        kind: "ultimo_suspiro",
+        formula: isDead ? "MORTE DEFINITIVA" : "ÚLTIMO SUSPIRO",
+        result: `${state.ultimoSuspiro.failures}/3`,
+        details: isDead
+          ? "Personagem morto não pode conjurar rituais. Apenas o Mestre pode reviver."
+          : "Personagem incapacitado em Último Suspiro. Clique na caveira para o teste de sobrevivência.",
+        eventSeverity: isDead ? "dead" : "danger",
+      });
+      return null;
+    }
+    vibrate([50, 50]);
+
+    if (ritual.cost > 0) {
+      if (state.pe.current >= ritual.cost) {
+        setState((prev: any) => ({
+          ...prev,
+          pe: { ...prev.pe, current: prev.pe.current - ritual.cost },
+        }));
+        addToHistory(
+          `<i>Gastou ${ritual.cost} PE com o ritual ${ritual.name || "Ritual"}</i>`,
+        );
+      } else {
+        setRollToast({
+          id: Date.now(),
+          formula: `${ritual.name || "Ritual"} · PE INSUFICIENTE`,
+          result: `${state.pe.current}/${ritual.cost} PE`,
+          details: `Necessário ${ritual.cost} PE para conjurar este ritual.`,
+        });
+        addToHistory('<span style="color: #ffaa00;">PE Insuficiente!</span>');
+        return null;
+      }
+    }
+
+    const roll = parseAndRoll(RITUAL_TEST_FORMULA);
+    if (!roll) {
+      addToHistory(
+        '<span style="color: #ffaa00;">Erro ao rolar teste do ritual (2d6+OCU).</span>',
+      );
+      return null;
+    }
+
+    const outcome = evaluateRitualTestOutcome(roll.result, ritual.difficulty);
+    setRitualModalOutcome(outcome);
+
+    const affLabels = ritual.affiliations
+      .map((a) => RITUAL_AFFILIATIONS[a]?.label)
+      .filter(Boolean)
+      .join(", ");
+    const ritualLabel = `${ritual.name || "Ritual"} (NV ${ritual.level})`;
+    const statusText = outcome.success
+      ? `SUCESSO (${outcome.result} > Dif. ${outcome.difficulty})`
+      : `FALHA (${outcome.result} ≤ Dif. ${outcome.difficulty})`;
+    const statusColor = outcome.success ? "#34d399" : "#ef4444";
+
+    setLastRollResult({
+      formula: `${ritualLabel} · ${RITUAL_TEST_FORMULA}`,
+      result: roll.result,
+      details: `${statusText} · ${roll.details}`,
+      critical: roll.critical,
+    });
+    setRollToast({
+      id: Date.now(),
+      formula: `${ritualLabel} · ${outcome.success ? "SUCESSO" : "FALHA"}`,
+      result: roll.result,
+      details: `${outcome.result} ${outcome.success ? ">" : "≤"} Dif. ${outcome.difficulty} · ${roll.details}`,
+      critical: roll.critical,
+    });
+    addToHistory(
+      `<b>${ritualLabel}</b>${affLabels ? ` [${affLabels}]` : ""} <br>Teste: ${RITUAL_TEST_FORMULA} (Dif. ${outcome.difficulty}) <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result" style="color:${statusColor};">Resultado: ${roll.result} — ${outcome.success ? "SUCESSO" : "FALHA"}</span>`,
+    );
+    triggerShake();
+    return outcome;
+  };
+
+  const handleUseRitualAction = (ritualId: number) => {
+    const ritual = state.rituals.find((r) => r.id === ritualId);
+    if (!ritual) return;
+    const outcome = castRitualTest(ritual);
+    if (!outcome) return;
+    const hasDamage = ritual.damage.trim() !== "";
+    if (!hasDamage) {
+      setUseRitualModalId(null);
+      setRitualModalOutcome(null);
+      setActiveRitual(null);
+      return;
+    }
+    setUseRitualModalId(ritual.id);
+  };
+
+  const castRitualDamage = (
+    ritual: RitualItem,
+    enforceTestOutcome = false,
+  ) => {
+    if (!canCharacterAct(state.ultimoSuspiro) && !isMestreAuth) {
+      const isDead = state.ultimoSuspiro.status === "dead";
+      setRollToast({
+        id: Date.now(),
+        kind: "ultimo_suspiro",
+        formula: isDead ? "MORTE DEFINITIVA" : "ÚLTIMO SUSPIRO",
+        result: `${state.ultimoSuspiro.failures}/3`,
+        details: isDead
+          ? "Personagem morto não pode conjurar rituais. Apenas o Mestre pode reviver."
+          : "Personagem incapacitado em Último Suspiro. Clique na caveira para o teste de sobrevivência.",
+        eventSeverity: isDead ? "dead" : "danger",
+      });
+      return;
+    }
+
+    if (
+      enforceTestOutcome &&
+      ritual.needsTest &&
+      (!ritualModalOutcome || !ritualModalOutcome.success)
+    ) {
+      addToHistory(
+        `<span style="color: #ffaa00;">Obtenha sucesso no teste (${RITUAL_TEST_FORMULA} &gt; Dif. ${ritual.difficulty}) antes de rolar o dano!</span>`,
+      );
+      return;
+    }
+
+    const formula = ritual.damage.trim();
+    if (!formula) {
+      addToHistory(
+        `<b>${ritual.name || "Ritual"}</b>: Sem fórmula de dano definida.`,
+      );
+      return;
+    }
+
+    vibrate([50, 50]);
+    const roll = parseAndRoll(formula);
+    if (!roll) {
+      addToHistory(
+        '<span style="color: #ffaa00;">Fórmula de dano do ritual inválida.</span>',
+      );
+      return;
+    }
+
+    const rollLabel = `${ritual.name || "Ritual"} (Dano)`;
+    setLastRollResult({
+      formula: rollLabel,
+      result: roll.result,
+      details: roll.details,
+      critical: roll.critical,
+    });
+    setRollToast({
+      id: Date.now(),
+      formula: rollLabel,
+      result: roll.result,
+      details: roll.details,
+      critical: roll.critical,
+    });
+    addToHistory(
+      `<b>${ritual.name || "Ritual"}</b> (Dano) <br>Fórmula: ${roll.formula} <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
+    );
+    triggerShake();
   };
 
   const toggleTributo = () => {
@@ -1807,12 +3105,35 @@ export default function App() {
       const reader = new FileReader();
       reader.onload = (re: any) => {
         try {
-          const content = JSON.parse(re.target.result);
-          if (content && content.hp && content.pe) {
-            setState(content);
+          const validated = sanitizeImportedSheetJson(String(re.target?.result ?? ""));
+          if (validated.ok && validated.sheet) {
+            const migrated = migrateSheetForLevelSystem(validated.sheet).sheet;
+            const guardedEp = protectPlayerEpOnSave(
+              migrated,
+              authoritativeEpRef.current,
+              isMestreAuth,
+            );
+            const guardedLv = protectPlayerLevelOnSave(
+              guardedEp,
+              authoritativeLvRef.current,
+              isMestreAuth,
+            );
+            const guarded = protectUltimoSuspiroOnSave(
+              guardedLv,
+              authoritativeUltimoSuspiroRef.current,
+              isMestreAuth,
+            );
+            if (isMestreAuth && effectiveActiveFichaId === "main") {
+              authoritativeLvRef.current = guarded.lv;
+              authoritativeUltimoSuspiroRef.current = normalizeUltimoSuspiroState(
+                guarded.ultimoSuspiro,
+                guarded.hp?.current,
+              );
+            }
+            setState(guarded);
           } else {
             addToHistory(
-              '<span style="color: #ffaa00;">Arquivo JSON inválido para esta ficha.</span>',
+              `<span style="color: #ffaa00;">${sanitizeRollHistoryHtml(validated.error || "Arquivo JSON inválido para esta ficha.")}</span>`,
             );
           }
         } catch {
@@ -1826,16 +3147,218 @@ export default function App() {
     input.click();
   };
 
+  const persistPlayerUltimoSuspiroUpdate = async (params: {
+    player: any;
+    nextHpCurrent: number;
+    nextUltimoSuspiro: UltimoSuspiroState;
+    events: UltimoSuspiroEventType[];
+    healedHp?: number;
+    isExtraSheet?: boolean;
+    rawExtraSheetId?: string;
+  }) => {
+    const {
+      player,
+      nextHpCurrent,
+      nextUltimoSuspiro,
+      events,
+      healedHp,
+      isExtraSheet,
+      rawExtraSheetId,
+    } = params;
+
+    const targetId =
+      isExtraSheet && rawExtraSheetId
+        ? `EXTRA_FICHA_${rawExtraSheetId}`
+        : player.id;
+
+    if (isExtraSheet && rawExtraSheetId) {
+      setExtraFichas((prev) =>
+        prev.map((f) =>
+          f.id === rawExtraSheetId
+            ? {
+                ...f,
+                hp: { ...f.hp, current: nextHpCurrent },
+                ultimoSuspiro: nextUltimoSuspiro,
+                last_local_edit: f.synchronized ? Date.now() : f.last_local_edit,
+              }
+            : f,
+        ),
+      );
+      if (player.synchronized || String(player.id || "").startsWith("EXTRA_FICHA_")) {
+        const cleanData = {
+          ...player,
+          hp: { ...(player.hp || { max: 100 }), current: nextHpCurrent },
+          ultimoSuspiro: nextUltimoSuspiro,
+        };
+        delete cleanData.id;
+        delete cleanData.isExtraSheet;
+        delete cleanData.rawExtraSheetId;
+        await supabase.from("players").update({ data: cleanData }).eq("id", targetId);
+      }
+    } else {
+      setPlayers((current) =>
+        current.map((pl) =>
+          pl.id === player.id
+            ? {
+                ...pl,
+                hp: { ...pl.hp, current: nextHpCurrent },
+                ultimoSuspiro: nextUltimoSuspiro,
+              }
+            : pl,
+        ),
+      );
+      if (player.id === userUidRef.current) {
+        authoritativeUltimoSuspiroRef.current = nextUltimoSuspiro;
+        setMainState((prev: any) => ({
+          ...prev,
+          hp: { ...prev.hp, current: nextHpCurrent },
+          ultimoSuspiro: nextUltimoSuspiro,
+        }));
+      }
+      const cleanData = {
+        ...player,
+        hp: { ...(player.hp || { max: 100 }), current: nextHpCurrent },
+        ultimoSuspiro: nextUltimoSuspiro,
+      };
+      delete cleanData.id;
+      delete cleanData.isExtraSheet;
+      delete cleanData.rawExtraSheetId;
+      await supabase.from("players").update({ data: cleanData }).eq("id", player.id);
+    }
+
+    if (events.length > 0) {
+      emitUltimoSuspiroEvents({
+        targetPlayerId: targetId,
+        characterName: player.name || "Personagem",
+        ultimoSuspiro: nextUltimoSuspiro,
+        nextHp: nextHpCurrent,
+        events,
+        healedHp,
+        logToActiveHistory: false,
+      });
+    }
+  };
+
   const editPlayerStatExact = async (
     p: any,
     stat: "hp" | "pe" | "sm",
     value: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
   ) => {
-    const newData = { ...p };
+    const newData = {
+      ...p,
+      [stat]: { ...(p[stat] || { current: 0, max: 100 }) },
+    };
+
+    if (stat === "hp") {
+      const clampedValue = Math.max(0, Math.min(newData.hp.max, value));
+      const reconciled = reconcileHpChangeForUltimoSuspiro({
+        prevUltimoSuspiro: p.ultimoSuspiro,
+        prevHp: p.hp?.current ?? 0,
+        nextHp: clampedValue,
+        maxHp: newData.hp.max,
+        isMaster: isMestreAuth,
+      });
+
+      if (reconciled.blockedDeadEdit) {
+        setRollToast({
+          id: Date.now(),
+          kind: "ultimo_suspiro",
+          formula: "MORTE DEFINITIVA",
+          result: "3/3",
+          details: `Use o botão "Reviver" para trazer ${p.name || "o personagem"} de volta à vida.`,
+          eventSeverity: "dead",
+        });
+        return;
+      }
+
+      await persistPlayerUltimoSuspiroUpdate({
+        player: p,
+        nextHpCurrent: reconciled.hpCurrent,
+        nextUltimoSuspiro: reconciled.ultimoSuspiro,
+        events: reconciled.events,
+        isExtraSheet,
+        rawExtraSheetId,
+      });
+      return;
+    }
+
     newData[stat].current = Math.max(0, Math.min(newData[stat].max, value));
     const dataToSave = { ...newData };
     delete dataToSave.id;
+    delete dataToSave.isExtraSheet;
+    delete dataToSave.rawExtraSheetId;
     await supabase.from("players").update({ data: dataToSave }).eq("id", p.id);
+  };
+
+  const handleMasterAdvanceUltimoSuspiroTurn = async (
+    p: any,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => {
+    if (!isMestreAuth) return;
+    const prevUs = normalizeUltimoSuspiroState(p.ultimoSuspiro, p.hp?.current ?? 0);
+    const res = advanceUltimoSuspiroTurn({
+      prevUltimoSuspiro: prevUs,
+      turnToken: `master_turn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    });
+    if (res.ignored) return;
+    await persistPlayerUltimoSuspiroUpdate({
+      player: p,
+      nextHpCurrent: 0,
+      nextUltimoSuspiro: res.ultimoSuspiro,
+      events: res.events,
+      isExtraSheet,
+      rawExtraSheetId,
+    });
+  };
+
+  const handleMasterFinalizeUltimoSuspiroDeath = async (
+    p: any,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => {
+    if (!isMestreAuth) return;
+    const prevUs = normalizeUltimoSuspiroState(p.ultimoSuspiro, p.hp?.current ?? 0);
+    const res = resolveMasterFinalizeDeath({
+      isMaster: isMestreAuth,
+      prevUltimoSuspiro: prevUs,
+    });
+    if (!res.ok || !res.ultimoSuspiro) return;
+    await persistPlayerUltimoSuspiroUpdate({
+      player: p,
+      nextHpCurrent: 0,
+      nextUltimoSuspiro: res.ultimoSuspiro,
+      events: res.events,
+      isExtraSheet,
+      rawExtraSheetId,
+    });
+  };
+
+  const handleMasterRevivePlayer = async (
+    p: any,
+    targetHp: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => {
+    if (!isMestreAuth) return;
+    const maxHp = p.hp?.max ?? 26;
+    const res = resolveMasterRevive({
+      isMaster: isMestreAuth,
+      maxHp,
+      targetHp,
+    });
+    if (!res.ok || !res.ultimoSuspiro || res.hpCurrent === undefined) return;
+    await persistPlayerUltimoSuspiroUpdate({
+      player: p,
+      nextHpCurrent: res.hpCurrent,
+      nextUltimoSuspiro: res.ultimoSuspiro,
+      events: res.events,
+      healedHp: res.hpCurrent,
+      isExtraSheet,
+      rawExtraSheetId,
+    });
   };
 
   const updatePlayerStatusEffects = async (
@@ -1880,6 +3403,359 @@ export default function App() {
     } catch (err) {
       console.warn("Erro ao enviar broadcast status_effects_update:", err);
     }
+  };
+
+  const broadcastPdisUpdate = (playerId: string, nextPdis: PdiItem[]) => {
+    try {
+      globalChannelRef.current?.send({
+        type: "broadcast",
+        event: "pdis_update",
+        payload: {
+          playerId,
+          pdis: nextPdis,
+        },
+      });
+    } catch (err) {
+      console.warn("Erro ao enviar broadcast pdis_update:", err);
+    }
+  };
+
+  const updatePlayerPdis = async (
+    p: any,
+    nextPdis: PdiItem[],
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => {
+    if (!isMestreAuth) return;
+    const cleanPdis = normalizePdis(nextPdis, []);
+
+    if (isExtraSheet && rawExtraSheetId) {
+      const targetExtra = extraFichas.find((f) => f.id === rawExtraSheetId) || p;
+      const isSynced = Boolean(
+        targetExtra?.synchronized || String(p?.id || "").startsWith("EXTRA_FICHA_"),
+      );
+      setExtraFichas((prev) =>
+        prev.map((f) =>
+          f.id === rawExtraSheetId
+            ? {
+                ...f,
+                pdis: cleanPdis,
+                last_local_edit: isSynced ? Date.now() : f.last_local_edit,
+              }
+            : f,
+        ),
+      );
+      if (isSynced) {
+        const extraRecordId = `EXTRA_FICHA_${rawExtraSheetId}`;
+        const newData = { ...targetExtra, pdis: cleanPdis };
+        delete newData.id;
+        delete newData.isExtraSheet;
+        delete newData.rawExtraSheetId;
+        try {
+          await supabase
+            .from("players")
+            .update({ data: newData, updated_at: new Date().toISOString() })
+            .eq("id", extraRecordId);
+        } catch (err) {
+          console.warn("Erro ao salvar PDIs da ficha extra no Supabase:", err);
+        }
+        broadcastPdisUpdate(extraRecordId, cleanPdis);
+      }
+      return;
+    }
+
+    setPlayers((current) =>
+      current.map((pl) => (pl.id === p.id ? { ...pl, pdis: cleanPdis } : pl)),
+    );
+    if (p.id === userUidRef.current) {
+      authoritativePdisRef.current = cleanPdis;
+      setMainState((prev: any) => ({ ...prev, pdis: cleanPdis }));
+    }
+
+    const newData = { ...p, pdis: cleanPdis };
+    delete newData.id;
+    delete newData.isExtraSheet;
+    delete newData.rawExtraSheetId;
+    try {
+      await supabase
+        .from("players")
+        .update({ data: newData, updated_at: new Date().toISOString() })
+        .eq("id", p.id);
+    } catch (err) {
+      console.warn("Erro ao salvar PDIs do jogador no Supabase:", err);
+    }
+    broadcastPdisUpdate(p.id, cleanPdis);
+  };
+
+  const handleToggleActiveSheetPdi = (pdiId: string) => {
+    const nextPdis = togglePdiActive(state.pdis, pdiId);
+    if (effectiveActiveFichaId === "main" && isMestreAuth) {
+      authoritativePdisRef.current = nextPdis;
+    }
+    setState((prev: any) => ({
+      ...prev,
+      pdis: nextPdis,
+    }));
+    const targetId =
+      effectiveActiveFichaId === "main"
+        ? userUid
+        : `EXTRA_FICHA_${effectiveActiveFichaId}`;
+    if (targetId && isOnline) {
+      broadcastPdisUpdate(targetId, nextPdis);
+    }
+  };
+
+  const handleSaveActiveSheetPdi = (draft: PdiItem) => {
+    if (!isMestreAuth) return;
+    const nextPdis = upsertPdiItem(state.pdis, draft);
+    if (effectiveActiveFichaId === "main") {
+      authoritativePdisRef.current = nextPdis;
+    }
+    setState((prev: any) => ({
+      ...prev,
+      pdis: nextPdis,
+    }));
+    const targetId =
+      effectiveActiveFichaId === "main"
+        ? userUid
+        : `EXTRA_FICHA_${effectiveActiveFichaId}`;
+    if (targetId && isOnline) {
+      broadcastPdisUpdate(targetId, nextPdis);
+    }
+  };
+
+  const handleDeleteActiveSheetPdi = (pdiId: string) => {
+    if (!isMestreAuth) return;
+    const nextPdis = removePdiItem(state.pdis, pdiId);
+    if (effectiveActiveFichaId === "main") {
+      authoritativePdisRef.current = nextPdis;
+    }
+    setState((prev: any) => ({
+      ...prev,
+      pdis: nextPdis,
+    }));
+    const targetId =
+      effectiveActiveFichaId === "main"
+        ? userUid
+        : `EXTRA_FICHA_${effectiveActiveFichaId}`;
+    if (targetId && isOnline) {
+      broadcastPdisUpdate(targetId, nextPdis);
+    }
+  };
+
+  const updatePlayerEp = async (
+    p: any,
+    rawNextEp: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const decision = resolveMasterEpUpdate({
+      isMaster: isMestreAuth,
+      rawNextEp,
+    });
+    if (!decision.allowed || decision.value === undefined) {
+      return { ok: false, error: decision.error || "Permissão negada." };
+    }
+
+    const nextEp = decision.value;
+    const targetRecordId =
+      isExtraSheet && rawExtraSheetId
+        ? `EXTRA_FICHA_${rawExtraSheetId}`
+        : p.id;
+
+    if (isExtraSheet && rawExtraSheetId) {
+      const previousExtra = extraFichasLatestRef.current.find(
+        (f) => f.id === rawExtraSheetId,
+      );
+      setExtraFichas((prev) =>
+        prev.map((f) =>
+          f.id === rawExtraSheetId
+            ? {
+                ...f,
+                ep: nextEp,
+                last_local_edit: f.synchronized ? Date.now() : undefined,
+              }
+            : f,
+        ),
+      );
+
+      if (previousExtra?.synchronized) {
+        const { last_local_edit, ...pureExtra } = previousExtra;
+        const { error } = await supabase
+          .from("players")
+          .update({
+            data: { ...pureExtra, ep: nextEp },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", targetRecordId);
+
+        if (error) {
+          console.warn("Erro ao salvar EP da ficha extra:", error.message);
+          setExtraFichas((prev) =>
+            prev.map((f) =>
+              f.id === rawExtraSheetId ? previousExtra : f,
+            ),
+          );
+          return { ok: false, error: "Falha ao salvar EP no servidor." };
+        }
+      }
+    } else {
+      const prevEp = normalizeEpValue(p.ep, 0);
+      setPlayers((current) =>
+        current.map((pl) => (pl.id === p.id ? { ...pl, ep: nextEp } : pl)),
+      );
+
+      if (p.id === userUidRef.current) {
+        authoritativeEpRef.current = nextEp;
+        setMainState((prev: any) => ({ ...prev, ep: nextEp }));
+      }
+
+      const newData = { ...p, ep: nextEp };
+      delete newData.id;
+      delete newData.isExtraSheet;
+      delete newData.rawExtraSheetId;
+
+      const { error } = await supabase
+        .from("players")
+        .update({ data: newData, updated_at: new Date().toISOString() })
+        .eq("id", p.id);
+
+      if (error) {
+        console.warn("Erro ao salvar EP do jogador:", error.message);
+        setPlayers((current) =>
+          current.map((pl) => (pl.id === p.id ? { ...pl, ep: prevEp } : pl)),
+        );
+        if (p.id === userUidRef.current) {
+          authoritativeEpRef.current = prevEp;
+          setMainState((prev: any) => ({ ...prev, ep: prevEp }));
+        }
+        return { ok: false, error: "Falha ao salvar EP no servidor." };
+      }
+    }
+
+    try {
+      globalChannelRef.current?.send({
+        type: "broadcast",
+        event: "ep_update",
+        payload: {
+          playerId: targetRecordId,
+          ep: nextEp,
+        },
+      });
+    } catch (err) {
+      console.warn("Erro ao enviar broadcast ep_update:", err);
+    }
+
+    return { ok: true };
+  };
+
+  const updatePlayerLv = async (
+    p: any,
+    rawNextLv: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const targetProfile = normalizeCharacterProfile(p?.profile);
+    const decision = resolveMasterLevelUpdate({
+      isMaster: isMestreAuth,
+      rawNextLv,
+      variables: p?.variables,
+      profile: targetProfile,
+    });
+    if (!decision.allowed || decision.value === undefined) {
+      return { ok: false, error: decision.error || "Permissão negada." };
+    }
+
+    const nextLv = decision.value;
+    const targetRecordId =
+      isExtraSheet && rawExtraSheetId
+        ? `EXTRA_FICHA_${rawExtraSheetId}`
+        : p.id;
+
+    if (isExtraSheet && rawExtraSheetId) {
+      const previousExtra = extraFichasLatestRef.current.find(
+        (f) => f.id === rawExtraSheetId,
+      );
+      setExtraFichas((prev) =>
+        prev.map((f) =>
+          f.id === rawExtraSheetId
+            ? {
+                ...f,
+                lv: nextLv,
+                last_local_edit: f.synchronized ? Date.now() : undefined,
+              }
+            : f,
+        ),
+      );
+
+      if (previousExtra?.synchronized) {
+        const { last_local_edit, ...pureExtra } = previousExtra;
+        const { error } = await supabase
+          .from("players")
+          .update({
+            data: { ...pureExtra, lv: nextLv },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", targetRecordId);
+
+        if (error) {
+          console.warn("Erro ao salvar LV da ficha extra:", error.message);
+          setExtraFichas((prev) =>
+            prev.map((f) =>
+              f.id === rawExtraSheetId ? previousExtra : f,
+            ),
+          );
+          return { ok: false, error: "Falha ao salvar LV no servidor." };
+        }
+      }
+    } else {
+      const prevLv = normalizeLevel(p.lv, p.variables, targetProfile);
+      setPlayers((current) =>
+        current.map((pl) => (pl.id === p.id ? { ...pl, lv: nextLv } : pl)),
+      );
+
+      if (p.id === userUidRef.current) {
+        authoritativeLvRef.current = nextLv;
+        setMainState((prev: any) => ({ ...prev, lv: nextLv }));
+      }
+
+      const newData = { ...p, lv: nextLv };
+      delete newData.id;
+      delete newData.isExtraSheet;
+      delete newData.rawExtraSheetId;
+
+      const { error } = await supabase
+        .from("players")
+        .update({ data: newData, updated_at: new Date().toISOString() })
+        .eq("id", p.id);
+
+      if (error) {
+        console.warn("Erro ao salvar LV do jogador:", error.message);
+        setPlayers((current) =>
+          current.map((pl) => (pl.id === p.id ? { ...pl, lv: prevLv } : pl)),
+        );
+        if (p.id === userUidRef.current) {
+          authoritativeLvRef.current = prevLv;
+          setMainState((prev: any) => ({ ...prev, lv: prevLv }));
+        }
+        return { ok: false, error: "Falha ao salvar LV no servidor." };
+      }
+    }
+
+    try {
+      globalChannelRef.current?.send({
+        type: "broadcast",
+        event: "lv_update",
+        payload: {
+          playerId: targetRecordId,
+          lv: nextLv,
+        },
+      });
+    } catch (err) {
+      console.warn("Erro ao enviar broadcast lv_update:", err);
+    }
+
+    return { ok: true };
   };
 
   const handleDisconnectDefaultSheets = async (): Promise<{
@@ -1989,6 +3865,7 @@ export default function App() {
 
   const renderHud = () => {
     const { leftEffects, rightEffects } = hudStatusEffects;
+    const activeProfile = normalizeCharacterProfile(state.profile);
 
     return (
       <div className="hud-container relative pointer-events-auto">
@@ -2036,9 +3913,35 @@ export default function App() {
           }}
           placeholder="NOME"
         />
+        <div
+          data-testid="sheet-ep-lv-row"
+          className="-mt-1 mb-1 inline-flex items-center justify-center gap-3 leading-none"
+        >
+          <div
+            data-testid="sheet-ep-indicator"
+            className="pointer-events-none select-none cursor-default inline-flex items-baseline justify-center gap-1.5 font-mono text-[11px] sm:text-[12px] font-bold uppercase tracking-[0.2em] leading-none [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+          >
+            <span className="text-[#b52a30]/70">EP</span>
+            <span className="text-[#dedede] tabular-nums">{normalizeEpValue(state.ep, 0)}%</span>
+          </div>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none select-none font-mono text-[10px] text-[#4a4a56] leading-none"
+          >
+            |
+          </span>
+          <SheetLevelControl
+            lv={normalizeLevel(state.lv, state.variables, activeProfile)}
+            variables={state.variables}
+            profile={activeProfile}
+            isMaster={isMestreAuth}
+            onChangeLv={isMestreAuth ? updateLevel : undefined}
+            isRlMode={isRlMode}
+          />
+        </div>
         {!isRlMode ? (
           <>
-            <div className="hp-text z-0">
+            <div className={`hp-text z-0 ${state.ultimoSuspiro.status === "dead" ? "hp-text-dead" : ""}`}>
               <span>
                 {state.hp.current}/{state.hp.max}
               </span>
@@ -2053,7 +3956,7 @@ export default function App() {
           </>
         ) : (
           <>
-            <div className="hp-text z-0">
+            <div className={`hp-text z-0 ${state.ultimoSuspiro.status === "dead" ? "hp-text-dead" : ""}`}>
               <span>
                 {state.hp.current}/{state.hp.max}
               </span>
@@ -2070,24 +3973,41 @@ export default function App() {
       </div>
 
       <div className="status-bars">
-        {/* Barra de HP (sempre visível) */}
-        <div className="bar-wrapper">
+        {/* Barra de HP (sempre visível; fica totalmente cinza em MORTE DEFINITIVA 3/3) */}
+        <div
+          data-testid="sheet-hp-bar-wrapper"
+          data-ultimo-suspiro={state.ultimoSuspiro.status}
+          className={`bar-wrapper ${state.ultimoSuspiro.status === "dead" ? "hp-bar-dead" : ""}`}
+        >
           <div
-            className="bar-fill hp-fill"
+            className={`bar-fill hp-fill ${state.ultimoSuspiro.status === "dead" ? "hp-fill-dead" : ""}`}
             style={{
-              transform: `scaleX(${Math.max(0, Math.min(1, (hpPercent || 0) / 100))}) translateZ(0)`,
+              transform: `scaleX(${
+                state.ultimoSuspiro.status === "dead"
+                  ? 1
+                  : Math.max(0, Math.min(1, (hpPercent || 0) / 100))
+              }) translateZ(0)`,
             }}
           ></div>
         </div>
-        <div className="status-inputs">
-          <span>
+        <div className="status-inputs gap-2 flex-wrap">
+          <span className={state.ultimoSuspiro.status === "dead" ? "text-[#71717a]" : undefined}>
             HP:{" "}
             <MestreStatInput
               value={state.hp.current}
-              className="w-12 bg-transparent border-none text-white text-center font-bold font-mono outline-none"
+              disabled={state.ultimoSuspiro.status === "dead"}
+              className={`w-12 bg-transparent border-none text-center font-bold font-mono outline-none ${
+                state.ultimoSuspiro.status === "dead"
+                  ? "text-[#71717a] cursor-not-allowed"
+                  : "text-white"
+              }`}
               onSave={(val) => updateStat("hp", "current", val)}
               ariaLabel="Editar Vida Atual"
-              title="Editar Vida Atual (digite um número ou use +, -, * como: +20, -15, *2)"
+              title={
+                state.ultimoSuspiro.status === "dead"
+                  ? "Morte Definitiva (3/3) — apenas o Mestre pode reviver"
+                  : "Editar Vida Atual (digite um número ou use +, -, * como: +20, -15, *2)"
+              }
             />{" "}
             /{" "}
             <MestreStatInput
@@ -2099,7 +4019,62 @@ export default function App() {
               title="Editar Vida Máxima"
             />
           </span>
+
+          <UltimoSuspiroBadge
+            ultimoSuspiro={state.ultimoSuspiro}
+            canInteract={
+              canTriggerSurvivalTest(
+                state.ultimoSuspiro,
+                effectiveActiveFichaId === "main" || isMestreAuth,
+              )
+            }
+            onTriggerTest={() => setIsUltimoSuspiroModalOpen(true)}
+          />
         </div>
+
+        {isMestreAuth && state.ultimoSuspiro.status !== "alive" && (
+          <MasterUltimoSuspiroControls
+            ultimoSuspiro={state.ultimoSuspiro}
+            maxHp={state.hp.max}
+            characterName={state.name || "Personagem"}
+            isMaster={isMestreAuth}
+            compact
+            onAdvanceTurn={() => {
+              const isExtra = effectiveActiveFichaId !== "main";
+              const targetPlayer = isExtra
+                ? extraFichas.find((f) => f.id === effectiveActiveFichaId) || state
+                : { ...mainState, id: userUidRef.current };
+              handleMasterAdvanceUltimoSuspiroTurn(
+                targetPlayer,
+                isExtra,
+                isExtra ? effectiveActiveFichaId : undefined,
+              );
+            }}
+            onFinalizeDeath={() => {
+              const isExtra = effectiveActiveFichaId !== "main";
+              const targetPlayer = isExtra
+                ? extraFichas.find((f) => f.id === effectiveActiveFichaId) || state
+                : { ...mainState, id: userUidRef.current };
+              handleMasterFinalizeUltimoSuspiroDeath(
+                targetPlayer,
+                isExtra,
+                isExtra ? effectiveActiveFichaId : undefined,
+              );
+            }}
+            onRevive={(targetHp) => {
+              const isExtra = effectiveActiveFichaId !== "main";
+              const targetPlayer = isExtra
+                ? extraFichas.find((f) => f.id === effectiveActiveFichaId) || state
+                : { ...mainState, id: userUidRef.current };
+              handleMasterRevivePlayer(
+                targetPlayer,
+                targetHp,
+                isExtra,
+                isExtra ? effectiveActiveFichaId : undefined,
+              );
+            }}
+          />
+        )}
 
         {/* Modo Demologia: Apenas barra de PE */}
         {!isRlMode && (
@@ -2182,13 +4157,24 @@ export default function App() {
       .map((f) => ({
         id: `EXTRA_FICHA_${f.id}`,
         variables: f.variables || {},
+        pdis: normalizePdis(f.pdis, []),
       }));
     const combined = [...players, ...syncedExtras];
     const newInits: Record<string, number> = {};
     combined.forEach((p) => {
-      const agl = p.variables?.["AGL"] || 0;
-      const roll = Math.floor(Math.random() * 20) + 1;
-      newInits[p.id] = roll + agl;
+      const rolled = evaluateDiceFormula(
+        "1d20+AGL",
+        p.variables || {},
+        Math.random,
+        normalizePdis(p.pdis, []),
+      );
+      if (rolled) {
+        newInits[p.id] = rolled.result;
+      } else {
+        const agl = p.variables?.["AGL"] || 0;
+        const roll = Math.floor(Math.random() * 20) + 1;
+        newInits[p.id] = roll + agl;
+      }
     });
     setInitiatives((prev) => ({ ...prev, ...newInits }));
   };
@@ -2751,6 +4737,15 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           onOpenModeModal={isMestreAuth ? handleOpenModeModal : undefined}
           isOnline={isOnline}
           unreadHandoutsCount={handoutsSync.unreadCount}
+          onLogoutMaster={
+            isMestreAuth
+              ? () => {
+                  setIsMestreAuth(false);
+                  setActiveFichaId("main");
+                  setCurrentPage("ficha");
+                }
+              : undefined
+          }
         />
 
       <main className="flex-1 min-w-0 w-full transition-all min-h-[100dvh] relative z-10 flex flex-col">
@@ -2822,101 +4817,212 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             </div>
 
             <div className="section">
-              <div className="section-title">Variáveis de Status</div>
-              <div className="flex flex-col gap-2.5">
-                {Object.entries(state.variables).map(([key, value]) => {
-                  const numVal = (value as number) || 0;
-                  const isDefaultStatus = isDefaultStatusKey(key);
-                  return (
-                    <div
-                      key={key}
-                      className={`var-list-row flex items-center justify-between gap-2 sm:gap-3 px-3 py-2 min-h-[48px] border rounded-none transition-colors ${
-                        isRlMode
-                          ? "bg-[#141022]/85 border-purple-500/25 focus-within:border-purple-400"
-                          : "bg-[#101016]/90 border-[#242430] hover:border-[#343444] focus-within:border-[var(--op-red)]"
-                      }`}
-                    >
-                      <input
-                        type="text"
-                        defaultValue={key}
-                        readOnly={isDefaultStatus}
-                        aria-label={`Nome da variável ${key}`}
-                        title={
-                          isDefaultStatus
-                            ? "Atributo padrão do sistema"
-                            : "Clique para renomear variável"
-                        }
-                        className={`flex-1 min-w-[56px] bg-transparent font-mono font-bold text-sm uppercase tracking-wider outline-none focus:outline-none focus-visible:outline-none border-b border-transparent py-1 ${
-                          isRlMode
-                            ? "text-purple-200 focus:border-purple-400"
-                            : "text-[var(--op-red-bright)] focus:border-[var(--op-red)]"
-                        }`}
-                        style={{ outline: "none" }}
-                        onBlur={(e) => {
-                          if (!isDefaultStatus) renameVariable(key, e.target.value);
-                        }}
-                        onKeyDown={(e) =>
-                          e.key === "Enter" && e.currentTarget.blur()
-                        }
-                      />
-
-                      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                        {(() => {
-                          const defaultFormula = getDefaultAttributeRollFormula(key);
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => executeRoll(defaultFormula, `Teste de ${key}`)}
-                              title={`Rolar ${defaultFormula}`}
-                              aria-label={`Rolar ${defaultFormula}`}
-                              className="min-w-[36px] min-h-[36px] px-2 flex items-center justify-center bg-[#16161f] hover:bg-[#22222e] text-[#9ca3af] hover:text-white border border-[#262634] rounded-none transition-colors cursor-pointer touch-manipulation"
-                            >
-                              <Dices size={14} />
-                            </button>
-                          );
-                        })()}
-
-                        <button
-                          type="button"
-                          onClick={() => updateVariable(key, numVal - 1)}
-                          aria-label={`Diminuir ${key}`}
-                          className="min-w-[36px] min-h-[36px] flex items-center justify-center bg-[#16161f] hover:bg-[#22222e] active:scale-95 text-[#9ca3af] hover:text-white border border-[#262634] rounded-none transition-all cursor-pointer touch-manipulation"
-                        >
-                          <Minus size={13} />
-                        </button>
-
-                        <MestreStatInput
-                          value={numVal}
-                          onSave={(val) => updateVariable(key, val)}
-                          ariaLabel={`Valor de ${key}`}
-                          className="w-12 min-h-[36px] bg-[#0a0a0e] border border-[#262634] focus:border-[var(--op-red)] text-center text-white font-mono font-bold text-sm outline-none focus:outline-none focus-visible:outline-none rounded-none"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => updateVariable(key, numVal + 1)}
-                          aria-label={`Aumentar ${key}`}
-                          className="min-w-[36px] min-h-[36px] flex items-center justify-center bg-[#16161f] hover:bg-[#22222e] active:scale-95 text-[#9ca3af] hover:text-white border border-[#262634] rounded-none transition-all cursor-pointer touch-manipulation"
-                        >
-                          <Plus size={13} />
-                        </button>
-
-                        {!isDefaultStatus && (
+              {(() => {
+                const activeProfile = normalizeCharacterProfile(state.profile);
+                const profileDef = getProfileDefinition(activeProfile);
+                const profileTheme = PROFILE_THEME_MAP[profileDef.id];
+                const currentLv = normalizeLevel(
+                  state.lv,
+                  state.variables,
+                  activeProfile,
+                );
+                const baseAttrLimit = getAttributeLimitForLevel(currentLv);
+                return (
+                  <>
+                    <div className="section-title flex-wrap">
+                      <span>Variáveis de Status</span>
+                      <div className="ml-auto flex items-center gap-2 shrink-0">
+                        {!isRlMode && (
                           <button
                             type="button"
-                            className="min-w-[34px] min-h-[36px] flex items-center justify-center text-[#686875] hover:text-[var(--op-red-bright)] hover:bg-red-950/25 border border-transparent hover:border-red-900/40 font-mono text-xs font-bold rounded-none transition-colors cursor-pointer touch-manipulation"
-                            onClick={() => removeVariable(key)}
-                            title={`Remover ${key}`}
-                            aria-label={`Remover variável ${key}`}
+                            data-testid="sheet-profile-button"
+                            data-profile={activeProfile}
+                            onClick={() => setIsProfileModalOpen(true)}
+                            aria-label={`Perfil do personagem: ${profileDef.name} (${getProfileBonusEntries(activeProfile)
+                              .map((b) => `${b.stat} +${b.bonus}`)
+                              .join(" · ")}). Clique para alterar o perfil.`}
+                            title={`Perfil ativo: ${profileDef.name} (${getProfileBonusEntries(activeProfile)
+                              .map((b) => `${b.stat} +${b.bonus}`)
+                              .join(", ")})`}
+                            className={`inline-flex items-center gap-1.5 min-h-[30px] px-2 py-1 text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider border rounded-none cursor-pointer transition-all hover:brightness-125 touch-manipulation ${profileTheme.badgeBg} ${profileTheme.badgeBorder} ${profileTheme.badgeText}`}
                           >
-                            X
+                            <ProfileSymbolIcon symbol={profileDef.symbol} size={12} />
+                            <span>{profileDef.name}</span>
                           </button>
                         )}
+                        <span
+                          data-testid="status-attr-limit"
+                          className="font-mono text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.16em] text-[#9b9caa] tabular-nums select-none"
+                          title={`Limite base no LV ${currentLv}: 3 + (2 × (${currentLv} - 1)) = ${baseAttrLimit} (+ bônus do perfil ${profileDef.name})`}
+                        >
+                          BASE <span className="text-[#ededed]">{baseAttrLimit}</span>
+                        </span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="flex flex-col gap-2.5">
+                      {Object.entries(state.variables).map(([key, value]) => {
+                        const numVal = (value as number) || 0;
+                        const isDefaultStatus = isDefaultStatusKey(key);
+                        const profileBonus = !isRlMode
+                          ? getProfileBonusForStat(key, activeProfile)
+                          : 0;
+                        const statLimit = !isRlMode
+                          ? getAttributeLimitForStat(currentLv, key, activeProfile)
+                          : baseAttrLimit;
+                        const isOverLimit = !isRlMode
+                          ? isAttributeOverLimit(numVal, currentLv, key, activeProfile)
+                          : false;
+                        const atMaxLimit = numVal >= statLimit;
+                        const activePdiBadges = !isRlMode
+                          ? getActivePdiBadgesForStat(key, state.pdis)
+                          : [];
+                        return (
+                          <div
+                            key={key}
+                            data-stat-key={key}
+                            data-over-limit={isOverLimit ? "true" : "false"}
+                            data-stat-limit={statLimit}
+                            className={`var-list-row flex items-center justify-between gap-2 sm:gap-3 px-3 py-2 min-h-[48px] border rounded-none transition-colors ${
+                              isOverLimit
+                                ? "bg-[#1c1208]/90 border-amber-500/80"
+                                : isRlMode
+                                  ? "bg-[#141022]/85 border-purple-500/25 focus-within:border-purple-400"
+                                  : "bg-[#101016]/90 border-[#242430] hover:border-[#343444] focus-within:border-[var(--op-red)]"
+                            }`}
+                          >
+                            <div className="flex-1 min-w-[56px] flex flex-wrap items-center gap-1.5">
+                              <input
+                                type="text"
+                                defaultValue={key}
+                                readOnly={isDefaultStatus}
+                                aria-label={`Nome da variável ${key}`}
+                                title={
+                                  isDefaultStatus
+                                    ? "Atributo padrão do sistema"
+                                    : "Clique para renomear variável"
+                                }
+                                className={`w-14 sm:w-auto sm:flex-1 min-w-[40px] bg-transparent font-mono font-bold text-sm uppercase tracking-wider outline-none focus:outline-none focus-visible:outline-none border-b border-transparent py-1 ${
+                                  isOverLimit
+                                    ? "text-amber-300"
+                                    : isRlMode
+                                      ? "text-purple-200 focus:border-purple-400"
+                                      : "text-[var(--op-red-bright)] focus:border-[var(--op-red)]"
+                                }`}
+                                style={{ outline: "none" }}
+                                onBlur={(e) => {
+                                  if (!isDefaultStatus) renameVariable(key, e.target.value);
+                                }}
+                                onKeyDown={(e) =>
+                                  e.key === "Enter" && e.currentTarget.blur()
+                                }
+                              />
+                              {isOverLimit && (
+                                <span
+                                  data-testid={`over-limit-badge-${key}`}
+                                  title={`${key} (${numVal}) está acima do limite atual (${statLimit}) para LV ${currentLv} + ${profileDef.name}.`}
+                                  className="px-1.5 py-0.5 text-[10px] font-mono font-bold uppercase tabular-nums border border-amber-500/75 bg-amber-950/75 text-amber-300 rounded-none leading-none"
+                                >
+                                  ACIMA ({numVal}/{statLimit})
+                                </span>
+                              )}
+                              {activePdiBadges.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {activePdiBadges.map((badge) => (
+                                    <span
+                                      key={badge.key}
+                                      title={`PDI ativo: ${badge.pdiName} (${badge.label})`}
+                                      className={`px-1.5 py-0.5 text-[10px] font-mono font-bold tabular-nums border rounded-none leading-none ${
+                                        badge.type === "buff"
+                                          ? "bg-emerald-950/70 border-emerald-700/70 text-emerald-300"
+                                          : "bg-[#260b0f] border-[#7a191f] text-red-300"
+                                      }`}
+                                    >
+                                      {badge.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                              {(() => {
+                                const defaultFormula = getDefaultAttributeRollFormula(key);
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => executeRoll(defaultFormula, `Teste de ${key}`)}
+                                    title={`Rolar ${defaultFormula}`}
+                                    aria-label={`Rolar ${defaultFormula}`}
+                                    className="min-w-[36px] min-h-[36px] px-2 flex items-center justify-center bg-[#16161f] hover:bg-[#22222e] text-[#9ca3af] hover:text-white border border-[#262634] rounded-none transition-colors cursor-pointer touch-manipulation"
+                                  >
+                                    <Dices size={14} />
+                                  </button>
+                                );
+                              })()}
+
+                              <button
+                                type="button"
+                                onClick={() => updateVariable(key, numVal - 1)}
+                                aria-label={`Diminuir ${key}`}
+                                className="min-w-[36px] min-h-[36px] flex items-center justify-center bg-[#16161f] hover:bg-[#22222e] active:scale-95 text-[#9ca3af] hover:text-white border border-[#262634] rounded-none transition-all cursor-pointer touch-manipulation"
+                              >
+                                <Minus size={13} />
+                              </button>
+
+                              <MestreStatInput
+                                value={numVal}
+                                min={0}
+                                max={Math.max(statLimit, numVal)}
+                                onSave={(val) => updateVariable(key, val)}
+                                ariaLabel={`Valor de ${key}`}
+                                title={
+                                  isOverLimit
+                                    ? `${key} está acima do limite atual (${statLimit} no LV ${currentLv} · ${profileDef.name})`
+                                    : `Valor de ${key} (máx. ${statLimit} no LV ${currentLv}${profileBonus > 0 ? ` · ${profileDef.name} +${profileBonus}` : ""})`
+                                }
+                                className={`w-12 min-h-[36px] bg-[#0a0a0e] border text-center font-mono font-bold text-sm outline-none focus:outline-none focus-visible:outline-none rounded-none ${
+                                  isOverLimit
+                                    ? "border-amber-500/80 text-amber-300"
+                                    : "border-[#262634] focus:border-[var(--op-red)] text-white"
+                                }`}
+                              />
+
+                              <button
+                                type="button"
+                                disabled={atMaxLimit}
+                                onClick={() => updateVariable(key, numVal + 1)}
+                                aria-label={`Aumentar ${key}`}
+                                title={
+                                  isOverLimit
+                                    ? `Bloqueado: ${key} (${numVal}) está acima do limite (${statLimit}) para LV ${currentLv} · ${profileDef.name}`
+                                    : atMaxLimit
+                                      ? `Limite máximo de ${key} no LV ${currentLv} (${profileDef.name}): ${statLimit}`
+                                      : `Aumentar ${key}`
+                                }
+                                className="min-w-[36px] min-h-[36px] flex items-center justify-center bg-[#16161f] hover:bg-[#22222e] active:scale-95 disabled:opacity-35 disabled:cursor-not-allowed text-[#9ca3af] hover:text-white border border-[#262634] rounded-none transition-all cursor-pointer touch-manipulation"
+                              >
+                                <Plus size={13} />
+                              </button>
+
+                              {!isDefaultStatus && (
+                                <button
+                                  type="button"
+                                  className="min-w-[34px] min-h-[36px] flex items-center justify-center text-[#686875] hover:text-[var(--op-red-bright)] hover:bg-red-950/25 border border-transparent hover:border-red-900/40 font-mono text-xs font-bold rounded-none transition-colors cursor-pointer touch-manipulation"
+                                  onClick={() => removeVariable(key)}
+                                  title={`Remover ${key}`}
+                                  aria-label={`Remover variável ${key}`}
+                                >
+                                  X
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
               <button className="btn-add" onClick={addVariable}>
                 + ADICIONAR VARIÁVEL
               </button>
@@ -2978,12 +5084,10 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                         }}
                       >
                         <button
-                          className="min-h-[44px] bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-300 hover:text-white uppercase font-bold text-xs tracking-wider rounded-none py-2.5 px-3 transition-all cursor-pointer touch-manipulation"
+                          data-testid={`skill-use-btn-${skill.id}`}
+                          className="min-h-[44px] bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-300 hover:text-white uppercase font-bold text-xs tracking-wider rounded-none py-2.5 px-3 transition-colors cursor-pointer touch-manipulation"
                           style={{ flex: 1 }}
-                          onClick={() => {
-                            setUseSkillModalId(skill.id);
-                            setSkillModalTested(false);
-                          }}
+                          onClick={() => handleUseSkillAction(skill)}
                         >
                           USAR
                         </button>
@@ -3327,6 +5431,56 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               </div>
             </MotionAccordion>
           </div>
+          )}
+
+          {!isRlMode && (
+            <RitualsSection
+              rituals={state.rituals}
+              capacity={getRitualCapacityState(
+                state.rituals,
+                state.variables,
+                state.profile,
+              )}
+              activeRitualId={activeRitual}
+              editingRitualId={editingRitual}
+              onToggleRitual={toggleRitual}
+              onAddRitual={addRitual}
+              onUpdateRitual={updateRitual}
+              onRemoveRitual={removeRitual}
+              onStartEdit={(id) => {
+                setActiveRitual(id);
+                setEditingRitual(id);
+              }}
+              onCloseEdit={() => setEditingRitual(null)}
+              onOpenUseModal={handleUseRitualAction}
+              onQuickTest={(ritual) => castRitualTest(ritual)}
+              onQuickDamage={(ritual) => castRitualDamage(ritual, false)}
+            />
+          )}
+
+          {!isRlMode && (
+            <PdiSection
+              pdis={state.pdis}
+              canEdit={isMestreAuth}
+              onToggle={handleToggleActiveSheetPdi}
+              onAdd={
+                isMestreAuth
+                  ? () => {
+                      setEditingPdiItem(null);
+                      setIsPdiModalOpen(true);
+                    }
+                  : undefined
+              }
+              onEdit={
+                isMestreAuth
+                  ? (pdi) => {
+                      setEditingPdiItem(pdi);
+                      setIsPdiModalOpen(true);
+                    }
+                  : undefined
+              }
+              onDelete={isMestreAuth ? handleDeleteActiveSheetPdi : undefined}
+            />
           )}
           </div> {/* End Left Column */}
 
@@ -3796,7 +5950,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         </div>
       )}
 
-      {currentPage === "mestre" && (
+      {currentPage === "mestre" && isMestreAuth && (
         <div className="min-h-[100dvh] pb-24 font-sans">
           <LazyModuleBoundary isRlMode={isRlMode} label="Carregando Painel do Mestre...">
             <MasterHeaderBar
@@ -3805,6 +5959,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               playersCount={players.length}
               extrasCount={extraFichas.length}
               handoutsCount={handoutsSync.handouts.length}
+              libraryCount={masterLibrarySync.items.length}
               isOstPlaying={Boolean(playbackState?.is_playing)}
               onRollInitiative={handleRollAllInitiatives}
               onOpenMenu={handleOpenSidebar}
@@ -3817,6 +5972,11 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               onClearChatHistory={handleClearChatHistory}
               currentGlobalMode={gameModeConfig.globalMode}
               onOpenModeModal={handleOpenModeModal}
+              onLogoutMaster={() => {
+                setIsMestreAuth(false);
+                setActiveFichaId("main");
+                setCurrentPage("ficha");
+              }}
             />
 
             <MotionTabSwitch viewKey={mestreTab} className="w-full">
@@ -3827,6 +5987,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   extraFichas={extraFichas}
                   initiatives={initiatives}
                   viewMode={mestreViewMode}
+                  isMaster={isMestreAuth}
                   onClearChatHistory={handleClearChatHistory}
                   onRollInitiative={handleRollAllInitiatives}
                   playerModes={gameModeConfig.playerModes || {}}
@@ -3838,6 +5999,10 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                     setCurrentPage("ficha_extra");
                   }}
                   onUpdateStat={(player, stat, val, isExtraSheet, rawExtraSheetId) => {
+                    if (stat === "hp") {
+                      editPlayerStatExact(player, stat, val, isExtraSheet, rawExtraSheetId);
+                      return;
+                    }
                     if (isExtraSheet && rawExtraSheetId) {
                       setExtraFichas((prev) =>
                         prev.map((f) =>
@@ -3853,9 +6018,19 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                         )
                       );
                     }
-                    editPlayerStatExact(player, stat, val);
+                    editPlayerStatExact(player, stat, val, isExtraSheet, rawExtraSheetId);
                   }}
                   onUpdateStatusEffects={updatePlayerStatusEffects}
+                  onUpdatePdis={isMestreAuth ? updatePlayerPdis : undefined}
+                  onUpdateEp={isMestreAuth ? updatePlayerEp : undefined}
+                  onUpdateLv={isMestreAuth ? updatePlayerLv : undefined}
+                  onAdvanceUltimoSuspiroTurn={
+                    isMestreAuth ? handleMasterAdvanceUltimoSuspiroTurn : undefined
+                  }
+                  onFinalizeUltimoSuspiroDeath={
+                    isMestreAuth ? handleMasterFinalizeUltimoSuspiroDeath : undefined
+                  }
+                  onRevivePlayer={isMestreAuth ? handleMasterRevivePlayer : undefined}
                 />
               </div>
             )}
@@ -3879,6 +6054,17 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   toggleFichaSync={toggleFichaSync}
                   supabase={supabase}
                   currentGlobalMode={gameModeConfig.globalMode || "demologia"}
+                  isMaster={isMestreAuth}
+                  onUpdatePdis={isMestreAuth ? updatePlayerPdis : undefined}
+                  onUpdateEp={isMestreAuth ? updatePlayerEp : undefined}
+                  onUpdateLv={isMestreAuth ? updatePlayerLv : undefined}
+                  onAdvanceUltimoSuspiroTurn={
+                    isMestreAuth ? handleMasterAdvanceUltimoSuspiroTurn : undefined
+                  }
+                  onFinalizeUltimoSuspiroDeath={
+                    isMestreAuth ? handleMasterFinalizeUltimoSuspiroDeath : undefined
+                  }
+                  onRevivePlayer={isMestreAuth ? handleMasterRevivePlayer : undefined}
                 />
               </div>
             )}
@@ -3903,6 +6089,26 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               </div>
             )}
 
+            {mestreTab === "biblioteca" && (
+              <div className="pt-2">
+                <MasterLibraryView
+                  folders={masterLibrarySync.folders}
+                  items={masterLibrarySync.items}
+                  syncStatus={masterLibrarySync.syncStatus}
+                  syncError={masterLibrarySync.syncError}
+                  players={players}
+                  isSendingDataPush={masterDataPushSync.isSending}
+                  onCreateFolder={masterLibrarySync.createFolder}
+                  onRenameFolder={masterLibrarySync.renameFolder}
+                  onDeleteFolder={masterLibrarySync.deleteFolder}
+                  onSaveItem={masterLibrarySync.saveItem}
+                  onDeleteItem={masterLibrarySync.deleteItem}
+                  onMoveItemToFolder={masterLibrarySync.moveItemToFolder}
+                  onSendDataToPlayers={masterDataPushSync.sendDataToPlayers}
+                />
+              </div>
+            )}
+
             {mestreTab === "utilities" && (
               <div className="pt-2">
                 <MasterUtilitiesView
@@ -3913,8 +6119,9 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   isSendingMinigame={minigamesSync.isSending}
                   onSendMinigame={minigamesSync.sendMinigame}
                   onClearMinigameResults={minigamesSync.clearRecentResults}
-                  isSendingDataPush={masterDataPushSync.isSending}
-                  onSendDataToPlayers={masterDataPushSync.sendDataToPlayers}
+                  libraryItemsCount={masterLibrarySync.items.length}
+                  libraryFoldersCount={masterLibrarySync.folders.length}
+                  onOpenLibrary={() => setMestreTab("biblioteca")}
                 />
               </div>
             )}
@@ -3954,6 +6161,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               onClick={() => setUseSkillModalId(null)}
             >
               <MotionSheetPanel
+                data-testid="use-skill-modal"
                 className="bg-[#0a0a0e]/95 border-t sm:border border-[#2c2c38] rounded-none w-full max-w-sm flex flex-col p-4 sm:p-5 gap-4 shadow-[0_24px_60px_rgba(0,0,0,0.85)]"
                 style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom, 1rem))" }}
                 onClick={(e) => e.stopPropagation()}
@@ -3982,7 +6190,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                         <div
                           key={i}
                           className="log-entry"
-                          dangerouslySetInnerHTML={{ __html: h }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeRollHistoryHtml(h) }}
                         />
                       ))
                   ) : (
@@ -3995,18 +6203,23 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 <div className="flex gap-2">
                   {modalSkill.test?.trim() !== "" && (
                     <button
-                      className="flex-1 min-h-[44px] bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-300 hover:text-white uppercase font-bold text-xs tracking-wider rounded-none py-3 transition-all cursor-pointer touch-manipulation"
+                      data-testid="skill-retest-btn"
+                      className="flex-1 min-h-[44px] bg-[#1a1a1a] border border-[#333] hover:bg-[#333] hover:border-gray-500 text-gray-300 hover:text-white uppercase font-bold text-xs tracking-wider rounded-none py-3 transition-colors cursor-pointer touch-manipulation"
                       onClick={() => {
                         useSkill(modalSkill, "test");
                         setSkillModalTested(true);
                       }}
                     >
-                      ROLA TESTE (-{modalSkill.cost || 0} PE)
+                      {skillModalTested
+                        ? `REPETIR TESTE (-${modalSkill.cost || 0} PE)`
+                        : `ROLA TESTE (-${modalSkill.cost || 0} PE)`}
                     </button>
                   )}
                   {modalSkill.damage?.trim() !== "" && (
                     <button
-                      className="flex-1 min-h-[44px] bg-gradient-to-r from-[#900] to-[var(--blood-red)] text-white hover:brightness-125 uppercase font-bold text-xs tracking-wider rounded-none py-3 transition-all border-none cursor-pointer touch-manipulation"
+                      data-testid="skill-roll-damage-btn"
+                      disabled={Boolean(modalSkill.needsTest && !skillModalTested)}
+                      className="flex-1 min-h-[44px] bg-gradient-to-r from-[#900] to-[var(--blood-red)] text-white hover:brightness-125 disabled:opacity-40 disabled:cursor-not-allowed uppercase font-bold text-xs tracking-wider rounded-none py-3 transition-[filter,opacity] duration-150 border-none cursor-pointer touch-manipulation"
                       onClick={() => {
                         if (modalSkill.needsTest && !skillModalTested) {
                           addToHistory(
@@ -4026,6 +6239,71 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           );
         })()}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {useRitualModalId !== null &&
+          (() => {
+            const modalRitual = state.rituals.find(
+              (r) => r.id === useRitualModalId,
+            );
+            if (!modalRitual) return null;
+            return (
+              <UseRitualModal
+                ritual={modalRitual}
+                history={state.history}
+                lastOutcome={ritualModalOutcome}
+                onCastTest={(r) => castRitualTest(r)}
+                onRollDamage={(r) => castRitualDamage(r, true)}
+                onClose={() => {
+                  setUseRitualModalId(null);
+                  setRitualModalOutcome(null);
+                }}
+              />
+            );
+          })()}
+      </AnimatePresence>
+
+      <UltimoSuspiroMinigameModal
+        isOpen={isUltimoSuspiroModalOpen}
+        characterName={state.name || "Personagem"}
+        vit={extractVitAttribute(state.variables)}
+        maxHp={state.hp.max}
+        ultimoSuspiro={state.ultimoSuspiro}
+        onAttemptStart={handleUltimoSuspiroAttemptStart}
+        onResolve={handleUltimoSuspiroResolve}
+        onResolveCoinFlip={handleUltimoSuspiroCoinFlip}
+        onClose={() => setIsUltimoSuspiroModalOpen(false)}
+      />
+
+      {isMestreAuth && (
+        <PdiEditorModal
+          isOpen={isPdiModalOpen}
+          initialPdi={editingPdiItem}
+          targetName={state.name || "Personagem"}
+          onClose={() => {
+            setIsPdiModalOpen(false);
+            setEditingPdiItem(null);
+          }}
+          onSave={handleSaveActiveSheetPdi}
+          onDelete={handleDeleteActiveSheetPdi}
+        />
+      )}
+
+      {!isRlMode && (
+        <ProfileSelectorModal
+          isOpen={isProfileModalOpen}
+          currentProfile={normalizeCharacterProfile(state.profile)}
+          lv={normalizeLevel(
+            state.lv,
+            state.variables,
+            normalizeCharacterProfile(state.profile),
+          )}
+          variables={state.variables}
+          characterName={state.name || "Personagem"}
+          onSelect={handleSelectProfile}
+          onClose={() => setIsProfileModalOpen(false)}
+        />
+      )}
 
       <RollNotificationToast
         roll={rollToast}

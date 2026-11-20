@@ -18,6 +18,21 @@ export const SMOOTH_SPRING: Transition = {
   mass: 0.85,
 };
 
+const PANEL_ENTER_TRANSITION: Transition = {
+  duration: 0.16,
+  ease: CLINICAL_EASE,
+};
+
+const PANEL_EXIT_TRANSITION: Transition = {
+  duration: 0.11,
+  ease: "easeOut",
+};
+
+const ACCORDION_TRANSITION: Transition = {
+  height: { duration: 0.16, ease: CLINICAL_EASE },
+  opacity: { duration: 0.12, ease: "easeOut" },
+};
+
 export const MotionModalBackdrop: React.FC<{
   children: React.ReactNode;
   onClick?: () => void;
@@ -28,7 +43,7 @@ export const MotionModalBackdrop: React.FC<{
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.15, ease: CLINICAL_EASE }}
+      transition={{ duration: 0.12, ease: CLINICAL_EASE }}
       style={{ willChange: "opacity" }}
       onClick={onClick}
       className={`modal-backdrop-surface ${className}`}
@@ -51,18 +66,18 @@ export const MotionSheetPanel: React.FC<
   }
 > = ({ children, className = "", style, onClick, role, ...rest }) => (
   <motion.div
-    initial={{ opacity: 0, y: 12, scale: 0.98 }}
+    initial={{ opacity: 0, y: 8, scale: 0.985 }}
     animate={{
       opacity: 1,
       y: 0,
       scale: 1,
-      transition: SNAPPY_SPRING,
+      transition: PANEL_ENTER_TRANSITION,
     }}
     exit={{
       opacity: 0,
-      y: 8,
-      scale: 0.985,
-      transition: { duration: 0.13, ease: CLINICAL_EASE },
+      y: 6,
+      scale: 0.99,
+      transition: PANEL_EXIT_TRANSITION,
     }}
     onClick={onClick}
     role={role}
@@ -85,15 +100,11 @@ export const MotionAccordion: React.FC<{
   <AnimatePresence initial={false}>
     {isOpen && (
       <motion.div
-        initial={{ height: 0, opacity: 0, y: -3 }}
-        animate={{ height: "auto", opacity: 1, y: 0 }}
-        exit={{ height: 0, opacity: 0, y: -3 }}
-        transition={{
-          height: { duration: 0.2, ease: CLINICAL_EASE },
-          opacity: { duration: 0.15, ease: "easeOut" },
-          y: { duration: 0.18, ease: CLINICAL_EASE },
-        }}
-        style={{ overflow: "hidden", willChange: "height, opacity, transform" }}
+        initial={{ height: 0, opacity: 0 }}
+        animate={{ height: "auto", opacity: 1 }}
+        exit={{ height: 0, opacity: 0 }}
+        transition={ACCORDION_TRANSITION}
+        style={{ overflow: "hidden", contain: "layout style" }}
         className={className}
       >
         {children}
@@ -110,15 +121,15 @@ export const MotionTabSwitch: React.FC<{
   <AnimatePresence mode="wait" initial={false}>
     <motion.div
       key={viewKey}
-      initial={{ opacity: 0, y: 5 }}
+      initial={{ opacity: 0, y: 4 }}
       animate={{
         opacity: 1,
         y: 0,
-        transition: { duration: 0.18, ease: CLINICAL_EASE },
+        transition: { duration: 0.15, ease: CLINICAL_EASE },
       }}
       exit={{
         opacity: 0,
-        y: -3,
+        y: -2,
         transition: { duration: 0.08, ease: "easeIn" },
       }}
       style={{ willChange: "opacity" }}

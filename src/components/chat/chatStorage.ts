@@ -6,6 +6,7 @@ import {
   mergeMessages,
   sanitizeRoomId,
 } from "./chatUtils";
+import { createVisibilityPoller, VisibilityPollerHandle } from "../../utils/visibilityPolling";
 
 export { sanitizeRoomId, mergeMessages, areMessagesEqual };
 
@@ -268,21 +269,22 @@ export function subscribeToChat(
   window.addEventListener(CHAT_UPDATE_EVENT, handleCustomEvent);
   window.addEventListener("storage", handleStorageEvent);
 
-  let remoteInterval: any = null;
+  let remotePoller: VisibilityPollerHandle | null = null;
   let channel: any = null;
 
   if (isOnline) {
-    // 2. Busca inicial no Supabase
-    fetchRemoteMessages(sanitized).then((merged) => {
-      onMessagesUpdate(merged);
-    });
-
-    // 3. Fallback periódico a cada 15 segundos para reconexão suave
-    remoteInterval = setInterval(() => {
-      fetchRemoteMessages(sanitized).then((merged) => {
-        onMessagesUpdate(merged);
-      });
-    }, 15000);
+    // 2 & 3. Busca inicial + fallback periódico consciente de visibilidade/rede
+    remotePoller = createVisibilityPoller(
+      () =>
+        fetchRemoteMessages(sanitized).then((merged) => {
+          onMessagesUpdate(merged);
+        }),
+      {
+        intervalMs: 20000,
+        minWakeGapMs: 1500,
+        runImmediately: true,
+      }
+    );
 
     // 4. Criação do canal Supabase Realtime
     const channelName = `chat_channel_${sanitized}`;
@@ -346,8 +348,8 @@ export function subscribeToChat(
     window.removeEventListener(CHAT_UPDATE_EVENT, handleCustomEvent);
     window.removeEventListener("storage", handleStorageEvent);
 
-    if (remoteInterval) {
-      clearInterval(remoteInterval);
+    if (remotePoller) {
+      remotePoller.stop();
     }
 
     if (channel) {

@@ -8,6 +8,7 @@ import {
   MASTER_PUSH_PREFIX,
   applyMasterDataToSheetState,
 } from "../utils/masterDataPush";
+import { createVisibilityPoller } from "../utils/visibilityPolling";
 
 export type DataPushFadePhase = "idle" | "in" | "out";
 
@@ -133,8 +134,11 @@ export function useMasterDataPushSync({
       } catch {}
     };
 
-    fetchPendingPush();
-    const pollTimer = setInterval(fetchPendingPush, 5000);
+    const poller = createVisibilityPoller(fetchPendingPush, {
+      intervalMs: 15000,
+      minWakeGapMs: 1500,
+      runImmediately: true,
+    });
 
     const channel = supabase
       .channel("master_data_push_channel", {
@@ -166,7 +170,7 @@ export function useMasterDataPushSync({
 
     return () => {
       isMounted = false;
-      clearInterval(pollTimer);
+      poller.stop();
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
@@ -187,11 +191,17 @@ export function useMasterDataPushSync({
           error: "Selecione pelo menos um player para enviar os dados.",
         };
       }
-      if (!payload.skill && !payload.tributo && !payload.statuses) {
+      if (
+        !payload.skill &&
+        !payload.tributo &&
+        !payload.ritual &&
+        !payload.pdi &&
+        !payload.statuses
+      ) {
         return {
           ok: false,
           updatedCount: 0,
-          error: "Marque ou preencha pelo menos uma seção (Skill, Tributo ou Status).",
+          error: "Nenhum conteúdo válido selecionado para enviar aos players.",
         };
       }
       if (!isOnline) {

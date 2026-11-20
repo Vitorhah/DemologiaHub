@@ -48,9 +48,5 @@ const rxKey = (import.meta as any).env.VITE_SUPABASE_PUBLIC_ANON_KEY || (import.
 export const supabaseUrl = sanitizeUrl(rxUrl);
 export const supabaseAnonKey = sanitizeKey(rxKey);
 
-if (!(import.meta as any).env.VITE_SUPABASE_URL || !(import.meta as any).env.VITE_SUPABASE_PUBLIC_ANON_KEY) {
-  console.log("Variáveis de ambiente ausentes no AI Studio. Usando as credenciais fornecidas pelo usuário como fallback padrão.");
-}
-
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 

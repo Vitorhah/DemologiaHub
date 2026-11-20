@@ -16,11 +16,33 @@ import {
   Tag,
   ChevronDown,
   ChevronUp,
+  Sparkles,
 } from "lucide-react";
 import { GameMode } from "../types";
 import { StatMathInput } from "./StatMathInput";
+import { MasterEpEditor } from "./MasterEpEditor";
+import { MasterLvEditor } from "./MasterLvEditor";
 import { StatusEffectsEditor, StatusPostIt } from "./StatusPostIts";
+import { MasterUltimoSuspiroControls } from "./MasterUltimoSuspiroControls";
+import { PdiSection } from "./PdiSection";
+import { PdiEditorModal } from "./PdiEditorModal";
+import { PROFILE_THEME_MAP, ProfileSymbolIcon } from "./CharacterProfileButton";
 import { StatusEffect } from "../utils/statusEffects";
+import {
+  PdiItem,
+  normalizePdis,
+  removePdiItem,
+  togglePdiActive,
+  upsertPdiItem,
+} from "../utils/pdi";
+import {
+  getProfileDefinition,
+  normalizeCharacterProfile,
+} from "../utils/profiles";
+import { normalizeEpValue } from "../utils/epLogic";
+import { normalizeLevel } from "../utils/levelSystem";
+import { normalizeUltimoSuspiroState } from "../utils/ultimoSuspiro";
+import { sanitizeRollHistoryHtml } from "../utils/security";
 
 export interface MasterPlayersViewProps {
   players: any[];
@@ -41,6 +63,41 @@ export interface MasterPlayersViewProps {
     isExtraSheet?: boolean,
     rawExtraSheetId?: string,
   ) => void;
+  onUpdatePdis?: (
+    player: any,
+    pdis: PdiItem[],
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => void;
+  onUpdateEp?: (
+    player: any,
+    nextEp: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => Promise<{ ok: boolean; error?: string } | void> | void;
+  onUpdateLv?: (
+    player: any,
+    nextLv: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => Promise<{ ok: boolean; error?: string } | void> | void;
+  onAdvanceUltimoSuspiroTurn?: (
+    player: any,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => void;
+  onFinalizeUltimoSuspiroDeath?: (
+    player: any,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => void;
+  onRevivePlayer?: (
+    player: any,
+    targetHp: number,
+    isExtraSheet?: boolean,
+    rawExtraSheetId?: string,
+  ) => void;
+  isMaster?: boolean;
   viewMode?: "grid" | "list";
   onClearChatHistory?: () => void;
   onRollInitiative?: () => void;
@@ -57,6 +114,13 @@ export function MasterPlayersView({
   onOpenInteractiveSheet,
   onUpdateStat,
   onUpdateStatusEffects,
+  onUpdatePdis,
+  onUpdateEp,
+  onUpdateLv,
+  onAdvanceUltimoSuspiroTurn,
+  onFinalizeUltimoSuspiroDeath,
+  onRevivePlayer,
+  isMaster = false,
   viewMode = "grid",
   onClearChatHistory,
   onRollInitiative,
@@ -65,6 +129,11 @@ export function MasterPlayersView({
   onTogglePlayerMode,
 }: MasterPlayersViewProps) {
   const [expandedStatusId, setExpandedStatusId] = React.useState<string | null>(null);
+  const [expandedPdiId, setExpandedPdiId] = React.useState<string | null>(null);
+  const [pdiEditorTarget, setPdiEditorTarget] = React.useState<{
+    player: any;
+    initialPdi: PdiItem | null;
+  } | null>(null);
   const isRlGlobal = currentGlobalMode === "rl";
 
   const renderFloatingInitiativeButton = () => {
@@ -104,8 +173,12 @@ export function MasterPlayersView({
       hp: f.hp || { current: 0, max: 100 },
       pe: f.pe || { current: 0, max: 100 },
       sm: f.sm || f.san || { current: 100, max: 100 },
+      ep: normalizeEpValue(f.ep, 0),
+      lv: normalizeLevel(f.lv, f.variables, normalizeCharacterProfile(f.profile)),
+      profile: normalizeCharacterProfile(f.profile),
       variables: f.variables || {},
       statusEffects: f.statusEffects || [],
+      ultimoSuspiro: normalizeUltimoSuspiroState(f.ultimoSuspiro, f.hp?.current ?? 0),
       history: f.history || (f.notes ? [`<span style="color: #888;">${f.notes}</span>`] : []),
       isExtraSheet: true,
       rawExtraSheetId: f.id,
@@ -167,6 +240,12 @@ export function MasterPlayersView({
                 <th className="py-3 px-3 sm:px-4 w-44">
                   {currentGlobalMode === "rl" ? "SN" : "PE"}
                 </th>
+                {isMaster && onUpdateEp && (
+                  <th className="py-3 px-3 sm:px-4 w-40">EP</th>
+                )}
+                {isMaster && onUpdateLv && (
+                  <th className="py-3 px-3 sm:px-4 w-36">LV</th>
+                )}
                 <th className="py-3 px-3 sm:px-4 hidden md:table-cell">Ação recente</th>
                 <th className="py-3 px-3 sm:px-4 text-right w-20"></th>
               </tr>
@@ -187,6 +266,8 @@ export function MasterPlayersView({
                 const smPct = Math.max(0, Math.min(100, (smCurrent / smMax) * 100)) || 0;
 
                 const isPlayerRl = (playerModes[p.id] || currentGlobalMode) === "rl";
+                const ultimoSuspiro = normalizeUltimoSuspiroState(p.ultimoSuspiro, hpCurrent);
+                const isDead = ultimoSuspiro.status === "dead";
 
                 return (
                   <tr key={p.id} className="hover:bg-[#121217] transition-colors">
@@ -210,6 +291,9 @@ export function MasterPlayersView({
                         ) : (
                           <span className="text-[#4ade80] text-[10px]">Jogador</span>
                         )}
+                        <span className="text-[10px] font-mono font-bold text-[#9ca3af] tracking-wider uppercase">
+                          LV {normalizeLevel(p.lv, p.variables, normalizeCharacterProfile(p.profile))}
+                        </span>
                         <button
                           type="button"
                           onClick={() => onTogglePlayerMode && onTogglePlayerMode(p.id)}
@@ -250,40 +334,101 @@ export function MasterPlayersView({
 
                     <td className="py-3 px-3 sm:px-4">
                       <div className="flex items-center justify-between text-[11px] text-[#9ca3af] mb-1">
-                        <span className="text-[#ef4444] font-bold">HP</span>
-                        <span>{hpCurrent}/{hpMax}</span>
+                        <span className={`${isDead ? "text-[#71717a]" : "text-[#ef4444]"} font-bold`}>
+                          HP
+                        </span>
+                        <span className={isDead ? "text-[#71717a]" : undefined}>{hpCurrent}/{hpMax}</span>
                       </div>
-                      <div className="h-1.5 w-full bg-[#181820] border border-[#242430] overflow-hidden mb-1.5">
+                      <div
+                        className={`h-1.5 w-full border overflow-hidden mb-1.5 ${
+                          isDead
+                            ? "bg-[#3f3f46] border-[#52525b]"
+                            : "bg-[#181820] border-[#242430]"
+                        }`}
+                      >
                         <div
-                          className="h-full bg-[#8f171c] transition-all duration-200"
-                          style={{ width: `${hpPct}%` }}
+                          className={`h-full transition-all duration-200 ${
+                            isDead ? "bg-[#52525b]" : "bg-[#8f171c]"
+                          }`}
+                          style={{ width: `${isDead ? 100 : hpPct}%` }}
                         />
                       </div>
                       <div className="flex items-center">
                         <button
                           type="button"
+                          disabled={isDead}
                           onClick={() => handleStepStat(p, "hp", -1)}
-                          className="w-6 h-6 flex items-center justify-center bg-[#121217] hover:bg-[#1a1a24] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] rounded-none cursor-pointer text-xs font-bold"
-                          title="Diminuir HP"
+                          className={`w-6 h-6 flex items-center justify-center bg-[#121217] border border-[#202028] outline outline-1 outline-[#181820] rounded-none text-xs font-bold ${
+                            isDead
+                              ? "opacity-40 cursor-not-allowed text-[#626370]"
+                              : "hover:bg-[#1a1a24] text-[#9ca3af] hover:text-white cursor-pointer"
+                          }`}
+                          title={isDead ? "Personagem morto — use Reviver" : "Diminuir HP"}
                         >
                           <Minus size={10} />
                         </button>
                         <StatMathInput
                           value={hpCurrent}
+                          disabled={isDead}
                           onSave={(val) =>
                             onUpdateStat(p, "hp", val, p.isExtraSheet, p.rawExtraSheetId)
                           }
-                          className="w-12 h-6 bg-[#0c0c10] border-y border-[#202028] text-center text-xs text-white font-bold outline-none"
+                          className={`w-12 h-6 bg-[#0c0c10] border-y border-[#202028] text-center text-xs font-bold outline-none ${
+                            isDead ? "text-[#71717a] cursor-not-allowed" : "text-white"
+                          }`}
                         />
                         <button
                           type="button"
+                          disabled={isDead}
                           onClick={() => handleStepStat(p, "hp", 1)}
-                          className="w-6 h-6 flex items-center justify-center bg-[#121217] hover:bg-[#1a1a24] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] rounded-none cursor-pointer text-xs font-bold"
-                          title="Aumentar HP"
+                          className={`w-6 h-6 flex items-center justify-center bg-[#121217] border border-[#202028] outline outline-1 outline-[#181820] rounded-none text-xs font-bold ${
+                            isDead
+                              ? "opacity-40 cursor-not-allowed text-[#626370]"
+                              : "hover:bg-[#1a1a24] text-[#9ca3af] hover:text-white cursor-pointer"
+                          }`}
+                          title={isDead ? "Personagem morto — use Reviver" : "Aumentar HP"}
                         >
                           <Plus size={10} />
                         </button>
                       </div>
+                      <MasterUltimoSuspiroControls
+                        ultimoSuspiro={ultimoSuspiro}
+                        maxHp={hpMax}
+                        characterName={p.name || "Personagem"}
+                        isMaster={isMaster}
+                        compact
+                        onAdvanceTurn={
+                          onAdvanceUltimoSuspiroTurn
+                            ? () =>
+                                onAdvanceUltimoSuspiroTurn(
+                                  p,
+                                  p.isExtraSheet,
+                                  p.rawExtraSheetId,
+                                )
+                            : undefined
+                        }
+                        onFinalizeDeath={
+                          onFinalizeUltimoSuspiroDeath
+                            ? () =>
+                                onFinalizeUltimoSuspiroDeath(
+                                  p,
+                                  p.isExtraSheet,
+                                  p.rawExtraSheetId,
+                                )
+                            : undefined
+                        }
+                        onRevive={
+                          onRevivePlayer
+                            ? (targetHp) =>
+                                onRevivePlayer(
+                                  p,
+                                  targetHp,
+                                  p.isExtraSheet,
+                                  p.rawExtraSheetId,
+                                )
+                            : undefined
+                        }
+                      />
                     </td>
 
                     {/* Se RL: SN; Se Demologia: PE */}
@@ -369,11 +514,45 @@ export function MasterPlayersView({
                       </td>
                     )}
 
+                    {isMaster && onUpdateEp && (
+                      <td className="py-3 px-3 sm:px-4">
+                        <MasterEpEditor
+                          compact
+                          isMaster={isMaster}
+                          characterName={p.name}
+                          value={normalizeEpValue(p.ep, 0)}
+                          onConfirm={(nextEp) =>
+                            onUpdateEp(p, nextEp, p.isExtraSheet, p.rawExtraSheetId)
+                          }
+                        />
+                      </td>
+                    )}
+
+                    {isMaster && onUpdateLv && (
+                      <td className="py-3 px-3 sm:px-4">
+                        <MasterLvEditor
+                          compact
+                          isMaster={isMaster}
+                          characterName={p.name}
+                          value={normalizeLevel(
+                            p.lv,
+                            p.variables,
+                            normalizeCharacterProfile(p.profile)
+                          )}
+                          variables={p.variables}
+                          profile={normalizeCharacterProfile(p.profile)}
+                          onConfirm={(nextLv) =>
+                            onUpdateLv(p, nextLv, p.isExtraSheet, p.rawExtraSheetId)
+                          }
+                        />
+                      </td>
+                    )}
+
                     <td className="py-3 px-3 sm:px-4 hidden md:table-cell max-w-[200px]">
                       {p.history && p.history.length > 0 ? (
                         <div
                           className="text-xs text-[#9d9ea9] truncate"
-                          dangerouslySetInnerHTML={{ __html: p.history[0] }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeRollHistoryHtml(p.history[0]) }}
                         />
                       ) : (
                         <span className="text-[#555663] italic">Sem ações recentes</span>
@@ -431,6 +610,8 @@ export function MasterPlayersView({
         const smPct = Math.max(0, Math.min(100, (smCurrent / smMax) * 100)) || 0;
 
         const isPlayerRl = (playerModes[p.id] || currentGlobalMode) === "rl";
+        const ultimoSuspiro = normalizeUltimoSuspiroState(p.ultimoSuspiro, hpCurrent);
+        const isDead = ultimoSuspiro.status === "dead";
 
         return (
           <div
@@ -454,6 +635,22 @@ export function MasterPlayersView({
                         Jogador
                       </span>
                     )}
+                    <span className="text-[10px] font-mono font-bold text-[#9ca3af] uppercase tracking-wider shrink-0">
+                      LV {normalizeLevel(p.lv, p.variables, normalizeCharacterProfile(p.profile))}
+                    </span>
+                    {!isPlayerRl && (() => {
+                      const profDef = getProfileDefinition(p.profile);
+                      const profTheme = PROFILE_THEME_MAP[profDef.id];
+                      return (
+                        <span
+                          title={`Perfil: ${profDef.name}`}
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase tracking-wider border rounded-none shrink-0 ${profTheme.badgeBg} ${profTheme.badgeBorder} ${profTheme.badgeText}`}
+                        >
+                          <ProfileSymbolIcon symbol={profDef.symbol} size={10} />
+                          <span>{profDef.name}</span>
+                        </span>
+                      );
+                    })()}
 
                     <button
                       type="button"
@@ -504,40 +701,65 @@ export function MasterPlayersView({
               {/* Status HP e PE/SN (SN substitui PE no modo RL) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                 {/* HP */}
-                <div className="bg-[#101015] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-2">
+                <div
+                  className={`bg-[#101015] border outline outline-1 outline-[#181820] rounded-none p-2 ${
+                    isDead ? "border-[#3f3f46]" : "border-[#202028]"
+                  }`}
+                >
                   <div className="flex items-center justify-between text-[10px] text-[#9ca3af] mb-1 font-bold uppercase tracking-wider">
-                    <span className="text-[#ef4444] flex items-center gap-1">
+                    <span className={`${isDead ? "text-[#71717a]" : "text-[#ef4444]"} flex items-center gap-1`}>
                       <Heart size={10} /> HP
                     </span>
-                    <span>{hpCurrent}/{hpMax}</span>
+                    <span className={isDead ? "text-[#71717a]" : undefined}>{hpCurrent}/{hpMax}</span>
                   </div>
-                  <div className="h-1.5 bg-[#181820] border border-[#242430] overflow-hidden mb-2">
+                  <div
+                    className={`h-1.5 border overflow-hidden mb-2 ${
+                      isDead
+                        ? "bg-[#3f3f46] border-[#52525b]"
+                        : "bg-[#181820] border-[#242430]"
+                    }`}
+                  >
                     <div
-                      className="h-full bg-[#8f171c] transition-all duration-200"
-                      style={{ width: `${hpPct}%` }}
+                      className={`h-full transition-all duration-200 ${
+                        isDead ? "bg-[#52525b]" : "bg-[#8f171c]"
+                      }`}
+                      style={{ width: `${isDead ? 100 : hpPct}%` }}
                     />
                   </div>
                   <div className="flex items-center justify-center">
                     <button
                       type="button"
+                      disabled={isDead}
                       onClick={() => handleStepStat(p, "hp", -1)}
-                      className="w-6 h-6 flex items-center justify-center bg-[#14141c] hover:bg-[#1e1e28] active:bg-[#252532] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] text-xs font-bold rounded-none cursor-pointer transition-all"
-                      title="Diminuir 1 HP"
+                      className={`w-6 h-6 flex items-center justify-center bg-[#14141c] border border-[#202028] outline outline-1 outline-[#181820] text-xs font-bold rounded-none transition-all ${
+                        isDead
+                          ? "opacity-40 cursor-not-allowed text-[#626370]"
+                          : "hover:bg-[#1e1e28] active:bg-[#252532] text-[#9ca3af] hover:text-white cursor-pointer"
+                      }`}
+                      title={isDead ? "Personagem morto — use Reviver" : "Diminuir 1 HP"}
                     >
                       <Minus size={10} />
                     </button>
                     <StatMathInput
                       value={hpCurrent}
+                      disabled={isDead}
                       onSave={(val) =>
                         onUpdateStat(p, "hp", val, p.isExtraSheet, p.rawExtraSheetId)
                       }
-                      className="w-10 h-6 bg-[#0c0c10] border-y border-[#202028] text-white text-xs font-bold text-center py-0.5 rounded-none outline-none focus:border-[var(--op-red)]"
+                      className={`w-10 h-6 bg-[#0c0c10] border-y border-[#202028] text-xs font-bold text-center py-0.5 rounded-none outline-none focus:border-[var(--op-red)] ${
+                        isDead ? "text-[#71717a] cursor-not-allowed" : "text-white"
+                      }`}
                     />
                     <button
                       type="button"
+                      disabled={isDead}
                       onClick={() => handleStepStat(p, "hp", 1)}
-                      className="w-6 h-6 flex items-center justify-center bg-[#14141c] hover:bg-[#1e1e28] active:bg-[#252532] text-[#9ca3af] hover:text-white border border-[#202028] outline outline-1 outline-[#181820] text-xs font-bold rounded-none cursor-pointer transition-all"
-                      title="Aumentar 1 HP"
+                      className={`w-6 h-6 flex items-center justify-center bg-[#14141c] border border-[#202028] outline outline-1 outline-[#181820] text-xs font-bold rounded-none transition-all ${
+                        isDead
+                          ? "opacity-40 cursor-not-allowed text-[#626370]"
+                          : "hover:bg-[#1e1e28] active:bg-[#252532] text-[#9ca3af] hover:text-white cursor-pointer"
+                      }`}
+                      title={isDead ? "Personagem morto — use Reviver" : "Aumentar 1 HP"}
                     >
                       <Plus size={10} />
                     </button>
@@ -628,6 +850,71 @@ export function MasterPlayersView({
                 )}
               </div>
 
+              {/* Controles de Último Suspiro / Ressurreição do Mestre */}
+              <MasterUltimoSuspiroControls
+                ultimoSuspiro={ultimoSuspiro}
+                maxHp={hpMax}
+                characterName={p.name || "Personagem"}
+                isMaster={isMaster}
+                onAdvanceTurn={
+                  onAdvanceUltimoSuspiroTurn
+                    ? () =>
+                        onAdvanceUltimoSuspiroTurn(
+                          p,
+                          p.isExtraSheet,
+                          p.rawExtraSheetId,
+                        )
+                    : undefined
+                }
+                onFinalizeDeath={
+                  onFinalizeUltimoSuspiroDeath
+                    ? () =>
+                        onFinalizeUltimoSuspiroDeath(
+                          p,
+                          p.isExtraSheet,
+                          p.rawExtraSheetId,
+                        )
+                    : undefined
+                }
+                onRevive={
+                  onRevivePlayer
+                    ? (targetHp) =>
+                        onRevivePlayer(
+                          p,
+                          targetHp,
+                          p.isExtraSheet,
+                          p.rawExtraSheetId,
+                        )
+                    : undefined
+                }
+              />
+
+              {/* EP (Exposição Paranormal - exclusivo do Mestre) */}
+              {isMaster && onUpdateEp && (
+                <MasterEpEditor
+                  isMaster={isMaster}
+                  characterName={p.name}
+                  value={normalizeEpValue(p.ep, 0)}
+                  onConfirm={(nextEp) =>
+                    onUpdateEp(p, nextEp, p.isExtraSheet, p.rawExtraSheetId)
+                  }
+                />
+              )}
+
+              {/* LV (Nível - exclusivo do Mestre) */}
+              {isMaster && onUpdateLv && (
+                <MasterLvEditor
+                  isMaster={isMaster}
+                  characterName={p.name}
+                  value={normalizeLevel(p.lv, p.variables, normalizeCharacterProfile(p.profile))}
+                  variables={p.variables}
+                  profile={normalizeCharacterProfile(p.profile)}
+                  onConfirm={(nextLv) =>
+                    onUpdateLv(p, nextLv, p.isExtraSheet, p.rawExtraSheetId)
+                  }
+                />
+              )}
+
               {/* Condições / Status Post-its */}
               {onUpdateStatusEffects && (
                 <div className="pt-2 border-t border-[#1a1a24] space-y-2">
@@ -689,12 +976,84 @@ export function MasterPlayersView({
                 </div>
               )}
 
+              {/* PDI — Poderes de Intenção (Mestre pode criar/editar/alternar) */}
+              {isMaster && onUpdatePdis && !isPlayerRl && (() => {
+                const playerPdis = normalizePdis(p.pdis, []);
+                const activePdiCount = playerPdis.filter((item) => item.active).length;
+                return (
+                  <div className="pt-2 border-t border-[#1a1a24] space-y-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedPdiId((prev) => (prev === p.id ? null : p.id))
+                      }
+                      className="w-full flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#9ca3af] hover:text-white py-1 cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles size={11} className="text-[var(--op-red-bright)]" />
+                        PDI ({activePdiCount}/{playerPdis.length})
+                      </span>
+                      {expandedPdiId === p.id ? (
+                        <ChevronUp size={13} />
+                      ) : (
+                        <ChevronDown size={13} />
+                      )}
+                    </button>
+
+                    {expandedPdiId !== p.id && activePdiCount > 0 && (
+                      <div className="flex flex-wrap gap-1 pb-1">
+                        {playerPdis
+                          .filter((item) => item.active)
+                          .map((item) => (
+                            <span
+                              key={item.id}
+                              className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 rounded-none"
+                            >
+                              {item.name}
+                            </span>
+                          ))}
+                      </div>
+                    )}
+
+                    {expandedPdiId === p.id && (
+                      <PdiSection
+                        pdis={playerPdis}
+                        canEdit={isMaster}
+                        compact
+                        onToggle={(pdiId) =>
+                          onUpdatePdis(
+                            p,
+                            togglePdiActive(playerPdis, pdiId),
+                            p.isExtraSheet,
+                            p.rawExtraSheetId,
+                          )
+                        }
+                        onAdd={() =>
+                          setPdiEditorTarget({ player: p, initialPdi: null })
+                        }
+                        onEdit={(item) =>
+                          setPdiEditorTarget({ player: p, initialPdi: item })
+                        }
+                        onDelete={(pdiId) =>
+                          onUpdatePdis(
+                            p,
+                            removePdiItem(playerPdis, pdiId),
+                            p.isExtraSheet,
+                            p.rawExtraSheetId,
+                          )
+                        }
+                      />
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Última Ação */}
               {p.history && p.history.length > 0 && (
                 <div className="pt-2 border-t border-[#1a1a24] mt-2">
                   <div
                     className="text-xs text-[#828392] line-clamp-2 leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: p.history[0] }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeRollHistoryHtml(p.history[0]) }}
                   />
                 </div>
               )}
@@ -714,6 +1073,35 @@ export function MasterPlayersView({
       })}
       </div>
       {renderFloatingInitiativeButton()}
+
+      {isMaster && onUpdatePdis && pdiEditorTarget && (
+        <PdiEditorModal
+          isOpen={true}
+          initialPdi={pdiEditorTarget.initialPdi}
+          targetName={pdiEditorTarget.player?.name || "Personagem"}
+          onClose={() => setPdiEditorTarget(null)}
+          onSave={(draft) => {
+            const target = pdiEditorTarget.player;
+            const currentPdis = normalizePdis(target?.pdis, []);
+            onUpdatePdis(
+              target,
+              upsertPdiItem(currentPdis, draft),
+              target?.isExtraSheet,
+              target?.rawExtraSheetId,
+            );
+          }}
+          onDelete={(pdiId) => {
+            const target = pdiEditorTarget.player;
+            const currentPdis = normalizePdis(target?.pdis, []);
+            onUpdatePdis(
+              target,
+              removePdiItem(currentPdis, pdiId),
+              target?.isExtraSheet,
+              target?.rawExtraSheetId,
+            );
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -6,6 +6,9 @@ import {
   MasterPushTributoInput,
 } from "../types/masterDataPush";
 import { DEFAULT_STATUS_KEYS } from "./statusVariables";
+import { clampAttributeForLevel, normalizeLevel } from "./levelSystem";
+import { normalizeRitualItem, normalizeRituals } from "./rituals";
+import { normalizePdis, upsertPdiItem } from "./pdi";
 
 export const MASTER_PUSH_PREFIX = "MASTER_PUSH_";
 
@@ -69,6 +72,12 @@ export function createEmptySkillDraft(): MasterPushSkillInput {
     test: "",
     damage: "",
     needsTest: false,
+    testVar: "",
+    damageVar: "",
+    testPostVar: "",
+    testPostFormula: "",
+    damagePostVar: "",
+    damagePostFormula: "",
   };
 }
 
@@ -90,6 +99,12 @@ export function sanitizeSkillInput(input: MasterPushSkillInput): MasterPushSkill
     test: String(input.test || "").trim(),
     damage: String(input.damage || "").trim(),
     needsTest: Boolean(input.needsTest),
+    testVar: String(input.testVar || "").trim(),
+    damageVar: String(input.damageVar || "").trim(),
+    testPostVar: String(input.testPostVar || "").trim(),
+    testPostFormula: String(input.testPostFormula || "").trim(),
+    damagePostVar: String(input.damagePostVar || "").trim(),
+    damagePostFormula: String(input.damagePostFormula || "").trim(),
   };
 }
 
@@ -113,7 +128,7 @@ export function applyMasterDataToSheetState<T extends Record<string, any>>(
 ): T {
   let next: Record<string, any> = { ...prevState };
 
-  // 1. Append Skill if provided
+  // 1. Append Skill if provided (preserving all Tabletop skill fields)
   if (payload.skill) {
     const existingSkills = Array.isArray(next.skills) ? next.skills : [];
     const maxExistingId = existingSkills.reduce(
@@ -132,8 +147,12 @@ export function applyMasterDataToSheetState<T extends Record<string, any>>(
         test: cleanSkill.test,
         damage: cleanSkill.damage,
         needsTest: cleanSkill.needsTest,
-        testVar: "",
-        damageVar: "",
+        testVar: cleanSkill.testVar || "",
+        damageVar: cleanSkill.damageVar || "",
+        testPostVar: cleanSkill.testPostVar || "",
+        testPostFormula: cleanSkill.testPostFormula || "",
+        damagePostVar: cleanSkill.damagePostVar || "",
+        damagePostFormula: cleanSkill.damagePostFormula || "",
       },
     ];
   }
@@ -150,11 +169,58 @@ export function applyMasterDataToSheetState<T extends Record<string, any>>(
     };
   }
 
-  // 3. Update ONLY the 6 default statuses, preserving any extra custom variables untouched
+  // 3. Append Ritual if provided (preserving all existing rituals & full ritual properties)
+  if (payload.ritual) {
+    const existingRituals = normalizeRituals(next.rituals);
+    const maxExistingId = existingRituals.reduce(
+      (max: number, r) => Math.max(max, Number(r?.id) || 0),
+      0
+    );
+    const newRitualId = Math.max(nowTs, maxExistingId + 1);
+    const cleanRitual = normalizeRitualItem(
+      { ...payload.ritual, id: newRitualId },
+      newRitualId
+    );
+    if (cleanRitual) {
+      next.rituals = [
+        ...existingRituals,
+        {
+          ...cleanRitual,
+          id: newRitualId,
+          name: cleanRitual.name.trim() || "Novo Ritual",
+        },
+      ];
+    }
+  }
+
+  // 4. Add/upsert PDI if provided (preserving existing PDIs and full modifiers)
+  if (payload.pdi) {
+    const existingPdis = normalizePdis(next.pdis, []);
+    const existingIds = new Set(existingPdis.map((p) => p.id));
+    const baseId =
+      typeof payload.pdi.id === "string" && payload.pdi.id.trim()
+        ? payload.pdi.id.trim()
+        : `pdi_${nowTs}`;
+    const uniqueId = existingIds.has(baseId)
+      ? `${baseId}_${nowTs}`
+      : baseId;
+    const [cleanPdi] = normalizePdis([{ ...payload.pdi, id: uniqueId }], []);
+    if (cleanPdi) {
+      next.pdis = upsertPdiItem(existingPdis, cleanPdi);
+    }
+  }
+
+  // 5. Update ONLY the 6 default statuses, preserving any extra custom variables untouched
   if (payload.statuses) {
     const cleanStatuses = sanitizeSixStatuses(payload.statuses);
     const prevVars: Record<string, number> =
       next.variables && typeof next.variables === "object" ? { ...next.variables } : {};
+    const hasExplicitLv = typeof prevState.lv === "number" && Number.isFinite(prevState.lv);
+    const activeProfile =
+      typeof prevState.profile === "string" ? prevState.profile : undefined;
+    const effectiveLv = hasExplicitLv
+      ? normalizeLevel(prevState.lv, prevVars, activeProfile)
+      : undefined;
 
     // Remove case-variants of the 6 default keys before writing canonical keys
     for (const existingKey of Object.keys(prevVars)) {
@@ -164,10 +230,21 @@ export function applyMasterDataToSheetState<T extends Record<string, any>>(
       }
     }
     for (const key of DEFAULT_STATUS_KEYS) {
-      prevVars[key] = cleanStatuses[key];
+      prevVars[key] =
+        effectiveLv !== undefined
+          ? clampAttributeForLevel(cleanStatuses[key], effectiveLv, {
+              min: 0,
+              statKey: key,
+              profile: activeProfile,
+            })
+          : cleanStatuses[key];
     }
 
     next.variables = prevVars;
+    next.lv =
+      effectiveLv !== undefined
+        ? effectiveLv
+        : normalizeLevel(next.lv, prevVars, activeProfile);
 
     if (next.autoMaxStats !== false) {
       const { hpMax, peMax, smMax } = computeDemologiaMaxStats(prevVars);
@@ -194,7 +271,9 @@ export function applyMasterDataToSheetState<T extends Record<string, any>>(
 
 export function summarizeMasterPush(payload: MasterDataPushPayload): string {
   const parts: string[] = [];
+  if (payload.ritual) parts.push(`Ritual "${payload.ritual.name}"`);
   if (payload.skill) parts.push(`Skill "${payload.skill.name}"`);
+  if (payload.pdi) parts.push(`PDI "${payload.pdi.name}"`);
   if (payload.tributo) parts.push(`Tributo "${payload.tributo.name}"`);
   if (payload.statuses) parts.push("Status Padrões");
   return parts.join(", ");

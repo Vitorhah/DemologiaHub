@@ -13,11 +13,14 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   FolderOpen,
+  Sun,
+  LogOut,
 } from "lucide-react";
 import { GameMode } from "../types";
 import { DEMOLOGIA_LOGO_URL } from "../constants/branding";
 import { motion } from "motion/react";
 import { SNAPPY_SPRING } from "./MotionPrimitives";
+import { useWakeLock } from "../hooks/useWakeLock";
 
 export interface NavigationSidebarProps {
   currentPage: string;
@@ -32,6 +35,7 @@ export interface NavigationSidebarProps {
   onOpenModeModal?: () => void;
   isOnline?: boolean;
   unreadHandoutsCount?: number;
+  onLogoutMaster?: () => void;
 }
 
 export const NavigationSidebar = React.memo(function NavigationSidebar({
@@ -47,10 +51,12 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
   onOpenModeModal,
   isOnline = false,
   unreadHandoutsCount = 0,
+  onLogoutMaster,
 }: NavigationSidebarProps) {
   const isRlMode = gameMode === "rl";
   const [collapsed, setCollapsed] = useState(false);
   const touchStartXRef = useRef<number | null>(null);
+  const wakeLock = useWakeLock();
 
   // Fecha com a tecla Esc e trava o scroll do body quando a gaveta mobile está aberta
   useEffect(() => {
@@ -378,36 +384,131 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
           </nav>
         </div>
 
-        {/* RODAPÉ MINIMALISTA: Tela Cheia & Logs */}
-        <div
-          className={`pt-2.5 border-t border-[#181820] shrink-0 flex ${
-            collapsed ? "lg:flex-col" : "flex-row"
-          } gap-1.5`}
-        >
+        {/* RODAPÉ MINIMALISTA: Tela Acesa (Wake Lock), Tela Cheia, Logs & Sair Mestre */}
+        <div className="pt-2.5 border-t border-[#181820] shrink-0 flex flex-col gap-1.5">
           <button
             type="button"
-            onClick={toggleFullscreen}
-            className="flex-1 flex items-center justify-center gap-1.5 min-h-[40px] px-2 rounded-none bg-[#101015] hover:bg-[#17171f] active:scale-95 text-[#828392] hover:text-white border border-[#1e1e26] transition-all cursor-pointer text-[11px] font-mono uppercase touch-manipulation"
-            title="Tela cheia"
-            aria-label="Alternar Tela Cheia"
+            data-testid="wake-lock-toggle"
+            aria-pressed={wakeLock.enabled}
+            onClick={() => {
+              void wakeLock.toggle();
+            }}
+            className={`w-full flex items-center ${
+              collapsed ? "lg:justify-center lg:px-0" : "justify-between px-2.5"
+            } gap-1.5 min-h-[44px] rounded-none border transition-all duration-150 active:scale-[0.98] cursor-pointer text-[11px] font-mono uppercase tracking-wider touch-manipulation whitespace-nowrap ${
+              wakeLock.enabled
+                ? isRlMode
+                  ? "bg-purple-950/45 border-purple-500/50 text-purple-100 hover:bg-purple-950/65"
+                  : "bg-[#1b0a0d] border-[#8f171c]/65 text-white hover:bg-[#240d11]"
+                : "bg-[#101015] border-[#1e1e26] text-[#828392] hover:text-white hover:bg-[#17171f]"
+            }`}
+            title={
+              wakeLock.errorMessage
+                ? wakeLock.errorMessage
+                : wakeLock.enabled
+                  ? wakeLock.active
+                    ? "Tela acesa ativa — toque para desativar"
+                    : "Tela acesa armada — será reativada ao tocar na tela"
+                  : "Manter a tela do dispositivo acesa durante a sessão"
+            }
+            aria-label={
+              wakeLock.enabled
+                ? "Desativar modo Tela Acesa"
+                : "Ativar modo Tela Acesa"
+            }
           >
-            <Maximize size={14} className="shrink-0" />
-            <span className={collapsed ? "lg:hidden" : ""}>Tela</span>
+            <span className="flex items-center gap-1.5 min-w-0">
+              <Sun
+                size={14}
+                className={`shrink-0 ${
+                  wakeLock.enabled
+                    ? isRlMode
+                      ? "text-[#c084fc]"
+                      : "text-[var(--op-red-bright)]"
+                    : ""
+                }`}
+              />
+              <span className={`truncate ${collapsed ? "lg:hidden" : ""}`}>
+                Tela Acesa
+              </span>
+            </span>
+            {!collapsed && (
+              <span
+                className={`text-[10px] font-bold tracking-wider shrink-0 ${
+                  wakeLock.enabled
+                    ? wakeLock.active
+                      ? isRlMode
+                        ? "text-[#d8b4fe]"
+                        : "text-[#ff8085]"
+                      : "text-[#d4a353]"
+                    : "text-[#5c5d6b]"
+                }`}
+              >
+                {wakeLock.enabled
+                  ? wakeLock.active
+                    ? "ATIVA"
+                    : wakeLock.waitingForGesture
+                      ? "TOQUE"
+                      : "ON"
+                  : "OFF"}
+              </span>
+            )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setShowUpdateLog(true);
-              setMenuOpen(false);
-            }}
-            className="flex-1 flex items-center justify-center gap-1.5 min-h-[40px] px-2 rounded-none bg-[#101015] hover:bg-[#17171f] active:scale-95 text-[#828392] hover:text-white border border-[#1e1e26] transition-all cursor-pointer text-[11px] font-mono uppercase touch-manipulation"
-            title="Histórico de Atualizações"
-            aria-label="Histórico de Atualizações"
+          {wakeLock.errorMessage && !collapsed && (
+            <div
+              role="status"
+              className="px-2 py-1 text-[10px] font-mono text-[#ff8085] bg-[#16090b] border border-[#4a1418] leading-snug"
+            >
+              {wakeLock.errorMessage}
+            </div>
+          )}
+
+          <div
+            className={`flex ${collapsed ? "lg:flex-col" : "flex-row"} gap-1.5`}
           >
-            <FileText size={14} className="shrink-0" />
-            <span className={collapsed ? "lg:hidden" : ""}>Logs</span>
-          </button>
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] px-2 rounded-none bg-[#101015] hover:bg-[#17171f] active:scale-95 text-[#828392] hover:text-white border border-[#1e1e26] transition-all cursor-pointer text-[11px] font-mono uppercase touch-manipulation whitespace-nowrap"
+              title="Tela cheia"
+              aria-label="Alternar Tela Cheia"
+            >
+              <Maximize size={14} className="shrink-0" />
+              <span className={collapsed ? "lg:hidden" : ""}>Tela</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowUpdateLog(true);
+                setMenuOpen(false);
+              }}
+              className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] px-2 rounded-none bg-[#101015] hover:bg-[#17171f] active:scale-95 text-[#828392] hover:text-white border border-[#1e1e26] transition-all cursor-pointer text-[11px] font-mono uppercase touch-manipulation whitespace-nowrap"
+              title="Histórico de Atualizações"
+              aria-label="Histórico de Atualizações"
+            >
+              <FileText size={14} className="shrink-0" />
+              <span className={collapsed ? "lg:hidden" : ""}>Logs</span>
+            </button>
+          </div>
+
+          {isMestreAuth && onLogoutMaster && (
+            <button
+              type="button"
+              data-testid="sidebar-master-logout"
+              onClick={() => {
+                onLogoutMaster();
+                setMenuOpen(false);
+              }}
+              className={`w-full flex items-center justify-center gap-1.5 min-h-[44px] px-2 rounded-none bg-[#121218] hover:bg-[#220a0e] active:scale-95 text-[#9ca3af] hover:text-[#ff8085] border border-[#22222c] hover:border-[#8f171c]/60 transition-all cursor-pointer text-[11px] font-mono uppercase tracking-wider touch-manipulation whitespace-nowrap`}
+              title="Sair do Modo Mestre"
+              aria-label="Sair do Modo Mestre"
+            >
+              <LogOut size={14} className="shrink-0" />
+              <span className={collapsed ? "lg:hidden" : ""}>Sair do Mestre</span>
+            </button>
+          )}
         </div>
       </div>
     </aside>

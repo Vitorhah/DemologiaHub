@@ -21,6 +21,7 @@ export function isSystemRecordId(id: string | null | undefined): boolean {
     id === "MASTER_EVENTS" ||
     id === "TABLETOP_GRID" ||
     id === "CADERNO_CAMPO_SHARED" ||
+    id === "MASTER_LIBRARY" ||
     id === HANDOUTS_MASTER_RECORD_ID ||
     id === HANDOUTS_SHARED_RECORD_ID ||
     id.startsWith(HANDOUTS_INDIV_PREFIX) ||

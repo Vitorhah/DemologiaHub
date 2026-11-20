@@ -17,6 +17,7 @@ import {
   FileText,
 } from "lucide-react";
 import { StatMathInput } from "./StatMathInput";
+import { getAttributeLimitForLevel, normalizeLevel } from "../utils/levelSystem";
 import { motion } from "motion/react";
 import { CLINICAL_EASE } from "./MotionPrimitives";
 
@@ -99,6 +100,7 @@ const GENERIC_META: VariableMeta = {
 
 interface DossierVariablesSectionProps {
   variables: Record<string, number>;
+  lv?: number;
   updateVariable: (key: string, val: number) => void;
   renameVariable: (oldKey: string, newKey: string) => void;
   removeVariable: (key: string) => void;
@@ -108,12 +110,15 @@ interface DossierVariablesSectionProps {
 
 export const DossierVariablesSection = React.memo(function DossierVariablesSection({
   variables,
+  lv,
   updateVariable,
   renameVariable,
   removeVariable,
   addVariable,
   onRollTest,
 }: DossierVariablesSectionProps) {
+  const effectiveLv = normalizeLevel(lv, variables);
+  const attrLimit = getAttributeLimitForLevel(effectiveLv);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
 
@@ -289,21 +294,28 @@ export const DossierVariablesSection = React.memo(function DossierVariablesSecti
                 <div className="text-center px-1">
                   <StatMathInput
                     value={value}
+                    min={0}
+                    max={attrLimit}
                     onSave={(val) => updateVariable(key, val)}
                     className="w-14 bg-transparent text-center text-xl sm:text-2xl font-mono font-black text-white outline-none tracking-tight focus:text-[var(--op-red-bright)]"
-                    title={`Editar valor de ${key} (aceita números ou +, -, *)`}
+                    title={`Editar valor de ${key} (máx. ${attrLimit} no LV ${effectiveLv})`}
                     ariaLabel={`Editar valor de ${key}`}
                   />
                   <div className="text-[8px] font-mono uppercase tracking-widest text-[#666]">
-                    NÍVEL
+                    MÁX {attrLimit}
                   </div>
                 </div>
 
                 <button
                   type="button"
+                  disabled={value >= attrLimit}
                   onClick={() => updateVariable(key, value + 1)}
-                  className="w-9 h-9 sm:w-8 sm:h-8 rounded-none bg-[#14141a] hover:bg-[#20202a] active:bg-[#282834] border border-[var(--op-border)] text-[var(--op-text-secondary)] hover:text-white flex items-center justify-center font-mono font-bold transition-all active:scale-95 cursor-pointer touch-manipulation select-none"
-                  title="Aumentar valor (+1)"
+                  className="w-9 h-9 sm:w-8 sm:h-8 rounded-none bg-[#14141a] hover:bg-[#20202a] active:bg-[#282834] disabled:opacity-35 disabled:cursor-not-allowed border border-[var(--op-border)] text-[var(--op-text-secondary)] hover:text-white flex items-center justify-center font-mono font-bold transition-all active:scale-95 cursor-pointer touch-manipulation select-none"
+                  title={
+                    value >= attrLimit
+                      ? `Limite máximo no LV ${effectiveLv}: ${attrLimit}`
+                      : "Aumentar valor (+1)"
+                  }
                 >
                   <Plus size={13} />
                 </button>

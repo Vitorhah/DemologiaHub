@@ -2,6 +2,13 @@ import React, { useState, useEffect } from "react";
 import { Lock, Eye, EyeOff, AlertCircle, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { MotionModalBackdrop, MotionSheetPanel, CLINICAL_EASE } from "./MotionPrimitives";
+import {
+  clearMasterAuthFailures,
+  constantTimeEqual,
+  getMasterLockoutRemainingSeconds,
+  readMasterAuthThrottle,
+  recordMasterAuthFailure,
+} from "../utils/security";
 
 export interface PasswordAuthModalProps {
   isOpen: boolean;
@@ -20,6 +27,7 @@ export function PasswordAuthModal({
   const [showPassword, setShowPassword] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
@@ -27,11 +35,29 @@ export function PasswordAuthModal({
       setHasError(false);
       setShowPassword(false);
       setIsSubmitting(false);
+      const current = readMasterAuthThrottle();
+      setLockoutSeconds(getMasterLockoutRemainingSeconds(current));
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || lockoutSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      const remaining = getMasterLockoutRemainingSeconds(readMasterAuthThrottle());
+      setLockoutSeconds(remaining);
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [isOpen, lockoutSeconds]);
+
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    const currentThrottle = readMasterAuthThrottle();
+    const remaining = getMasterLockoutRemainingSeconds(currentThrottle);
+    if (remaining > 0) {
+      setLockoutSeconds(remaining);
+      return;
+    }
+
     if (!password.trim()) {
       setHasError(true);
       return;
@@ -40,10 +66,14 @@ export function PasswordAuthModal({
     setIsSubmitting(true);
     setTimeout(() => {
       const correct = expectedPassword || import.meta.env.VITE_MESTRE_PASSWORD || "mestre";
-      if (password === correct) {
+      if (constantTimeEqual(password, correct)) {
+        clearMasterAuthFailures();
+        setLockoutSeconds(0);
         setHasError(false);
         onSuccess();
       } else {
+        const nextThrottle = recordMasterAuthFailure();
+        setLockoutSeconds(getMasterLockoutRemainingSeconds(nextThrottle));
         setHasError(true);
         setIsSubmitting(false);
       }
@@ -140,16 +170,21 @@ export function PasswordAuthModal({
               </div>
 
               <AnimatePresence>
-                {hasError && (
+                {(hasError || lockoutSeconds > 0) && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.16, ease: CLINICAL_EASE }}
+                    role="alert"
                     className="mt-2.5 p-3 bg-red-950/40 border border-red-800/60 rounded-none flex items-center gap-2 text-red-300 text-xs font-mono"
                   >
                     <AlertCircle size={15} className="shrink-0" />
-                    <span>Senha incorreta. Tente novamente.</span>
+                    <span className="tabular-nums">
+                      {lockoutSeconds > 0
+                        ? `Muitas tentativas incorretas. Aguarde ${lockoutSeconds}s.`
+                        : "Senha incorreta. Tente novamente."}
+                    </span>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -166,10 +201,14 @@ export function PasswordAuthModal({
 
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="flex-1 sm:flex-none min-h-[44px] px-6 py-2.5 rounded-none bg-gradient-to-r from-[#b52a30] to-[#7a1015] hover:brightness-110 active:scale-95 disabled:opacity-50 text-white border border-[#ff8085]/40 font-bold uppercase tracking-wider text-xs transition-all cursor-pointer touch-manipulation"
+                disabled={isSubmitting || lockoutSeconds > 0}
+                className="flex-1 sm:flex-none min-h-[44px] px-6 py-2.5 rounded-none bg-gradient-to-r from-[#b52a30] to-[#7a1015] hover:brightness-110 active:scale-95 disabled:opacity-50 text-white border border-[#ff8085]/40 font-bold uppercase tracking-wider text-xs transition-all cursor-pointer touch-manipulation tabular-nums"
               >
-                {isSubmitting ? "Verificando..." : "Entrar"}
+                {lockoutSeconds > 0
+                  ? `Aguarde ${lockoutSeconds}s`
+                  : isSubmitting
+                    ? "Verificando..."
+                    : "Entrar"}
               </button>
             </div>
           </form>

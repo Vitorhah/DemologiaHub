@@ -496,6 +496,11 @@ body.theme-rl {
 }
 
 .hp-text { color: var(--blood-red); text-shadow: 0 0 8px var(--blood-glow); margin-left: 40px; font-variant-numeric: tabular-nums; }
+.hp-text.hp-text-dead,
+.theme-rl .hud-container .status-numbers .hp-text.hp-text-dead {
+    color: #71717a !important;
+    text-shadow: 1px 1px 0px #000 !important;
+}
 .pe-text { color: var(--pe-blue); text-shadow: 0 0 8px var(--pe-glow); margin-left: 65px; margin-top: -5px; font-variant-numeric: tabular-nums; }
 .sm-text, .sn-text { color: var(--sm-purple); text-shadow: 0 0 8px var(--sm-glow); margin-left: 65px; margin-top: -5px; font-variant-numeric: tabular-nums; }
 
@@ -514,6 +519,13 @@ body.theme-rl {
     position: relative;
 }
 
+.bar-wrapper.hp-bar-dead,
+.theme-rl .hud-container .status-bars .bar-wrapper.hp-bar-dead {
+    background: #3f3f46 !important;
+    border-color: #52525b !important;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.75) !important;
+}
+
 .bar-fill {
     width: 100%;
     height: 100%;
@@ -526,6 +538,11 @@ body.theme-rl {
 .hp-fill { 
     background: linear-gradient(90deg, #4c050a 0%, #881318 20%, #b91c1c 45%, #ef4444 75%, #ff6b81 100%); 
     box-shadow: 0 0 16px rgba(239, 68, 68, 0.8), 0 0 6px rgba(255, 107, 129, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.4); 
+}
+.hp-fill.hp-fill-dead,
+.theme-rl .hud-container .status-bars .hp-fill.hp-fill-dead {
+    background: #52525b !important;
+    box-shadow: none !important;
 }
 .pe-fill { 
     background: linear-gradient(90deg, #032b43 0%, #0369a1 25%, #0284c7 50%, #00b4d8 75%, #67e8f9 100%); 
@@ -1138,6 +1155,9 @@ body.theme-rl {
 .skill-list {
     display: flex; flex-direction: column; gap: 15px;
 }
+.skill-list > div {
+    contain: layout style;
+}
 
 .paper-bar {
     background: var(--paper-bg);
@@ -1145,16 +1165,19 @@ body.theme-rl {
     padding: 14px 18px;
     position: relative;
     cursor: pointer;
+    touch-action: manipulation;
+    contain: layout style;
     box-shadow: 0 6px 14px rgba(0,0,0,0.65), inset 0 0 14px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.6);
     clip-path: polygon(0% 2%, 5% 0%, 10% 3%, 15% 0%, 20% 2%, 25% 0%, 30% 3%, 35% 0%, 40% 2%, 45% 0%, 50% 3%, 55% 0%, 60% 2%, 65% 0%, 70% 3%, 75% 0%, 80% 2%, 85% 0%, 90% 3%, 95% 0%, 100% 2%, 100% 98%, 95% 100%, 90% 97%, 85% 100%, 80% 98%, 75% 100%, 70% 97%, 65% 100%, 60% 98%, 55% 100%, 50% 97%, 45% 100%, 40% 98%, 35% 100%, 30% 97%, 25% 100%, 20% 98%, 15% 100%, 10% 97%, 5% 100%, 0% 98%);
-    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-    will-change: transform;
+    transition: transform 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+    backface-visibility: hidden;
 }
 .paper-bar:hover {
-    transform: translate3d(0, -2px, 0);
-    box-shadow: 0 10px 20px rgba(0,0,0,0.75), inset 0 0 16px rgba(0,0,0,0.08);
+    transform: translate3d(0, -1.5px, 0);
 }
-.paper-bar:active { transform: scale(0.985) translateZ(0); }
+.paper-bar:active {
+    transform: scale3d(0.988, 0.988, 1);
+}
 
 .skill-header {
     display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 18px;
@@ -1173,7 +1196,7 @@ body.theme-rl {
     display: none; padding: 15px; background: linear-gradient(180deg, #16151c 0%, #0d0c11 100%); border: 1px solid var(--op-border); border-top: none; border-radius: 0px; margin-top: -10px; margin-bottom: 10px;
     box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45);
 }
-.skill-details.active { display: block; animation: fadeIn 0.3s ease; }
+.skill-details.active { display: block; }
 
 .input-dark {
     background: linear-gradient(145deg, #15141a 0%, #0e0d12 100%);
@@ -1209,15 +1232,14 @@ body.theme-rl {
     cursor: pointer; 
     touch-action: manipulation;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    transition: transform 0.15s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+    transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.12s ease, opacity 0.12s ease;
 }
 .btn-action:hover { 
-    transform: translateY(-1px);
+    transform: translate3d(0, -1px, 0);
     border-color: rgba(255, 255, 255, 0.25); 
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .btn-action:active {
-    transform: translateY(1px) scale(0.98);
+    transform: scale3d(0.98, 0.98, 1);
 }
 .btn-action.test { 
     background: linear-gradient(135deg, #1c1c24 0%, #282834 65%, #1c1c24 100%); 
@@ -1256,6 +1278,26 @@ body.theme-rl {
     margin-bottom: 10px; 
     text-shadow: none;
     color: #000000;
+}
+
+/* --- PDI (MESMO DESIGN DOS TRIBUTOS) --- */
+.pdi-bar {
+    margin-top: 0;
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease, filter 0.2s ease;
+}
+.pdi-bar-inactive {
+    opacity: 0.78;
+    filter: saturate(0.68) brightness(0.88);
+    box-shadow: 0 4px 10px rgba(96, 12, 34, 0.45);
+}
+.pdi-bar-inactive:hover {
+    opacity: 0.94;
+    filter: saturate(0.88) brightness(0.96);
+}
+.pdi-bar-active {
+    opacity: 1;
+    filter: saturate(1.08);
+    box-shadow: 0 6px 20px rgba(201, 26, 78, 0.72);
 }
 
 /* --- INVENTÁRIO --- */
@@ -1374,16 +1416,37 @@ body.theme-rl {
 }
 
 .modal-backdrop-surface {
-    background-color: rgba(6, 6, 10, 0.7);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    background-color: rgba(6, 6, 10, 0.78);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+@media (max-width: 768px) {
+    .modal-backdrop-surface,
+    .modal-backdrop-blur {
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        background-color: rgba(5, 5, 9, 0.86);
+    }
+}
+
+@keyframes toastProgressShrink {
+    from { transform: scaleX(1); }
+    to { transform: scaleX(0); }
+}
+
+.toast-progress-bar {
+    animation-name: toastProgressShrink;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+    will-change: transform;
 }
 
 .modal-backdrop-blur {
-    background-color: rgba(6, 6, 10, 0.7);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    animation: backdropFadeIn 0.16s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    background-color: rgba(6, 6, 10, 0.78);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    animation: backdropFadeIn 0.14s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     will-change: opacity;
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;

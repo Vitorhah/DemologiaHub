@@ -1,3 +1,9 @@
+import {
+  isDemologiaStatKey,
+  normalizePdis,
+  PdiItem,
+} from "./pdi";
+
 export interface CustomRollFormula {
   id: string;
   name: string;
@@ -104,20 +110,40 @@ function evaluateSafeMathExpression(expr: string): number | null {
 export function evaluateDiceFormula(
   formula: string,
   variables: Record<string, number> = {},
-  rng: () => number = Math.random
+  rng: () => number = Math.random,
+  pdis?: PdiItem[],
 ): EvaluatedRoll | null {
   const trimmed = String(formula || "").trim();
   if (!trimmed) return null;
 
   const normalized = trimmed.replace(/(^|[^0-9])d(\d+)/gi, "$11d$2");
   const logDetails: string[] = [];
+  const pdiLogDetails: string[] = [];
   const diceGroups: Array<{ count: number; sides: number; rolls: number[] }> = [];
   let stringToEval = normalized.toUpperCase();
+
+  const activePdis = pdis ? normalizePdis(pdis, []).filter((p) => p.active) : [];
 
   // Substitui variáveis mais longas primeiro para evitar colisões parciais
   const sortedVars = Object.entries(variables || {}).sort(
     (a, b) => b[0].length - a[0].length
   );
+
+  const rollPdiSingleDie = (spec: string): { sum: number; rolls: number[]; label: string } | null => {
+    const match = /^(\d+)d(\d+)$/i.exec(spec.trim());
+    if (!match) return null;
+    const count = parseInt(match[1], 10);
+    const sides = parseInt(match[2], 10);
+    if (count < 1 || count > 20 || sides < 1 || sides > 1000) return null;
+    let sum = 0;
+    const rolls: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const r = Math.floor(rng() * sides) + 1;
+      sum += r;
+      rolls.push(r);
+    }
+    return { sum, rolls, label: `${count}D${sides}` };
+  };
 
   for (const [key, value] of sortedVars) {
     const upperKey = key.trim().toUpperCase();
@@ -126,8 +152,43 @@ export function evaluateDiceFormula(
     const regex = new RegExp(`\\b${escapedKey}\\b`, "g");
     if (regex.test(stringToEval)) {
       const numVal = Number(value) || 0;
-      logDetails.push(`${upperKey}(${numVal})`);
-      stringToEval = stringToEval.replace(regex, `(${numVal})`);
+      let effectiveVal = numVal;
+      const statFormulaParts: string[] = [String(numVal)];
+
+      if (activePdis.length > 0 && isDemologiaStatKey(upperKey)) {
+        for (const pdi of activePdis) {
+          const mod = pdi.modifiers?.[upperKey];
+          if (!mod) continue;
+
+          if (mod.buffFlat && mod.buffFlat > 0) {
+            effectiveVal += mod.buffFlat;
+            statFormulaParts.push(`+${mod.buffFlat}`);
+          }
+          if (mod.debuffFlat && mod.debuffFlat > 0) {
+            effectiveVal -= mod.debuffFlat;
+            statFormulaParts.push(`-${mod.debuffFlat}`);
+          }
+          if (mod.buffDice) {
+            const rolled = rollPdiSingleDie(mod.buffDice);
+            if (rolled) {
+              effectiveVal += rolled.sum;
+              statFormulaParts.push(`+${rolled.label}`);
+              pdiLogDetails.push(`PDI(${pdi.name}) +${rolled.label}[${rolled.rolls.join(",")}]`);
+            }
+          }
+          if (mod.debuffDice) {
+            const rolled = rollPdiSingleDie(mod.debuffDice);
+            if (rolled) {
+              effectiveVal -= rolled.sum;
+              statFormulaParts.push(`-${rolled.label}`);
+              pdiLogDetails.push(`PDI(${pdi.name}) -${rolled.label}[${rolled.rolls.join(",")}]`);
+            }
+          }
+        }
+      }
+
+      logDetails.push(`${upperKey}(${statFormulaParts.join("")})`);
+      stringToEval = stringToEval.replace(regex, `(${effectiveVal})`);
     }
   }
 
@@ -151,6 +212,10 @@ export function evaluateDiceFormula(
     logDetails.push(`${match}[${rolls.join(",")}]`);
     return String(sum);
   });
+
+  if (pdiLogDetails.length > 0) {
+    logDetails.push(...pdiLogDetails);
+  }
 
   if (invalidDiceSpec) return null;
 

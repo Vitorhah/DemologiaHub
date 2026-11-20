@@ -11,18 +11,23 @@ import {
   EyeOff,
   Menu,
   FolderOpen,
+  Library,
   Wrench,
+  LogOut,
 } from "lucide-react";
 import { GameMode } from "../types";
 import { motion } from "motion/react";
 import { SNAPPY_SPRING } from "./MotionPrimitives";
 
 export interface MasterHeaderBarProps {
-  activeTab: "fichas" | "ost" | "extras" | "handouts" | "utilities";
-  setActiveTab: (tab: "fichas" | "ost" | "extras" | "handouts" | "utilities") => void;
+  activeTab: "fichas" | "ost" | "extras" | "handouts" | "biblioteca" | "utilities";
+  setActiveTab: (
+    tab: "fichas" | "ost" | "extras" | "handouts" | "biblioteca" | "utilities"
+  ) => void;
   playersCount: number;
   extrasCount: number;
   handoutsCount?: number;
+  libraryCount?: number;
   isOstPlaying: boolean;
   onRollInitiative?: () => void;
   onReturnToMainSheet: () => void;
@@ -32,6 +37,7 @@ export interface MasterHeaderBarProps {
   onClearChatHistory?: () => void;
   currentGlobalMode?: GameMode;
   onOpenModeModal?: () => void;
+  onLogoutMaster?: () => void;
 }
 
 export function MasterHeaderBar({
@@ -40,6 +46,7 @@ export function MasterHeaderBar({
   playersCount,
   extrasCount,
   handoutsCount,
+  libraryCount,
   isOstPlaying,
   onReturnToMainSheet,
   onOpenMenu,
@@ -48,6 +55,7 @@ export function MasterHeaderBar({
   onClearChatHistory,
   currentGlobalMode = "demologia",
   onOpenModeModal,
+  onLogoutMaster,
 }: MasterHeaderBarProps) {
   const tabs = [
     {
@@ -73,6 +81,12 @@ export function MasterHeaderBar({
       label: "Handouts",
       icon: FolderOpen,
       count: handoutsCount,
+    },
+    {
+      id: "biblioteca" as const,
+      label: "Biblioteca",
+      icon: Library,
+      count: libraryCount,
     },
     {
       id: "utilities" as const,
@@ -237,6 +251,19 @@ export function MasterHeaderBar({
               >
                 <Trash2 size={13} className="text-red-500/90" />
                 <span className="hidden md:inline">Chat</span>
+              </button>
+            )}
+
+            {onLogoutMaster && (
+              <button
+                type="button"
+                onClick={onLogoutMaster}
+                className="inline-flex items-center justify-center gap-1.5 px-3 min-h-[38px] bg-[#121218] hover:bg-[#220a0e] active:scale-95 text-[#9ca3af] hover:text-[#ff8085] border border-[#22222c] hover:border-[#8f171c]/60 text-xs uppercase tracking-wider font-mono rounded-none transition-all duration-150 cursor-pointer touch-manipulation whitespace-nowrap shrink-0"
+                title="Encerrar sessão do Mestre"
+                aria-label="Sair do Modo Mestre"
+              >
+                <LogOut size={13} />
+                <span className="hidden sm:inline">Sair</span>
               </button>
             )}
           </div>
