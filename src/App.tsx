@@ -121,6 +121,12 @@ import {
   normalizeRituals,
 } from "./utils/rituals";
 import {
+  InitiativeFilterState,
+  createInitialInitiativeFilterState,
+  reconcileInitiativeSelection,
+  rollFilteredInitiatives,
+} from "./utils/initiativeFilter";
+import {
   DEFAULT_PDIS,
   PdiItem,
   getActivePdiBadgesForStat,
@@ -635,6 +641,9 @@ export default function App() {
   }, [userUid]);
   const [players, setPlayers] = useState<any[]>([]);
   const [initiatives, setInitiatives] = useState<Record<string, number>>({});
+  const initiativeFilterRef = useRef<InitiativeFilterState>(
+    createInitialInitiativeFilterState(),
+  );
   const [mestreTab, setMestreTab] = useState<
     "fichas" | "ost" | "extras" | "handouts" | "biblioteca" | "utilities"
   >("fichas");
@@ -4151,33 +4160,30 @@ export default function App() {
     );
   };
 
-  const handleRollAllInitiatives = () => {
-    const syncedExtras = extraFichas
-      .filter((f) => f.synchronized)
-      .map((f) => ({
-        id: `EXTRA_FICHA_${f.id}`,
-        variables: f.variables || {},
-        pdis: normalizePdis(f.pdis, []),
-      }));
-    const combined = [...players, ...syncedExtras];
-    const newInits: Record<string, number> = {};
-    combined.forEach((p) => {
-      const rolled = evaluateDiceFormula(
-        "1d20+AGL",
-        p.variables || {},
-        Math.random,
-        normalizePdis(p.pdis, []),
+  const handleRollAllInitiatives = useCallback(
+    (explicitSelectedIds?: string[]) => {
+      const syncedExtras = extraFichas
+        .filter((f) => f.synchronized)
+        .map((f) => ({
+          id: `EXTRA_FICHA_${f.id}`,
+          variables: f.variables || {},
+          pdis: normalizePdis(f.pdis, []),
+        }));
+      const combined = [...players, ...syncedExtras];
+      const participantIds = combined.map((p) => p.id);
+      const reconciled = reconcileInitiativeSelection(
+        initiativeFilterRef.current,
+        participantIds,
       );
-      if (rolled) {
-        newInits[p.id] = rolled.result;
-      } else {
-        const agl = p.variables?.["AGL"] || 0;
-        const roll = Math.floor(Math.random() * 20) + 1;
-        newInits[p.id] = roll + agl;
-      }
-    });
-    setInitiatives((prev) => ({ ...prev, ...newInits }));
-  };
+      initiativeFilterRef.current = reconciled;
+      const selectedIds = explicitSelectedIds ?? reconciled.selectedIds;
+      if (selectedIds.length === 0) return;
+
+      const newInits = rollFilteredInitiatives(combined, selectedIds);
+      setInitiatives(newInits);
+    },
+    [players, extraFichas],
+  );
 
   const handleClearChatHistory = () => {
     setShowClearChatModal(true);
@@ -5990,6 +5996,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   isMaster={isMestreAuth}
                   onClearChatHistory={handleClearChatHistory}
                   onRollInitiative={handleRollAllInitiatives}
+                  initiativeFilterRef={initiativeFilterRef}
                   playerModes={gameModeConfig.playerModes || {}}
                   currentGlobalMode={gameModeConfig.globalMode}
                   onTogglePlayerMode={handleTogglePlayerMode}

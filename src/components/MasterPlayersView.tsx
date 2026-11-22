@@ -17,6 +17,11 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  Filter,
+  Check,
+  SlidersHorizontal,
+  AlertTriangle,
+  ArrowLeftRight,
 } from "lucide-react";
 import { GameMode } from "../types";
 import { StatMathInput } from "./StatMathInput";
@@ -43,6 +48,27 @@ import { normalizeEpValue } from "../utils/epLogic";
 import { normalizeLevel } from "../utils/levelSystem";
 import { normalizeUltimoSuspiroState } from "../utils/ultimoSuspiro";
 import { sanitizeRollHistoryHtml } from "../utils/security";
+import { MotionAccordion } from "./MotionPrimitives";
+import {
+  InitiativeFilterState,
+  clearInitiativeSelection,
+  createInitialInitiativeFilterState,
+  filterInitiativeParticipants,
+  invertInitiativeSelection,
+  reconcileInitiativeSelection,
+  selectAllInitiativeParticipants,
+  setInitiativeFilterActive,
+  toggleInitiativeParticipant,
+} from "../utils/initiativeFilter";
+
+const FILTER_BTN_MOTION =
+  "transform-gpu will-change-transform transition-[transform,background-color,border-color,color,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.95] select-none touch-manipulation";
+
+const CHECKBOX_BTN_MOTION =
+  "transform-gpu will-change-transform transition-[transform,background-color,border-color,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.88] select-none touch-manipulation";
+
+const CHECK_ICON_MOTION =
+  "transform-gpu transition-[transform,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]";
 
 export interface MasterPlayersViewProps {
   players: any[];
@@ -100,10 +126,11 @@ export interface MasterPlayersViewProps {
   isMaster?: boolean;
   viewMode?: "grid" | "list";
   onClearChatHistory?: () => void;
-  onRollInitiative?: () => void;
+  onRollInitiative?: (selectedIds?: string[]) => void;
   playerModes?: Record<string, GameMode>;
   currentGlobalMode?: GameMode;
   onTogglePlayerMode?: (playerId: string) => void;
+  initiativeFilterRef?: React.MutableRefObject<InitiativeFilterState>;
 }
 
 export function MasterPlayersView({
@@ -127,6 +154,7 @@ export function MasterPlayersView({
   playerModes = {},
   currentGlobalMode = "demologia",
   onTogglePlayerMode,
+  initiativeFilterRef,
 }: MasterPlayersViewProps) {
   const [expandedStatusId, setExpandedStatusId] = React.useState<string | null>(null);
   const [expandedPdiId, setExpandedPdiId] = React.useState<string | null>(null);
@@ -134,58 +162,445 @@ export function MasterPlayersView({
     player: any;
     initialPdi: PdiItem | null;
   } | null>(null);
+  const [rollWarning, setRollWarning] = React.useState<string | null>(null);
+  const [showQuickSelector, setShowQuickSelector] = React.useState(false);
+  const [filterState, setFilterState] = React.useState<InitiativeFilterState>(() =>
+    initiativeFilterRef?.current ?? createInitialInitiativeFilterState(),
+  );
   const isRlGlobal = currentGlobalMode === "rl";
+
+  const syncedExtrasAsPlayers = React.useMemo(
+    () =>
+      extraFichas
+        .filter((f) => f.synchronized)
+        .map((f) => ({
+          id: `EXTRA_FICHA_${f.id}`,
+          name: f.name || "Ficha Extra",
+          hp: f.hp || { current: 0, max: 100 },
+          pe: f.pe || { current: 0, max: 100 },
+          sm: f.sm || f.san || { current: 100, max: 100 },
+          ep: normalizeEpValue(f.ep, 0),
+          lv: normalizeLevel(
+            f.lv,
+            f.variables,
+            normalizeCharacterProfile(f.profile),
+          ),
+          profile: normalizeCharacterProfile(f.profile),
+          variables: f.variables || {},
+          statusEffects: f.statusEffects || [],
+          ultimoSuspiro: normalizeUltimoSuspiroState(
+            f.ultimoSuspiro,
+            f.hp?.current ?? 0,
+          ),
+          history:
+            f.history ||
+            (f.notes ? [`<span style="color: #888;">${f.notes}</span>`] : []),
+          isExtraSheet: true,
+          rawExtraSheetId: f.id,
+        })),
+    [extraFichas],
+  );
+
+  const rawCombined = React.useMemo(
+    () => [...players, ...syncedExtrasAsPlayers],
+    [players, syncedExtrasAsPlayers],
+  );
+
+  const participantIds = React.useMemo(
+    () => rawCombined.map((p) => p.id),
+    [rawCombined],
+  );
+
+  const reconciledFilter = React.useMemo(
+    () => reconcileInitiativeSelection(filterState, participantIds),
+    [filterState, participantIds],
+  );
+
+  React.useEffect(() => {
+    if (initiativeFilterRef) {
+      initiativeFilterRef.current = reconciledFilter;
+    }
+    if (reconciledFilter !== filterState) {
+      setFilterState(reconciledFilter);
+    }
+  }, [reconciledFilter, filterState, initiativeFilterRef]);
+
+  const updateFilterState = React.useCallback(
+    (updater: (prev: InitiativeFilterState) => InitiativeFilterState) => {
+      setFilterState((prev) => {
+        const next = updater(prev);
+        if (initiativeFilterRef) {
+          initiativeFilterRef.current = next;
+        }
+        return next;
+      });
+    },
+    [initiativeFilterRef],
+  );
+
+  const handleToggleParticipant = React.useCallback(
+    (participantId: string) => {
+      updateFilterState((prev) =>
+        toggleInitiativeParticipant(prev, participantId, participantIds),
+      );
+    },
+    [updateFilterState, participantIds],
+  );
+
+  const handleSelectAll = React.useCallback(() => {
+    updateFilterState((prev) =>
+      selectAllInitiativeParticipants(prev, participantIds),
+    );
+  }, [updateFilterState, participantIds]);
+
+  const handleInvertSelection = React.useCallback(() => {
+    updateFilterState((prev) =>
+      invertInitiativeSelection(prev, participantIds),
+    );
+  }, [updateFilterState, participantIds]);
+
+  const handleClearSelection = React.useCallback(() => {
+    updateFilterState((prev) =>
+      clearInitiativeSelection(prev, participantIds),
+    );
+  }, [updateFilterState, participantIds]);
+
+  const handleToggleFilterActive = React.useCallback(() => {
+    updateFilterState((prev) =>
+      setInitiativeFilterActive(prev, !prev.filterActive),
+    );
+  }, [updateFilterState]);
+
+  const hasFilterControls = isMaster;
+  const initiativeFilterActive = reconciledFilter.filterActive;
+  const effectiveSelectedIds = reconciledFilter.selectedIds;
+  const selectedSet = React.useMemo(
+    () => new Set(effectiveSelectedIds),
+    [effectiveSelectedIds],
+  );
+  const getEffectiveInitiative = React.useCallback(
+    (id: string) => (selectedSet.has(id) ? initiatives[id] : undefined),
+    [selectedSet, initiatives],
+  );
+
+  const combined = React.useMemo(
+    () =>
+      [...rawCombined].sort(
+        (a, b) =>
+          (getEffectiveInitiative(b.id) ?? -1) -
+          (getEffectiveInitiative(a.id) ?? -1),
+      ),
+    [rawCombined, getEffectiveInitiative],
+  );
+
+  const selectedCount = React.useMemo(
+    () => combined.filter((p) => selectedSet.has(p.id)).length,
+    [combined, selectedSet],
+  );
+  const hiddenCount = initiativeFilterActive
+    ? combined.length - selectedCount
+    : 0;
+  const displayedParticipants = React.useMemo(
+    () =>
+      filterInitiativeParticipants(
+        combined,
+        effectiveSelectedIds,
+        Boolean(initiativeFilterActive),
+      ),
+    [combined, effectiveSelectedIds, initiativeFilterActive],
+  );
+  const isSubsetSelected =
+    combined.length > 0 && selectedCount < combined.length;
+
+  React.useEffect(() => {
+    if (selectedCount > 0 && rollWarning) {
+      setRollWarning(null);
+    }
+  }, [selectedCount, rollWarning]);
+
+  React.useEffect(() => {
+    if (!initiativeFilterActive && showQuickSelector) {
+      setShowQuickSelector(false);
+    }
+  }, [initiativeFilterActive, showQuickSelector]);
+
+  const handleTriggerRollInitiative = () => {
+    if (!onRollInitiative) return;
+    if (combined.length > 0 && selectedCount === 0) {
+      setRollWarning("Selecione ao menos um jogador para rolar iniciativa.");
+      return;
+    }
+    setRollWarning(null);
+    if (typeof navigator !== "undefined" && navigator.vibrate) {
+      try {
+        navigator.vibrate(15);
+      } catch {}
+    }
+    onRollInitiative(effectiveSelectedIds);
+  };
 
   const renderFloatingInitiativeButton = () => {
     if (!onRollInitiative || typeof document === "undefined") return null;
+    const noSelection = combined.length > 0 && selectedCount === 0;
+    const rollLabel = noSelection
+      ? "Selecione ao menos um jogador para rolar iniciativa"
+      : isSubsetSelected
+        ? `Rolar Iniciativa dos ${selectedCount} selecionados (1d20 + AGL)`
+        : "Rolar Iniciativa dos Selecionados (1d20 + AGL)";
     return createPortal(
       <button
         type="button"
-        onClick={() => {
-          if (typeof navigator !== "undefined" && navigator.vibrate) {
-            try {
-              navigator.vibrate(15);
-            } catch {}
-          }
-          onRollInitiative();
-        }}
+        onClick={handleTriggerRollInitiative}
         style={{
           bottom: "calc(env(safe-area-inset-bottom, 0px) + 1.5rem)",
         }}
-        className={`fixed right-5 sm:right-7 z-[90] w-14 h-14 rounded-full flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-90 hover:scale-105 touch-manipulation select-none ${
-          isRlGlobal
-            ? "bg-gradient-to-br from-[#9333ea] to-[#581c87] hover:from-[#a855f7] hover:to-[#6b21a8] text-white border border-purple-300/60 shadow-[0_8px_28px_rgba(147,51,234,0.65)]"
-            : "bg-gradient-to-br from-[#b52a30] to-[#641015] hover:from-[#d13239] hover:to-[#7a1319] text-white border border-[#ff8085]/50 shadow-[0_8px_28px_rgba(181,42,48,0.65)]"
+        className={`fixed right-5 sm:right-7 z-[90] w-14 h-14 rounded-full flex items-center justify-center cursor-pointer transform-gpu will-change-transform transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-90 hover:scale-105 touch-manipulation select-none ${
+          noSelection
+            ? "bg-[#1a1a22] text-[#787989] border border-[#323240] shadow-[0_6px_18px_rgba(0,0,0,0.65)]"
+            : isRlGlobal
+              ? "bg-gradient-to-br from-[#9333ea] to-[#581c87] hover:from-[#a855f7] hover:to-[#6b21a8] text-white border border-purple-300/60 shadow-[0_8px_28px_rgba(147,51,234,0.65)]"
+              : "bg-gradient-to-br from-[#b52a30] to-[#641015] hover:from-[#d13239] hover:to-[#7a1319] text-white border border-[#ff8085]/50 shadow-[0_8px_28px_rgba(181,42,48,0.65)]"
         }`}
-        title="Rolar Iniciativa de Todos (1d20 + AGL)"
-        aria-label="Rolar Iniciativa de Todos"
+        title={rollLabel}
+        aria-label={rollLabel}
       >
-        <Dices size={24} className="transition-transform duration-200 active:rotate-45" />
+        <Dices size={24} className="transform-gpu transition-transform duration-150 active:rotate-45" />
+        {isSubsetSelected && (
+          <span
+            aria-hidden="true"
+            className={`absolute -top-1 -right-1 min-w-[22px] h-[22px] px-1 flex items-center justify-center text-[10px] font-mono font-bold border ${
+              noSelection
+                ? "bg-[#121218] text-[#9ca3af] border-[#3a3a48]"
+                : isRlGlobal
+                  ? "bg-[#160a24] text-purple-200 border-purple-400/70"
+                  : "bg-[#140709] text-white border-[#ff8085]/70"
+            }`}
+          >
+            {selectedCount}
+          </span>
+        )}
       </button>,
       document.body
     );
   };
-  const syncedExtrasAsPlayers = extraFichas
-    .filter((f) => f.synchronized)
-    .map((f) => ({
-      id: `EXTRA_FICHA_${f.id}`,
-      name: f.name || "Ficha Extra",
-      hp: f.hp || { current: 0, max: 100 },
-      pe: f.pe || { current: 0, max: 100 },
-      sm: f.sm || f.san || { current: 100, max: 100 },
-      ep: normalizeEpValue(f.ep, 0),
-      lv: normalizeLevel(f.lv, f.variables, normalizeCharacterProfile(f.profile)),
-      profile: normalizeCharacterProfile(f.profile),
-      variables: f.variables || {},
-      statusEffects: f.statusEffects || [],
-      ultimoSuspiro: normalizeUltimoSuspiroState(f.ultimoSuspiro, f.hp?.current ?? 0),
-      history: f.history || (f.notes ? [`<span style="color: #888;">${f.notes}</span>`] : []),
-      isExtraSheet: true,
-      rawExtraSheetId: f.id,
-    }));
 
-  const combined = [...players, ...syncedExtrasAsPlayers].sort(
-    (a, b) => (initiatives[b.id] ?? -1) - (initiatives[a.id] ?? -1),
+  const renderFilterBar = () => {
+    if (!hasFilterControls || combined.length === 0) return null;
+    const allSelected = selectedCount === combined.length;
+    const noneSelected = selectedCount === 0;
+
+    return (
+      <section
+        aria-label="Filtro de Jogadores da Iniciativa"
+        style={{ contain: "layout style" }}
+        className="mb-3.5 bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] rounded-none"
+      >
+        <div className="px-3 py-2.5 sm:px-4 flex flex-wrap items-center justify-between gap-2.5">
+          {/* Status & Contadores */}
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <Filter
+                size={13}
+                className={
+                  initiativeFilterActive
+                    ? isRlGlobal
+                      ? "text-purple-400"
+                      : "text-[var(--op-red-bright)]"
+                    : "text-[#787989]"
+                }
+              />
+              <span className="text-[11px] font-bold uppercase tracking-wider text-white">
+                Filtro de Iniciativa
+              </span>
+            </div>
+
+            <span
+              data-testid="initiative-selection-count"
+              className="text-[11px] text-[#c8c9d4] tabular-nums bg-[#121218] border border-[#242430] px-2 py-0.5"
+            >
+              {selectedCount} / {combined.length} selecionados
+            </span>
+
+            {initiativeFilterActive && hiddenCount > 0 && (
+              <span
+                className={`text-[10px] uppercase tracking-wider px-2 py-0.5 border tabular-nums ${
+                  isRlGlobal
+                    ? "bg-purple-950/35 text-purple-200 border-purple-500/45"
+                    : "bg-[#1c0b0e] text-[#ff8a90] border-[#8f171c]/55"
+                }`}
+              >
+                {hiddenCount} oculto{hiddenCount === 1 ? "" : "s"} (conectado
+                {hiddenCount === 1 ? "" : "s"})
+              </span>
+            )}
+          </div>
+
+          {/* Ações */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleToggleFilterActive}
+              aria-pressed={Boolean(initiativeFilterActive)}
+              className={`inline-flex items-center justify-center gap-1.5 px-3 min-h-[40px] text-[11px] font-mono font-bold uppercase tracking-wider rounded-none border cursor-pointer ${FILTER_BTN_MOTION} ${
+                initiativeFilterActive
+                  ? isRlGlobal
+                    ? "bg-[#221236] text-purple-100 border-purple-400/70 hover:bg-[#2d1747]"
+                    : "bg-[#220a0e] text-[#ff8a90] border-[#8f171c]/80 hover:bg-[#2c0d12]"
+                  : "bg-[#121218] text-[#c8c9d4] border-[#262632] hover:bg-[#1a1a24] hover:text-white"
+              }`}
+            >
+              <Filter size={12} />
+              <span>
+                {initiativeFilterActive ? "Filtro: Ativo" : "Filtro: Inativo"}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSelectAll}
+              disabled={allSelected}
+              className={`inline-flex items-center justify-center px-2.5 min-h-[40px] text-[11px] font-mono uppercase tracking-wider rounded-none border border-[#262632] bg-[#121218] text-[#c8c9d4] hover:bg-[#1a1a24] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 cursor-pointer ${FILTER_BTN_MOTION}`}
+            >
+              Selecionar todos
+            </button>
+
+            <button
+              type="button"
+              onClick={handleInvertSelection}
+              className={`inline-flex items-center justify-center gap-1.5 px-2.5 min-h-[40px] text-[11px] font-mono uppercase tracking-wider rounded-none border border-[#262632] bg-[#121218] text-[#c8c9d4] hover:bg-[#1a1a24] hover:text-white cursor-pointer ${FILTER_BTN_MOTION}`}
+              title="Inverter jogadores selecionados e desmarcados"
+            >
+              <ArrowLeftRight size={12} />
+              <span>Inverter seleção</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              disabled={noneSelected}
+              className={`inline-flex items-center justify-center px-2.5 min-h-[40px] text-[11px] font-mono uppercase tracking-wider rounded-none border border-[#262632] bg-[#121218] text-[#c8c9d4] hover:bg-[#1a1215] hover:text-[#ff8a90] hover:border-[#8f171c]/50 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 cursor-pointer ${FILTER_BTN_MOTION}`}
+            >
+              Limpar seleção
+            </button>
+
+            {initiativeFilterActive && (
+              <button
+                type="button"
+                onClick={() => setShowQuickSelector((prev) => !prev)}
+                aria-expanded={showQuickSelector}
+                className={`inline-flex items-center justify-center gap-1.5 px-2.5 min-h-[40px] text-[11px] font-mono uppercase tracking-wider rounded-none border cursor-pointer ${FILTER_BTN_MOTION} ${
+                  showQuickSelector
+                    ? "bg-[#181822] text-white border-[#3c3c4c]"
+                    : "bg-[#121218] text-[#9ca3af] border-[#262632] hover:text-white hover:bg-[#1a1a24]"
+                }`}
+              >
+                <SlidersHorizontal size={12} />
+                <span>Ajustar seleção</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Seletor rápido de todos os conectados enquanto o filtro está ativo */}
+        <MotionAccordion isOpen={Boolean(initiativeFilterActive && showQuickSelector)}>
+          <div className="border-t border-[#1c1c24] bg-[#09090d] px-3 py-2.5 sm:px-4">
+            <div className="text-[10px] uppercase tracking-wider text-[#828392] mb-2">
+              Participantes conectados — ajuste a seleção antes da próxima rolagem:
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {combined.map((p) => {
+                const isSelected = selectedSet.has(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleToggleParticipant(p.id)}
+                    aria-pressed={isSelected}
+                    className={`inline-flex items-center gap-2 px-2.5 min-h-[38px] text-[11px] font-mono uppercase tracking-wider border rounded-none cursor-pointer ${FILTER_BTN_MOTION} ${
+                      isSelected
+                        ? isRlGlobal
+                          ? "bg-[#1c102c] text-white border-purple-400/70"
+                          : "bg-[#1c0b0e] text-white border-[#8f171c]/75"
+                        : "bg-[#111116] text-[#828392] border-[#22222c] hover:text-white hover:border-[#383846]"
+                    }`}
+                  >
+                    <span
+                      className={`w-3.5 h-3.5 flex items-center justify-center border shrink-0 transition-[background-color,border-color] duration-150 ${
+                        isSelected
+                          ? isRlGlobal
+                            ? "bg-purple-600 border-purple-300 text-white"
+                            : "bg-[#8f171c] border-[#ff8085]/70 text-white"
+                          : "bg-[#0c0c10] border-[#383846] text-transparent"
+                      }`}
+                    >
+                      <Check
+                        size={10}
+                        strokeWidth={3}
+                        className={`${CHECK_ICON_MOTION} ${
+                          isSelected ? "scale-100 opacity-100" : "scale-50 opacity-0"
+                        }`}
+                      />
+                    </span>
+                    <span className="max-w-[140px] truncate">{p.name}</span>
+                    <span
+                      className={`text-[9px] font-bold ${
+                        p.isExtraSheet ? "text-[#60a5fa]" : "text-[#4ade80]"
+                      }`}
+                    >
+                      {p.isExtraSheet ? "NPC" : "JOG"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </MotionAccordion>
+
+        {/* Alerta clínico quando o Mestre tenta rolar com 0 selecionados */}
+        <MotionAccordion isOpen={Boolean(rollWarning)}>
+          <div
+            role="alert"
+            className="border-t border-[#8f171c]/55 bg-[#1a0a0d] px-3 py-2 sm:px-4 flex items-center gap-2 text-xs text-[#ff8a90]"
+          >
+            <AlertTriangle size={14} className="shrink-0 text-[#ff5258]" />
+            <span>{rollWarning}</span>
+          </div>
+        </MotionAccordion>
+      </section>
+    );
+  };
+
+  const renderEmptyFilteredState = () => (
+    <div className="bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] rounded-none p-6 sm:p-8 text-center flex flex-col items-center justify-center">
+      <Filter size={26} className="text-[#626475] mb-2.5" />
+      <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+        Nenhum jogador selecionado no filtro
+      </h3>
+      <p className="text-xs text-[#828392] max-w-md mt-1.5 leading-relaxed">
+        Todos os {combined.length} participante{combined.length === 1 ? "" : "s"} continuam
+        conectados normalmente. Selecione jogadores ou desative o filtro para visualizá-los.
+      </p>
+      <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+        <button
+          type="button"
+          onClick={handleToggleFilterActive}
+          className={`inline-flex items-center justify-center px-3.5 min-h-[42px] bg-[#121218] hover:bg-[#1a1a24] text-white border border-[#2e2e3c] text-xs font-mono uppercase tracking-wider rounded-none cursor-pointer ${FILTER_BTN_MOTION}`}
+        >
+          Desativar filtro
+        </button>
+        <button
+          type="button"
+          onClick={handleSelectAll}
+          className={`inline-flex items-center justify-center px-3.5 min-h-[42px] text-xs font-mono font-bold uppercase tracking-wider rounded-none border cursor-pointer ${FILTER_BTN_MOTION} ${
+            isRlGlobal
+              ? "bg-[#221236] hover:bg-[#2d1747] text-purple-100 border-purple-400/70"
+              : "bg-[#220a0e] hover:bg-[#2c0d12] text-[#ff8a90] border-[#8f171c]/75"
+          }`}
+        >
+          Selecionar todos
+        </button>
+      </div>
+    </div>
   );
 
   const handleStepStat = (player: any, stat: "hp" | "pe" | "sm", delta: number) => {
@@ -230,10 +645,17 @@ export function MasterPlayersView({
   if (viewMode === "list") {
     return (
       <div className="max-w-6xl mx-auto px-3 sm:px-4 font-mono my-4">
+        {renderFilterBar()}
+        {displayedParticipants.length === 0 ? (
+          renderEmptyFilteredState()
+        ) : (
         <div className="bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] rounded-none overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-[#202028] bg-[#101015] text-[11px] uppercase font-bold tracking-wider text-[#828392]">
+                {hasFilterControls && (
+                  <th className="py-3 px-2 sm:px-3 w-14 text-center">Sel</th>
+                )}
                 <th className="py-3 px-3 sm:px-4 w-16 text-center">Inic</th>
                 <th className="py-3 px-3 sm:px-4">Nome</th>
                 <th className="py-3 px-3 sm:px-4 w-44">HP</th>
@@ -251,8 +673,9 @@ export function MasterPlayersView({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#181820] text-xs">
-              {combined.map((p) => {
-                const initVal = initiatives[p.id];
+              {displayedParticipants.map((p) => {
+                const isSelected = selectedSet.has(p.id);
+                const initVal = getEffectiveInitiative(p.id);
                 const hpCurrent = p.hp?.current ?? 0;
                 const hpMax = p.hp?.max ?? 100;
                 const hpPct = Math.max(0, Math.min(100, (hpCurrent / hpMax) * 100)) || 0;
@@ -270,7 +693,47 @@ export function MasterPlayersView({
                 const isDead = ultimoSuspiro.status === "dead";
 
                 return (
-                  <tr key={p.id} className="hover:bg-[#121217] transition-colors">
+                  <tr
+                    key={p.id}
+                    className={`hover:bg-[#121217] transition-[background-color,opacity] duration-150 ${
+                      hasFilterControls && !isSelected ? "opacity-65" : ""
+                    }`}
+                  >
+                    {hasFilterControls && (
+                      <td className="py-3 px-2 sm:px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleParticipant(p.id)}
+                          aria-pressed={isSelected}
+                          aria-label={
+                            isSelected
+                              ? `Desmarcar ${p.name} da iniciativa`
+                              : `Selecionar ${p.name} para iniciativa`
+                          }
+                          title={
+                            isSelected
+                              ? "Incluído na rolagem de iniciativa (clique para desmarcar)"
+                              : "Fora da rolagem de iniciativa (clique para selecionar)"
+                          }
+                          className={`inline-flex items-center justify-center w-9 h-9 border rounded-none cursor-pointer ${CHECKBOX_BTN_MOTION} ${
+                            isSelected
+                              ? isRlGlobal
+                                ? "bg-purple-900/50 border-purple-400/75 text-purple-100"
+                                : "bg-[#8f171c]/35 border-[#8f171c] text-white"
+                              : "bg-[#111116] border-[#2c2c38] text-transparent hover:border-[#4a4a5c]"
+                          }`}
+                        >
+                          <Check
+                            size={14}
+                            strokeWidth={3}
+                            className={`${CHECK_ICON_MOTION} ${
+                              isSelected ? "scale-100 opacity-100" : "scale-50 opacity-0"
+                            }`}
+                          />
+                        </button>
+                      </td>
+                    )}
+
                     <td className="py-3 px-3 sm:px-4 text-center">
                       {initVal !== undefined ? (
                         <span className="inline-block px-2 py-0.5 bg-[#121217] border border-[#202028] outline outline-1 outline-[#181820] text-white font-bold text-xs">
@@ -586,6 +1049,7 @@ export function MasterPlayersView({
             </tbody>
           </table>
         </div>
+        )}
         {renderFloatingInitiativeButton()}
       </div>
     );
@@ -594,9 +1058,14 @@ export function MasterPlayersView({
   // MODO GRADE
   return (
     <div className="max-w-6xl mx-auto px-3 sm:px-4 font-mono my-4">
+      {renderFilterBar()}
+      {displayedParticipants.length === 0 ? (
+        renderEmptyFilteredState()
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-        {combined.map((p) => {
-        const initVal = initiatives[p.id];
+        {displayedParticipants.map((p) => {
+        const isSelected = selectedSet.has(p.id);
+        const initVal = getEffectiveInitiative(p.id);
         const hpCurrent = p.hp?.current ?? 0;
         const hpMax = p.hp?.max ?? 100;
         const hpPct = Math.max(0, Math.min(100, (hpCurrent / hpMax) * 100)) || 0;
@@ -616,16 +1085,64 @@ export function MasterPlayersView({
         return (
           <div
             key={p.id}
-            className="bg-[#0c0c10] border border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none p-3.5 sm:p-4 flex flex-col justify-between transition-all"
+            data-testid={`master-player-card-${p.id}`}
+            style={{ contain: "layout style" }}
+            className={`bg-[#0c0c10] border outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none p-3.5 sm:p-4 flex flex-col justify-between transition-[opacity,border-color] duration-150 ease-out ${
+              hasFilterControls && !isSelected
+                ? "border-[#1c1c24] opacity-70"
+                : hasFilterControls && isSubsetSelected && isSelected
+                  ? isRlGlobal
+                    ? "border-[#202028] border-l-2 border-l-purple-500"
+                    : "border-[#202028] border-l-2 border-l-[#8f171c]"
+                  : "border-[#202028]"
+            }`}
           >
             <div>
               {/* Header do Card */}
-              <div className="flex justify-between items-center mb-3 gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <h4 className="text-white font-bold text-sm truncate uppercase tracking-wider">
-                      {p.name}
-                    </h4>
+              <div className="flex justify-between items-start mb-3 gap-2">
+                <div className="flex items-start gap-2 min-w-0 flex-1">
+                  {hasFilterControls && (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleParticipant(p.id)}
+                      aria-pressed={isSelected}
+                      aria-label={
+                        isSelected
+                          ? `Desmarcar ${p.name} da iniciativa`
+                          : `Selecionar ${p.name} para iniciativa`
+                      }
+                      title={
+                        isSelected
+                          ? "Selecionado para iniciativa (clique para desmarcar)"
+                          : "Não selecionado para iniciativa (clique para selecionar)"
+                      }
+                      className={`mt-0.5 inline-flex items-center justify-center w-8 h-8 border rounded-none shrink-0 cursor-pointer ${CHECKBOX_BTN_MOTION} ${
+                        isSelected
+                          ? isRlGlobal
+                            ? "bg-purple-900/50 border-purple-400/75 text-purple-100"
+                            : "bg-[#8f171c]/35 border-[#8f171c] text-white"
+                          : "bg-[#111116] border-[#2c2c38] text-transparent hover:border-[#4a4a5c]"
+                      }`}
+                    >
+                      <Check
+                        size={14}
+                        strokeWidth={3}
+                        className={`${CHECK_ICON_MOTION} ${
+                          isSelected ? "scale-100 opacity-100" : "scale-50 opacity-0"
+                        }`}
+                      />
+                    </button>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h4 className="text-white font-bold text-sm truncate uppercase tracking-wider">
+                        {p.name}
+                      </h4>
+                      {hasFilterControls && !isSelected && (
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 bg-[#14141c] text-[#828392] border border-[#262632] shrink-0">
+                          Fora da rolagem
+                        </span>
+                      )}
                     {p.isExtraSheet ? (
                       <span className="text-[10px] text-[#60a5fa] font-bold uppercase shrink-0">
                         NPC
@@ -664,6 +1181,7 @@ export function MasterPlayersView({
                     >
                       {(playerModes[p.id] || currentGlobalMode) === "rl" ? "Real L" : "Demologia"}
                     </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1072,6 +1590,7 @@ export function MasterPlayersView({
         );
       })}
       </div>
+      )}
       {renderFloatingInitiativeButton()}
 
       {isMaster && onUpdatePdis && pdiEditorTarget && (
