@@ -22,6 +22,7 @@ import {
   selectBestClockOffset,
   updateVolumeFadeTarget,
 } from "./ostUtils";
+import { SoundBoardSync } from "./soundBoardSync";
 
 export type {
   PlaybackState,
@@ -119,8 +120,17 @@ export class MusicSync {
   private isDestroyed: boolean = false;
   private audioUnlocked: boolean = false;
 
+  /**
+   * Camada independente de Sound Boards (efeitos sonoros one-shot).
+   * Compartilha apenas a sala e o canal de broadcast com os jogadores, sem alterar a OST.
+   */
+  public readonly soundBoard: SoundBoardSync;
+
   constructor(supabaseClient: SupabaseClient) {
     this.supabase = supabaseClient;
+    this.soundBoard = new SoundBoardSync(supabaseClient, (event, payload) => {
+      this.sendSfxBroadcast(event, payload);
+    });
 
     try {
       const savedFade = localStorage.getItem(FADE_STORAGE_KEY);
@@ -141,7 +151,7 @@ export class MusicSync {
     };
 
     Howler.autoUnlock = true;
-    Howler.html5PoolSize = 10;
+    Howler.html5PoolSize = 20;
 
     this.preloadAudio = new Audio();
     this.preloadAudio.preload = "metadata";
@@ -155,6 +165,7 @@ export class MusicSync {
   public async joinRoom(roomId: string, isMaster: boolean = false): Promise<void> {
     if (this.roomId === roomId && !this.isDestroyed) {
       this.isMaster = isMaster;
+      await this.soundBoard.joinRoom(roomId, isMaster);
       return;
     }
 
@@ -186,6 +197,7 @@ export class MusicSync {
       await Promise.all([
         this.fetchInitialPlaybackState(),
         this.fetchTracks(),
+        this.soundBoard.joinRoom(roomId, isMaster),
       ]);
 
       this.setupRealtimeSubscriptions();
@@ -237,6 +249,7 @@ export class MusicSync {
     }
 
     this.disposeActiveHowl();
+    await this.soundBoard.leaveRoom();
     this.preloadAudio.src = "";
     this.preloadUrl = "";
     this.currentState = null;
@@ -250,6 +263,7 @@ export class MusicSync {
 
   public destroy(): void {
     this.isDestroyed = true;
+    this.soundBoard.destroy();
     this.leaveRoom().catch(console.error);
     this.stateSubscribers.clear();
     this.tracksSubscribers.clear();
@@ -931,6 +945,8 @@ export class MusicSync {
       // Ignora se Web Audio Context estiver indisponível
     }
 
+    this.soundBoard.unlockAudio();
+
     const activeState = this.pendingPlayState || this.currentState;
     if (activeState && activeState.is_playing && activeState.track_url) {
       this.pendingPlayState = null;
@@ -1111,6 +1127,34 @@ export class MusicSync {
         },
       )
       .on(
+        "broadcast",
+        { event: "sfx_play" },
+        ({ payload }: { payload: Record<string, unknown> }) => {
+          this.soundBoard.handleRemoteBroadcast("sfx_play", payload);
+        },
+      )
+      .on(
+        "broadcast",
+        { event: "sfx_stop" },
+        ({ payload }: { payload: Record<string, unknown> }) => {
+          this.soundBoard.handleRemoteBroadcast("sfx_stop", payload);
+        },
+      )
+      .on(
+        "broadcast",
+        { event: "sfx_stop_all" },
+        ({ payload }: { payload: Record<string, unknown> }) => {
+          this.soundBoard.handleRemoteBroadcast("sfx_stop_all", payload);
+        },
+      )
+      .on(
+        "broadcast",
+        { event: "sfx_master_volume" },
+        ({ payload }: { payload: Record<string, unknown> }) => {
+          this.soundBoard.handleRemoteBroadcast("sfx_master_volume", payload);
+        },
+      )
+      .on(
         "postgres_changes",
         {
           event: "*",
@@ -1163,6 +1207,24 @@ export class MusicSync {
         },
       )
       .subscribe();
+  }
+
+  private sendSfxBroadcast(
+    event: "sfx_play" | "sfx_stop" | "sfx_stop_all" | "sfx_master_volume",
+    payload: Record<string, unknown>,
+  ): void {
+    if (!this.playbackChannel) return;
+    try {
+      this.playbackChannel
+        .send({
+          type: "broadcast",
+          event,
+          payload,
+        })
+        .catch(() => {});
+    } catch {
+      // Ignora erro caso o canal esteja fechando
+    }
   }
 
   private broadcastPlaybackState(

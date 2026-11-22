@@ -26,6 +26,8 @@ export function isSystemRecordId(id: string | null | undefined): boolean {
     id === HANDOUTS_SHARED_RECORD_ID ||
     id.startsWith(HANDOUTS_INDIV_PREFIX) ||
     id.startsWith("OST_FILE_") ||
+    id.startsWith("SOUNDBOARD_") ||
+    id.startsWith("MASTER_NOTE_") ||
     id.startsWith("EXTRA_FICHA_") ||
     id.startsWith("CHAT_") ||
     id.startsWith("MINIGAME_") ||

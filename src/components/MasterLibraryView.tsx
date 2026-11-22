@@ -10,6 +10,7 @@ import {
   Cloud,
   Download,
   Edit2,
+  FileText,
   Flame,
   Folder,
   FolderOpen,
@@ -53,8 +54,10 @@ import {
   LibraryPlayerTarget,
   MasterLibrarySendModal,
 } from "./MasterLibrarySendModal";
+import { MasterNotesSection } from "./MasterNotesSection";
 
 export interface MasterLibraryViewProps {
+  masterId?: string | null;
   folders: MasterLibraryFolder[];
   items: MasterLibraryItem[];
   syncStatus: "synced" | "syncing" | "offline";
@@ -103,6 +106,7 @@ function getTypeIcon(type: MasterLibraryItemType) {
 }
 
 export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
+  masterId,
   folders,
   items,
   syncStatus,
@@ -117,6 +121,8 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
   onMoveItemToFolder,
   onSendDataToPlayers,
 }) => {
+  const [activeSection, setActiveSection] = useState<"arquivos" | "anotacoes">("arquivos");
+  const [notesCount, setNotesCount] = useState<number | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<MasterLibraryItemType | "all">("all");
@@ -438,41 +444,104 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              setShowCreateChooser(false);
-              setShowNewFolderForm((p) => !p);
-            }}
-            className="min-h-[44px] sm:min-h-[42px] px-3 bg-[#14141c] hover:bg-[#1c1c28] text-zinc-200 border border-[#282834] text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors touch-manipulation"
-          >
-            <FolderPlus size={14} />
-            <span>Nova Pasta</span>
-          </button>
+        {activeSection === "arquivos" && (
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreateChooser(false);
+                setShowNewFolderForm((p) => !p);
+              }}
+              className="min-h-[44px] sm:min-h-[42px] px-3 bg-[#14141c] hover:bg-[#1c1c28] text-zinc-200 border border-[#282834] text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors touch-manipulation"
+            >
+              <FolderPlus size={14} />
+              <span>Nova Pasta</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="min-h-[44px] sm:min-h-[42px] px-3 bg-[#14141c] hover:bg-[#1c1c28] text-zinc-200 border border-[#282834] text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors touch-manipulation"
-          >
-            <Upload size={14} />
-            <span>Importar JSON</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="min-h-[44px] sm:min-h-[42px] px-3 bg-[#14141c] hover:bg-[#1c1c28] text-zinc-200 border border-[#282834] text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors touch-manipulation"
+            >
+              <Upload size={14} />
+              <span>Importar JSON</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setShowNewFolderForm(false);
-              setShowCreateChooser((p) => !p);
-            }}
-            className="col-span-2 sm:col-span-1 min-h-[44px] sm:min-h-[42px] px-4 bg-[var(--op-red)] hover:bg-[var(--op-red-bright)] text-white border border-[#ff8085]/40 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors touch-manipulation"
-          >
-            <Plus size={15} />
-            <span>Novo Arquivo</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowNewFolderForm(false);
+                setShowCreateChooser((p) => !p);
+              }}
+              className="col-span-2 sm:col-span-1 min-h-[44px] sm:min-h-[42px] px-4 bg-[var(--op-red)] hover:bg-[var(--op-red-bright)] text-white border border-[#ff8085]/40 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors touch-manipulation"
+            >
+              <Plus size={15} />
+              <span>Novo Arquivo</span>
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* SEÇÕES DA BIBLIOTECA: ARQUIVOS / ANOTAÇÕES */}
+      <div
+        role="tablist"
+        aria-label="Seções da Biblioteca do Mestre"
+        className="grid grid-cols-2 bg-[#0c0c10] border border-[#202028] p-1 gap-1"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "arquivos"}
+          data-testid="library-tab-arquivos"
+          onClick={() => setActiveSection("arquivos")}
+          className={`relative min-h-[42px] px-3 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 border transition-colors cursor-pointer touch-manipulation ${
+            activeSection === "arquivos"
+              ? "bg-[#151520] border-[var(--op-red)]/80 text-white"
+              : "bg-transparent border-transparent text-[#8e90a0] hover:text-white hover:bg-[#111119]"
+          }`}
+        >
+          {activeSection === "arquivos" && (
+            <span className="absolute top-0 left-0 right-0 h-[2px] bg-[var(--op-red)]" />
+          )}
+          <Library size={14} className="text-[var(--op-red-bright)] shrink-0" />
+          <span className="truncate">Arquivos</span>
+          <span className="text-[10px] text-[#8e90a0] tabular-nums">
+            ({items.length})
+          </span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "anotacoes"}
+          data-testid="library-tab-anotacoes"
+          onClick={() => setActiveSection("anotacoes")}
+          className={`relative min-h-[42px] px-3 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 border transition-colors cursor-pointer touch-manipulation ${
+            activeSection === "anotacoes"
+              ? "bg-[#151520] border-[var(--op-red)]/80 text-white"
+              : "bg-transparent border-transparent text-[#8e90a0] hover:text-white hover:bg-[#111119]"
+          }`}
+        >
+          {activeSection === "anotacoes" && (
+            <span className="absolute top-0 left-0 right-0 h-[2px] bg-[var(--op-red)]" />
+          )}
+          <FileText size={14} className="text-[var(--op-red-bright)] shrink-0" />
+          <span className="truncate">Anotações</span>
+          {notesCount !== null && (
+            <span className="text-[10px] text-[#8e90a0] tabular-nums">
+              ({notesCount})
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeSection === "anotacoes" ? (
+        <MasterNotesSection
+          masterId={masterId}
+          onCountChange={setNotesCount}
+        />
+      ) : (
+        <>
 
       {/* FEEDBACK & SYNC ERRORS */}
       <AnimatePresence initial={false}>
@@ -1210,6 +1279,8 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
         onSendToPlayers={onSendDataToPlayers}
         onSuccessFeedback={(msg) => setFeedback({ type: "success", text: msg })}
       />
+        </>
+      )}
     </div>
   );
 };

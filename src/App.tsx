@@ -1978,6 +1978,8 @@ export default function App() {
           .not("id", "eq", "TABLETOP_GRID")
           .not("id", "eq", "CADERNO_CAMPO_SHARED")
           .not("id", "eq", "MASTER_LIBRARY")
+          .not("id", "like", "SOUNDBOARD_%")
+          .not("id", "like", "MASTER_NOTE_%")
           .then(
             ({ data, error }) => {
               if (error) {
@@ -6099,6 +6101,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
             {mestreTab === "biblioteca" && (
               <div className="pt-2">
                 <MasterLibraryView
+                  masterId={userUid}
                   folders={masterLibrarySync.folders}
                   items={masterLibrarySync.items}
                   syncStatus={masterLibrarySync.syncStatus}

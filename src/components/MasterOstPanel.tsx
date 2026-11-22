@@ -25,6 +25,7 @@ import { MusicSync, Track, PlaybackState, OstStatusSnapshot } from "../services/
 import { getNextFadeDuration, normalizeTrackUrl } from "../services/ostUtils";
 import { AnimatePresence } from "motion/react";
 import { MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
+import { MasterSoundBoardPanel } from "./MasterSoundBoardPanel";
 
 export interface MasterOstPanelProps {
   musicSync: MusicSync;
@@ -34,6 +35,11 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
   const [playbackState, setPlaybackState] = useState<PlaybackState | null>(musicSync.getCurrentState());
   const [tracks, setTracks] = useState<Track[]>(musicSync.getTracks());
   const [audioStatus, setAudioStatus] = useState<OstStatusSnapshot>(musicSync.getAudioStatus());
+  const [activeAudioSubTab, setActiveAudioSubTab] = useState<"ost" | "soundboard">("ost");
+  const [sfxBadgeCounts, setSfxBadgeCounts] = useState<{ total: number; active: number }>(() => {
+    const snap = musicSync.soundBoard.getSnapshot();
+    return { total: snap.effects.length, active: snap.activeIds.length };
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -70,10 +76,18 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
       setAudioStatus(snapshot);
     });
 
+    const unsubSoundBoard = musicSync.soundBoard.onSnapshotChange((snapshot) => {
+      setSfxBadgeCounts({
+        total: snapshot.effects.length,
+        active: snapshot.activeIds.length,
+      });
+    });
+
     return () => {
       unsubState();
       unsubTracks();
       unsubStatus();
+      unsubSoundBoard();
     };
   }, [musicSync]);
 
@@ -205,12 +219,84 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
 
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-4 px-3 sm:px-4 pb-12 font-mono text-gray-200">
-      {/* DECK PRINCIPAL DE TRANSMISSÃO SONORA */}
+      {/* SUB-ABAS DA SEÇÃO DE ÁUDIO: TRILHAS (OST) / SOUND BOARDS */}
       <div
-        className={`p-4 sm:p-5 bg-[#0b0b10] border transition-all relative overflow-hidden shadow-[0_14px_35px_rgba(0,0,0,0.85)] ${
-          isPlaying ? "border-blood-red/60" : "border-[#252530]"
-        }`}
+        role="tablist"
+        aria-label="Seções de áudio da mesa"
+        className="grid grid-cols-2 bg-[#0b0b10] border border-[#252530] p-1 gap-1"
       >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeAudioSubTab === "ost"}
+          data-testid="audio-subtab-ost"
+          onClick={() => setActiveAudioSubTab("ost")}
+          className={`relative min-h-[42px] px-3 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 border transition-colors duration-150 cursor-pointer touch-manipulation ${
+            activeAudioSubTab === "ost"
+              ? "bg-[#151520] border-blood-red/75 text-white"
+              : "bg-transparent border-transparent text-gray-400 hover:text-white hover:bg-[#111119]"
+          }`}
+        >
+          {activeAudioSubTab === "ost" && (
+            <span className="absolute top-0 left-0 right-0 h-[2px] bg-blood-red" />
+          )}
+          <Music className="w-3.5 h-3.5 text-blood-red shrink-0" />
+          <span className="truncate">Trilhas (OST)</span>
+          <span className="text-[10px] text-gray-400 tabular-nums">
+            ({tracks.length})
+          </span>
+          {isPlaying && (
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0"
+              title="OST em reprodução"
+            />
+          )}
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeAudioSubTab === "soundboard"}
+          data-testid="audio-subtab-soundboard"
+          onClick={() => setActiveAudioSubTab("soundboard")}
+          className={`relative min-h-[42px] px-3 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 border transition-colors duration-150 cursor-pointer touch-manipulation ${
+            activeAudioSubTab === "soundboard"
+              ? "bg-[#151520] border-blood-red/75 text-white"
+              : "bg-transparent border-transparent text-gray-400 hover:text-white hover:bg-[#111119]"
+          }`}
+        >
+          {activeAudioSubTab === "soundboard" && (
+            <span className="absolute top-0 left-0 right-0 h-[2px] bg-blood-red" />
+          )}
+          <Volume2 className="w-3.5 h-3.5 text-blood-red shrink-0" />
+          <span className="truncate">Sound Boards</span>
+          <span className="text-[10px] text-gray-400 tabular-nums">
+            ({sfxBadgeCounts.total})
+          </span>
+          {sfxBadgeCounts.active > 0 && (
+            <span
+              data-testid="audio-subtab-soundboard-active-dot"
+              className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 bg-blood-red text-white text-[9px] font-bold tabular-nums shrink-0"
+            >
+              {sfxBadgeCounts.active}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeAudioSubTab === "soundboard" ? (
+        <MasterSoundBoardPanel
+          soundBoard={musicSync.soundBoard}
+          isOstPlaying={isPlaying}
+        />
+      ) : (
+        <>
+          {/* DECK PRINCIPAL DE TRANSMISSÃO SONORA */}
+          <div
+            className={`p-4 sm:p-5 bg-[#0b0b10] border transition-all relative overflow-hidden shadow-[0_14px_35px_rgba(0,0,0,0.85)] ${
+              isPlaying ? "border-blood-red/60" : "border-[#252530]"
+            }`}
+          >
         <div
           className={`absolute top-0 left-0 right-0 h-[2px] transition-opacity duration-300 ${
             isPlaying
@@ -852,6 +938,8 @@ export function MasterOstPanel({ musicSync }: MasterOstPanelProps) {
             );
           })()}
       </AnimatePresence>
+        </>
+      )}
     </div>
   );
 }
