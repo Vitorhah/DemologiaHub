@@ -50,7 +50,7 @@ export interface MasterExtrasViewProps {
   activeFichaId: string;
   setActiveFichaId: (id: string) => void;
   setCurrentPage: (page: string) => void;
-  setMestreTab: (tab: "fichas" | "ost" | "extras" | "handouts" | "biblioteca" | "utilities") => void;
+  setMestreTab: (tab: "fichas" | "direcao" | "ost" | "extras" | "handouts" | "biblioteca" | "utilities") => void;
   toggleFichaSync: (ficha: any) => void;
   supabase: any;
   currentGlobalMode?: "demologia" | "rl";

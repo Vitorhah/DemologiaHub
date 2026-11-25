@@ -3,25 +3,30 @@ import { FolderOpen, Sparkles, X, ArrowUpRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { HandoutItem, HandoutToastNotification } from "../types/handouts";
 import { SNAPPY_SPRING } from "./MotionPrimitives";
+import { computeNotificationDurationMs } from "../utils/playerSettings";
 
 interface HandoutNotificationToastProps {
   notification: HandoutToastNotification | null;
   onOpenHandout: (handout: HandoutItem) => void;
   onDismiss: () => void;
+  durationSec?: number;
 }
 
 export const HandoutNotificationToast: React.FC<HandoutNotificationToastProps> = ({
   notification,
   onOpenHandout,
   onDismiss,
+  durationSec = 4,
 }) => {
+  const durationMs = computeNotificationDurationMs(durationSec, "handout");
+
   useEffect(() => {
     if (!notification) return;
     const timer = window.setTimeout(() => {
       onDismiss();
-    }, 8500);
+    }, durationMs);
     return () => window.clearTimeout(timer);
-  }, [notification, onDismiss]);
+  }, [notification, durationMs, onDismiss]);
 
   const isSecret = notification?.reason === "secret_revealed";
 

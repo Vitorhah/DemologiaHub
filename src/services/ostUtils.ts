@@ -201,6 +201,12 @@ export function normalizeFadeDuration(value: unknown): FadeDurationSeconds {
   return 0;
 }
 
+export function clampCustomFadeSeconds(value: unknown): number {
+  const num = typeof value === "string" ? Number(value) : Number(value);
+  if (!Number.isFinite(num) || num <= 0) return 0;
+  return Math.round(Math.min(30, num) * 10) / 10;
+}
+
 export function getNextFadeDuration(
   current: FadeDurationSeconds,
 ): FadeDurationSeconds {
@@ -237,7 +243,7 @@ export function createVolumeFade(params: {
   direction: FadeDirection;
   currentVolume: number;
   targetVolume: number;
-  durationSeconds: FadeDurationSeconds;
+  durationSeconds: number;
   nowMs: number;
   finishAction?: FadeFinishAction;
 }): ActiveVolumeFade {
@@ -250,12 +256,14 @@ export function createVolumeFade(params: {
     finishAction = "none",
   } = params;
 
+  const safeDurationSec = clampCustomFadeSeconds(durationSeconds);
+
   return {
     direction,
     fromVolume: clampVolume(currentVolume),
     targetVolume: direction === "out" ? 0 : clampVolume(targetVolume),
     startedAtMs: nowMs,
-    durationMs: Math.max(0, durationSeconds * 1000),
+    durationMs: Math.max(0, Math.round(safeDurationSec * 1000)),
     finishAction,
   };
 }
@@ -284,5 +292,78 @@ export function updateVolumeFadeTarget(
     startedAtMs: nowMs,
     durationMs: remainingMs,
   };
+}
+
+export function isBrowserOnline(): boolean {
+  if (typeof navigator === "undefined") return true;
+  return navigator.onLine !== false;
+}
+
+const TRANSIENT_NETWORK_PATTERNS = [
+  "failed to fetch",
+  "load failed",
+  "networkerror",
+  "network request failed",
+  "fetch failed",
+  "err_network",
+  "err_internet_disconnected",
+  "err_connection_refused",
+  "err_connection_reset",
+  "err_connection_closed",
+  "err_connection_timed_out",
+  "err_name_not_resolved",
+  "econnreset",
+  "etimedout",
+  "aborterror",
+  "the user aborted a request",
+  "signal is aborted",
+];
+
+/**
+ * Identifica falhas transitórias de rede / offline / abort de requisição
+ * (incluindo o formato de erro retornado pelo cliente Supabase JS:
+ * { message: "TypeError: Failed to fetch", details: "...", hint: "", code: "" }),
+ * diferenciando-as de erros reais de banco/RLS/esquema com código SQL/PostgREST.
+ */
+export function isTransientNetworkError(err: unknown): boolean {
+  if (!err) return false;
+
+  if (typeof err === "object") {
+    const record = err as Record<string, unknown>;
+    const code = typeof record.code === "string" ? record.code.trim() : "";
+    // Códigos SQLSTATE / PostgREST (ex.: 42501, PGRST116, 23505) representam erros reais de banco/permissão
+    if (code && !/^E(CONN|TIME|NOTFOUND|AI_)/i.test(code) && !/^ERR_/i.test(code)) {
+      return false;
+    }
+
+    const name = typeof record.name === "string" ? record.name.toLowerCase() : "";
+    if (name === "aborterror") {
+      return true;
+    }
+
+    const combined = [
+      name,
+      typeof record.message === "string" ? record.message : "",
+      typeof record.details === "string" ? record.details : "",
+      typeof record.cause === "string"
+        ? record.cause
+        : record.cause && typeof record.cause === "object" && "message" in record.cause
+          ? String((record.cause as { message?: unknown }).message || "")
+          : "",
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    if (TRANSIENT_NETWORK_PATTERNS.some((pattern) => combined.includes(pattern))) {
+      return true;
+    }
+  } else if (typeof err === "string") {
+    const lower = err.toLowerCase();
+    if (TRANSIENT_NETWORK_PATTERNS.some((pattern) => lower.includes(pattern))) {
+      return true;
+    }
+  }
+
+  return false;
 }
 

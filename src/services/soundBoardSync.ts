@@ -4,6 +4,7 @@ import {
   ActiveVolumeFade,
   createVolumeFade,
   evaluateVolumeFade,
+  isBrowserOnline,
   normalizeTrackUrl,
 } from "./ostUtils";
 import {
@@ -202,7 +203,7 @@ export class SoundBoardSync {
   }
 
   public async fetchEffects(): Promise<SoundBoardEffect[]> {
-    if (!this.roomId) return [];
+    if (!this.roomId || !isBrowserOnline()) return this.effects;
     const recordId = getSoundBoardRecordId(this.roomId);
 
     try {

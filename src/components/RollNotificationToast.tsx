@@ -3,6 +3,7 @@ import { Dices, HeartPulse, Skull, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { CLINICAL_EASE } from "./MotionPrimitives";
 import type { UltimoSuspiroNotification } from "../utils/ultimoSuspiro";
+import { computeNotificationDurationMs } from "../utils/playerSettings";
 
 export interface RollToastData {
   id: number;
@@ -18,6 +19,7 @@ interface RollNotificationToastProps {
   roll: RollToastData | null;
   onDismiss: () => void;
   isRlMode?: boolean;
+  durationSec?: number;
 }
 
 const TOAST_TRANSITION = {
@@ -31,8 +33,16 @@ const TOAST_EXIT_TRANSITION = {
 } as const;
 
 export const RollNotificationToast: React.FC<RollNotificationToastProps> = React.memo(
-  function RollNotificationToast({ roll, onDismiss, isRlMode = false }) {
-    const duration = roll?.kind === "ultimo_suspiro" ? 4800 : 3800;
+  function RollNotificationToast({
+    roll,
+    onDismiss,
+    isRlMode = false,
+    durationSec = 4,
+  }) {
+    const duration = computeNotificationDurationMs(
+      durationSec,
+      roll?.kind === "ultimo_suspiro" ? "ultimo_suspiro" : "roll",
+    );
 
     useEffect(() => {
       if (!roll) return;

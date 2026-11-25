@@ -62,6 +62,19 @@ export function getDiceRollSoundPreset(
 
 let sharedAudioCtx: AudioContext | null = null;
 let sharedNoiseBuffer: AudioBuffer | null = null;
+let diceAppVolume = 1.0;
+
+export function setDiceAppVolume(volume: number): void {
+  if (typeof volume !== "number" || !Number.isFinite(volume)) {
+    diceAppVolume = 1.0;
+    return;
+  }
+  diceAppVolume = Math.max(0, Math.min(1, volume));
+}
+
+export function getDiceAppVolume(): number {
+  return diceAppVolume;
+}
 
 function getAudioContextConstructor(): (typeof AudioContext) | null {
   if (typeof window === "undefined") return null;
@@ -117,12 +130,32 @@ export function unlockDiceAudioContext(): boolean {
 
 /**
  * Plays a lightweight synthesized dice-roll sound via Web Audio API.
- * Respects the `ostAudioAccepted` user gesture lock strictly.
+ * Respects the `ostAudioAccepted` user gesture lock and local app volume strictly.
  */
 export function playDiceRollSound(options: {
   ostAudioAccepted: boolean;
   critical?: DiceRollCriticalKind;
+  enabled?: boolean;
+  volumeMultiplier?: number;
 }): boolean {
+  if (options.enabled === false) {
+    return false;
+  }
+
+  const effectiveVol = Math.max(
+    0,
+    Math.min(
+      1,
+      typeof options.volumeMultiplier === "number" &&
+        Number.isFinite(options.volumeMultiplier)
+        ? options.volumeMultiplier
+        : diceAppVolume,
+    ),
+  );
+  if (effectiveVol <= 0.001) {
+    return false;
+  }
+
   const hasWebAudio = Boolean(getAudioContextConstructor());
   if (
     !shouldPlayDiceRollSound({
@@ -147,6 +180,8 @@ export function playDiceRollSound(options: {
 
     for (const tap of preset.taps) {
       const startAt = now + tap.delaySec;
+      const scaledTapGain = Math.max(0.0002, tap.gain * effectiveVol);
+      const scaledBodyGain = Math.max(0.0002, tap.gain * 0.55 * effectiveVol);
 
       // Short filtered noise burst (dice face impact)
       const noiseSource = ctx.createBufferSource();
@@ -159,7 +194,7 @@ export function playDiceRollSound(options: {
 
       const tapGain = ctx.createGain();
       tapGain.gain.setValueAtTime(0.0001, startAt);
-      tapGain.gain.exponentialRampToValueAtTime(tap.gain, startAt + 0.004);
+      tapGain.gain.exponentialRampToValueAtTime(scaledTapGain, startAt + 0.004);
       tapGain.gain.exponentialRampToValueAtTime(
         0.0001,
         startAt + tap.durationSec,
@@ -184,7 +219,7 @@ export function playDiceRollSound(options: {
       const bodyGain = ctx.createGain();
       bodyGain.gain.setValueAtTime(0.0001, startAt);
       bodyGain.gain.exponentialRampToValueAtTime(
-        tap.gain * 0.55,
+        scaledBodyGain,
         startAt + 0.003,
       );
       bodyGain.gain.exponentialRampToValueAtTime(
@@ -207,6 +242,10 @@ export function playDiceRollSound(options: {
       preset.accentDelaySec !== undefined
     ) {
       const accentStart = now + preset.accentDelaySec;
+      const scaledAccentGain = Math.max(
+        0.0002,
+        preset.accentGain * effectiveVol,
+      );
       const osc = ctx.createOscillator();
       osc.type = preset.accentType || "triangle";
       osc.frequency.setValueAtTime(preset.accentFreqStartHz, accentStart);
@@ -218,7 +257,7 @@ export function playDiceRollSound(options: {
       const gainNode = ctx.createGain();
       gainNode.gain.setValueAtTime(0.0001, accentStart);
       gainNode.gain.exponentialRampToValueAtTime(
-        preset.accentGain,
+        scaledAccentGain,
         accentStart + 0.015,
       );
       gainNode.gain.exponentialRampToValueAtTime(

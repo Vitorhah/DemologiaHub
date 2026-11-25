@@ -22,6 +22,13 @@ import {
   SlidersHorizontal,
   AlertTriangle,
   ArrowLeftRight,
+  Play,
+  Square,
+  SkipBack,
+  SkipForward,
+  Bell,
+  BellOff,
+  Layers,
 } from "lucide-react";
 import { GameMode } from "../types";
 import { StatMathInput } from "./StatMathInput";
@@ -32,7 +39,23 @@ import { MasterUltimoSuspiroControls } from "./MasterUltimoSuspiroControls";
 import { PdiSection } from "./PdiSection";
 import { PdiEditorModal } from "./PdiEditorModal";
 import { PROFILE_THEME_MAP, ProfileSymbolIcon } from "./CharacterProfileButton";
-import { StatusEffect } from "../utils/statusEffects";
+import {
+  STATUS_PRESETS,
+  StatusEffect,
+  togglePresetStatusEffect,
+} from "../utils/statusEffects";
+import {
+  BatchStatTarget,
+  CombatTurnState,
+} from "../types/sceneDirector";
+import {
+  advanceCombatTurn,
+  computeBatchStatValue,
+  createInitialCombatTurnState,
+  reconcileCombatTurnState,
+  startCombatRounds,
+  stopCombatRounds,
+} from "../utils/sceneDirector";
 import {
   PdiItem,
   normalizePdis,
@@ -131,6 +154,7 @@ export interface MasterPlayersViewProps {
   currentGlobalMode?: GameMode;
   onTogglePlayerMode?: (playerId: string) => void;
   initiativeFilterRef?: React.MutableRefObject<InitiativeFilterState>;
+  onNotifyTurn?: (participant: any, round: number) => void;
 }
 
 export function MasterPlayersView({
@@ -155,6 +179,7 @@ export function MasterPlayersView({
   currentGlobalMode = "demologia",
   onTogglePlayerMode,
   initiativeFilterRef,
+  onNotifyTurn,
 }: MasterPlayersViewProps) {
   const [expandedStatusId, setExpandedStatusId] = React.useState<string | null>(null);
   const [expandedPdiId, setExpandedPdiId] = React.useState<string | null>(null);
@@ -164,6 +189,13 @@ export function MasterPlayersView({
   } | null>(null);
   const [rollWarning, setRollWarning] = React.useState<string | null>(null);
   const [showQuickSelector, setShowQuickSelector] = React.useState(false);
+  const [showBatchPanel, setShowBatchPanel] = React.useState(false);
+  const [batchStat, setBatchStat] = React.useState<BatchStatTarget>("hp");
+  const [batchDeltaInput, setBatchDeltaInput] = React.useState<string>("-5");
+  const [batchFeedback, setBatchFeedback] = React.useState<string | null>(null);
+  const [combatTurn, setCombatTurn] = React.useState<CombatTurnState>(() =>
+    createInitialCombatTurnState(),
+  );
   const [filterState, setFilterState] = React.useState<InitiativeFilterState>(() =>
     initiativeFilterRef?.current ?? createInitialInitiativeFilterState(),
   );
@@ -312,11 +344,170 @@ export function MasterPlayersView({
   const isSubsetSelected =
     combined.length > 0 && selectedCount < combined.length;
 
+  const displayedParticipantIds = React.useMemo(
+    () => displayedParticipants.map((p) => p.id),
+    [displayedParticipants],
+  );
+
+  const reconciledTurn = React.useMemo(
+    () => reconcileCombatTurnState(combatTurn, displayedParticipantIds),
+    [combatTurn, displayedParticipantIds],
+  );
+
+  React.useEffect(() => {
+    if (reconciledTurn !== combatTurn) {
+      setCombatTurn(reconciledTurn);
+    }
+  }, [reconciledTurn, combatTurn]);
+
+  const activeTurnParticipant = React.useMemo(() => {
+    if (!reconciledTurn.active || !reconciledTurn.activeParticipantId) {
+      return null;
+    }
+    return (
+      displayedParticipants.find(
+        (p) => p.id === reconciledTurn.activeParticipantId,
+      ) || null
+    );
+  }, [reconciledTurn, displayedParticipants]);
+
+  const notifyParticipantTurn = React.useCallback(
+    (nextState: CombatTurnState) => {
+      if (
+        !nextState.active ||
+        !nextState.notifyTurnToPlayers ||
+        !nextState.activeParticipantId ||
+        !onNotifyTurn
+      ) {
+        return;
+      }
+      const target = displayedParticipants.find(
+        (p) => p.id === nextState.activeParticipantId,
+      );
+      if (target) {
+        onNotifyTurn(target, nextState.round);
+      }
+    },
+    [displayedParticipants, onNotifyTurn],
+  );
+
+  const handleStartRounds = () => {
+    const next = startCombatRounds(
+      displayedParticipantIds,
+      reconciledTurn.notifyTurnToPlayers,
+    );
+    setCombatTurn(next);
+    notifyParticipantTurn(next);
+  };
+
+  const handleStepTurn = (direction: 1 | -1) => {
+    const next = advanceCombatTurn(
+      reconciledTurn,
+      displayedParticipantIds,
+      direction,
+    );
+    setCombatTurn(next);
+    notifyParticipantTurn(next);
+  };
+
+  const handleStopRounds = () => {
+    setCombatTurn((prev) => stopCombatRounds(prev));
+  };
+
+  const handleApplyBatchStat = (explicitDelta?: number) => {
+    const selectedTargets = combined.filter((p) => selectedSet.has(p.id));
+    if (selectedTargets.length === 0) {
+      setBatchFeedback("Selecione ao menos um participante.");
+      return;
+    }
+    const delta =
+      explicitDelta !== undefined
+        ? explicitDelta
+        : parseInt(batchDeltaInput.trim(), 10);
+    if (!Number.isFinite(delta) || delta === 0) {
+      setBatchFeedback("Informe um ajuste diferente de zero (ex.: -5 ou +4).");
+      return;
+    }
+    for (const target of selectedTargets) {
+      const current =
+        batchStat === "sm"
+          ? (target.sm?.current ?? target.san?.current ?? 0)
+          : (target[batchStat]?.current ?? 0);
+      const max =
+        batchStat === "sm"
+          ? (target.sm?.max ?? target.san?.max ?? 100)
+          : (target[batchStat]?.max ?? 100);
+      const nextVal = computeBatchStatValue(current, max, delta);
+      onUpdateStat(
+        target,
+        batchStat,
+        nextVal,
+        target.isExtraSheet,
+        target.rawExtraSheetId,
+      );
+    }
+    const statLabel =
+      batchStat === "hp" ? "PV" : batchStat === "pe" ? "PE" : "SM";
+    const sign = delta > 0 ? `+${delta}` : `${delta}`;
+    setBatchFeedback(
+      `Aplicado ${sign} ${statLabel} em ${selectedTargets.length} participante${selectedTargets.length === 1 ? "" : "s"}.`,
+    );
+  };
+
+  const handleApplyBatchStatus = (
+    preset: (typeof STATUS_PRESETS)[number],
+    mode: "add" | "remove",
+  ) => {
+    if (!onUpdateStatusEffects) return;
+    const selectedTargets = combined.filter((p) => selectedSet.has(p.id));
+    if (selectedTargets.length === 0) {
+      setBatchFeedback("Selecione ao menos um participante.");
+      return;
+    }
+    let changedCount = 0;
+    for (const target of selectedTargets) {
+      const currentEffects: StatusEffect[] = Array.isArray(target.statusEffects)
+        ? target.statusEffects
+        : [];
+      const alreadyHas = currentEffects.some(
+        (e) =>
+          e.label.trim().toLowerCase() === preset.label.trim().toLowerCase(),
+      );
+      if (mode === "add" && !alreadyHas) {
+        const nextEffects = togglePresetStatusEffect(currentEffects, preset);
+        onUpdateStatusEffects(
+          target,
+          nextEffects,
+          target.isExtraSheet,
+          target.rawExtraSheetId,
+        );
+        changedCount++;
+      } else if (mode === "remove" && alreadyHas) {
+        const nextEffects = togglePresetStatusEffect(currentEffects, preset);
+        onUpdateStatusEffects(
+          target,
+          nextEffects,
+          target.isExtraSheet,
+          target.rawExtraSheetId,
+        );
+        changedCount++;
+      }
+    }
+    setBatchFeedback(
+      mode === "add"
+        ? `Status "${preset.label}" aplicado em ${changedCount} participante${changedCount === 1 ? "" : "s"}.`
+        : `Status "${preset.label}" removido de ${changedCount} participante${changedCount === 1 ? "" : "s"}.`,
+    );
+  };
+
   React.useEffect(() => {
     if (selectedCount > 0 && rollWarning) {
       setRollWarning(null);
     }
-  }, [selectedCount, rollWarning]);
+    if (selectedCount === 0 && showBatchPanel) {
+      setShowBatchPanel(false);
+    }
+  }, [selectedCount, rollWarning, showBatchPanel]);
 
   React.useEffect(() => {
     if (!initiativeFilterActive && showQuickSelector) {
@@ -498,6 +689,27 @@ export function MasterPlayersView({
                 <span>Ajustar seleção</span>
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowBatchPanel((prev) => !prev);
+                setBatchFeedback(null);
+              }}
+              disabled={noneSelected}
+              aria-expanded={showBatchPanel}
+              data-testid="batch-actions-toggle-btn"
+              className={`inline-flex items-center justify-center gap-1.5 px-2.5 min-h-[40px] text-[11px] font-mono font-bold uppercase tracking-wider rounded-none border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${FILTER_BTN_MOTION} ${
+                showBatchPanel
+                  ? isRlGlobal
+                    ? "bg-[#221236] text-purple-100 border-purple-400/70"
+                    : "bg-[#220a0e] text-[#ff8a90] border-[#8f171c]/80"
+                  : "bg-[#121218] text-[#c8c9d4] border-[#262632] hover:bg-[#1a1a24] hover:text-white"
+              }`}
+            >
+              <Layers size={12} />
+              <span>Ação em Grupo</span>
+            </button>
           </div>
         </div>
 
@@ -556,6 +768,127 @@ export function MasterPlayersView({
           </div>
         </MotionAccordion>
 
+        {/* Painel de Ações em Grupo para os participantes selecionados */}
+        <MotionAccordion isOpen={Boolean(showBatchPanel && selectedCount > 0)}>
+          <div
+            data-testid="batch-actions-panel"
+            className="border-t border-[#1c1c24] bg-[#09090d] px-3 py-3 sm:px-4 flex flex-col gap-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[10px] uppercase tracking-wider text-[#a8aab8]">
+                Ação em Grupo ·{" "}
+                <strong className="text-white tabular-nums">
+                  {selectedCount}
+                </strong>{" "}
+                selecionado{selectedCount === 1 ? "" : "s"}
+              </div>
+              {batchFeedback && (
+                <div
+                  role="status"
+                  data-testid="batch-actions-feedback"
+                  className="text-[11px] text-emerald-300"
+                >
+                  {batchFeedback}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Seletor de atributo PV / PE / SM */}
+              <div className="flex items-center border border-[#262632] bg-[#101018]">
+                {(
+                  [
+                    { id: "hp", label: "PV" },
+                    { id: "pe", label: "PE" },
+                    { id: "sm", label: "SM" },
+                  ] as const
+                ).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setBatchStat(s.id)}
+                    data-testid={`batch-stat-${s.id}`}
+                    className={`min-h-[38px] px-3 text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                      batchStat === s.id
+                        ? isRlGlobal
+                          ? "bg-purple-950/70 text-white"
+                          : "bg-[#260b10] text-white"
+                        : "text-[#8e90a0] hover:text-white"
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Atalhos rápidos de delta */}
+              <div className="flex flex-wrap items-center gap-1">
+                {[-10, -5, -2, -1, 1, 2, 5, 10].map((val) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => handleApplyBatchStat(val)}
+                    data-testid={`batch-delta-${val > 0 ? `plus-${val}` : `minus-${Math.abs(val)}`}`}
+                    className={`min-w-[40px] min-h-[38px] px-2 text-xs font-bold tabular-nums border cursor-pointer touch-manipulation ${
+                      val < 0
+                        ? "bg-[#1a0a0d] hover:bg-[#2a1015] border-[#6e171d] text-[#ff9a9f]"
+                        : "bg-emerald-950/35 hover:bg-emerald-950/65 border-emerald-700/55 text-emerald-300"
+                    }`}
+                  >
+                    {val > 0 ? `+${val}` : val}
+                  </button>
+                ))}
+              </div>
+
+              {/* Ajuste personalizado */}
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  value={batchDeltaInput}
+                  onChange={(e) => setBatchDeltaInput(e.target.value)}
+                  aria-label="Valor de ajuste em grupo"
+                  data-testid="batch-custom-delta-input"
+                  className="w-16 min-h-[38px] px-2 bg-[#101018] border border-[#282838] text-xs text-white text-center tabular-nums outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleApplyBatchStat()}
+                  data-testid="batch-apply-custom-btn"
+                  className="min-h-[38px] px-3 bg-[#8f171c] hover:bg-[#b52a30] border border-[#ff8085]/35 text-white text-[11px] font-bold uppercase tracking-wider cursor-pointer touch-manipulation"
+                >
+                  Aplicar
+                </button>
+              </div>
+            </div>
+
+            {onUpdateStatusEffects && (
+              <div className="pt-2 border-t border-[#191923] flex flex-col gap-1.5">
+                <div className="text-[10px] uppercase tracking-wider text-[#7e8092]">
+                  Aplicar Status em Grupo (clique para adicionar / Shift+clique para remover):
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {STATUS_PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={(e) =>
+                        handleApplyBatchStatus(
+                          preset,
+                          e.shiftKey ? "remove" : "add",
+                        )
+                      }
+                      data-testid={`batch-status-${preset.label.toLowerCase()}`}
+                      className="min-h-[34px] px-2.5 bg-[#12121a] hover:bg-[#1c1c28] border border-[#282836] text-[10px] uppercase tracking-wider text-zinc-200 hover:text-white cursor-pointer touch-manipulation"
+                    >
+                      + {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </MotionAccordion>
+
         {/* Alerta clínico quando o Mestre tenta rolar com 0 selecionados */}
         <MotionAccordion isOpen={Boolean(rollWarning)}>
           <div
@@ -566,6 +899,143 @@ export function MasterPlayersView({
             <span>{rollWarning}</span>
           </div>
         </MotionAccordion>
+      </section>
+    );
+  };
+
+  const renderRoundTrackerBar = () => {
+    if (!isMaster || displayedParticipants.length === 0) return null;
+
+    return (
+      <section
+        aria-label="Controle de Rodadas e Turno Ativo"
+        data-testid="combat-round-tracker"
+        className={`mb-3.5 bg-[#0c0c10] border rounded-none px-3 py-2.5 sm:px-4 flex flex-wrap items-center justify-between gap-2.5 ${
+          reconciledTurn.active
+            ? isRlGlobal
+              ? "border-purple-500/65"
+              : "border-[#8f171c]/75"
+            : "border-[#202028]"
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+          <span
+            data-testid="combat-round-label"
+            className={`text-[11px] font-bold uppercase tracking-wider tabular-nums ${
+              reconciledTurn.active
+                ? isRlGlobal
+                  ? "text-purple-200"
+                  : "text-[#ff8a90]"
+                : "text-[#9a9cad]"
+            }`}
+          >
+            {reconciledTurn.active
+              ? `Rodada ${reconciledTurn.round}`
+              : "Controle de Turnos"}
+          </span>
+
+          {reconciledTurn.active && activeTurnParticipant ? (
+            <>
+              <span className="text-[#4a4b5c]" aria-hidden="true">
+                ·
+              </span>
+              <span
+                data-testid="combat-active-turn-name"
+                className="text-xs font-bold uppercase tracking-wider text-white truncate max-w-[200px]"
+              >
+                Vez de {activeTurnParticipant.name}
+              </span>
+            </>
+          ) : (
+            <span className="text-[11px] font-sans text-[#7e8092]">
+              Inicie as rodadas para destacar o turno atual na ordem de iniciativa.
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {!reconciledTurn.active ? (
+            <button
+              type="button"
+              onClick={handleStartRounds}
+              data-testid="combat-start-rounds-btn"
+              className={`min-h-[38px] px-3 text-[11px] font-bold uppercase tracking-wider border inline-flex items-center gap-1.5 cursor-pointer touch-manipulation ${
+                isRlGlobal
+                  ? "bg-purple-700 hover:bg-purple-600 border-purple-400/50 text-white"
+                  : "bg-[#8f171c] hover:bg-[#b52a30] border-[#ff8085]/35 text-white"
+              }`}
+            >
+              <Play size={12} />
+              <span>Iniciar Rodadas</span>
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => handleStepTurn(-1)}
+                data-testid="combat-prev-turn-btn"
+                aria-label="Turno anterior"
+                className="min-h-[38px] px-2.5 bg-[#12121a] hover:bg-[#1a1a26] border border-[#262634] text-xs font-bold uppercase tracking-wider text-zinc-200 hover:text-white inline-flex items-center gap-1 cursor-pointer touch-manipulation"
+              >
+                <SkipBack size={13} />
+                <span className="hidden sm:inline">Anterior</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleStepTurn(1)}
+                data-testid="combat-next-turn-btn"
+                className={`min-h-[38px] px-3 text-xs font-bold uppercase tracking-wider border inline-flex items-center gap-1.5 cursor-pointer touch-manipulation ${
+                  isRlGlobal
+                    ? "bg-purple-700 hover:bg-purple-600 border-purple-400/50 text-white"
+                    : "bg-[#8f171c] hover:bg-[#b52a30] border-[#ff8085]/35 text-white"
+                }`}
+              >
+                <span>Próximo Turno</span>
+                <SkipForward size={13} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setCombatTurn((prev) => ({
+                    ...prev,
+                    notifyTurnToPlayers: !prev.notifyTurnToPlayers,
+                  }))
+                }
+                aria-pressed={reconciledTurn.notifyTurnToPlayers}
+                title={
+                  reconciledTurn.notifyTurnToPlayers
+                    ? "Notificando o jogador quando chegar seu turno"
+                    : "Aviso de turno desativado (apenas destaque local)"
+                }
+                className={`min-h-[38px] px-2.5 border text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 cursor-pointer touch-manipulation ${
+                  reconciledTurn.notifyTurnToPlayers
+                    ? "bg-[#190b0f] border-[var(--op-red)]/60 text-white"
+                    : "bg-[#12121a] border-[#262634] text-[#848698]"
+                }`}
+              >
+                {reconciledTurn.notifyTurnToPlayers ? (
+                  <Bell size={12} />
+                ) : (
+                  <BellOff size={12} />
+                )}
+                <span className="hidden md:inline">Avisar</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleStopRounds}
+                data-testid="combat-stop-rounds-btn"
+                aria-label="Encerrar rodadas"
+                className="min-h-[38px] px-2.5 bg-[#12121a] hover:bg-red-950/55 border border-[#262634] hover:border-red-600/60 text-[10px] font-bold uppercase tracking-wider text-[#9a9cad] hover:text-red-200 inline-flex items-center gap-1 cursor-pointer touch-manipulation"
+              >
+                <Square size={11} />
+                <span>Encerrar</span>
+              </button>
+            </>
+          )}
+        </div>
       </section>
     );
   };
@@ -646,6 +1116,7 @@ export function MasterPlayersView({
     return (
       <div className="max-w-6xl mx-auto px-3 sm:px-4 font-mono my-4">
         {renderFilterBar()}
+        {renderRoundTrackerBar()}
         {displayedParticipants.length === 0 ? (
           renderEmptyFilteredState()
         ) : (
@@ -691,11 +1162,21 @@ export function MasterPlayersView({
                 const isPlayerRl = (playerModes[p.id] || currentGlobalMode) === "rl";
                 const ultimoSuspiro = normalizeUltimoSuspiroState(p.ultimoSuspiro, hpCurrent);
                 const isDead = ultimoSuspiro.status === "dead";
+                const isActiveTurn =
+                  reconciledTurn.active &&
+                  reconciledTurn.activeParticipantId === p.id;
 
                 return (
                   <tr
                     key={p.id}
+                    data-active-turn={isActiveTurn ? "true" : undefined}
                     className={`hover:bg-[#121217] transition-[background-color,opacity] duration-150 ${
+                      isActiveTurn
+                        ? isRlGlobal
+                          ? "bg-purple-950/25"
+                          : "bg-[#1d0a0e]/70"
+                        : ""
+                    } ${
                       hasFilterControls && !isSelected ? "opacity-65" : ""
                     }`}
                   >
@@ -745,8 +1226,15 @@ export function MasterPlayersView({
                     </td>
 
                     <td className="py-3 px-3 sm:px-4">
-                      <div className="font-bold text-white truncate max-w-[180px] uppercase">
-                        {p.name}
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white truncate max-w-[180px] uppercase">
+                          {p.name}
+                        </span>
+                        {isActiveTurn && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 bg-[#8f171c] text-white shrink-0">
+                            Turno Ativo
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         {p.isExtraSheet ? (
@@ -1059,6 +1547,7 @@ export function MasterPlayersView({
   return (
     <div className="max-w-6xl mx-auto px-3 sm:px-4 font-mono my-4">
       {renderFilterBar()}
+      {renderRoundTrackerBar()}
       {displayedParticipants.length === 0 ? (
         renderEmptyFilteredState()
       ) : (
@@ -1081,23 +1570,43 @@ export function MasterPlayersView({
         const isPlayerRl = (playerModes[p.id] || currentGlobalMode) === "rl";
         const ultimoSuspiro = normalizeUltimoSuspiroState(p.ultimoSuspiro, hpCurrent);
         const isDead = ultimoSuspiro.status === "dead";
+        const isActiveTurn =
+          reconciledTurn.active && reconciledTurn.activeParticipantId === p.id;
 
         return (
           <div
             key={p.id}
             data-testid={`master-player-card-${p.id}`}
+            data-active-turn={isActiveTurn ? "true" : undefined}
             style={{ contain: "layout style" }}
             className={`bg-[#0c0c10] border outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none p-3.5 sm:p-4 flex flex-col justify-between transition-[opacity,border-color] duration-150 ease-out ${
-              hasFilterControls && !isSelected
-                ? "border-[#1c1c24] opacity-70"
-                : hasFilterControls && isSubsetSelected && isSelected
-                  ? isRlGlobal
-                    ? "border-[#202028] border-l-2 border-l-purple-500"
-                    : "border-[#202028] border-l-2 border-l-[#8f171c]"
-                  : "border-[#202028]"
+              isActiveTurn
+                ? isRlGlobal
+                  ? "border-purple-400 border-t-2 border-t-purple-400 bg-[#120c1a]"
+                  : "border-[var(--op-red-bright)] border-t-2 border-t-[var(--op-red-bright)] bg-[#140a0d]"
+                : hasFilterControls && !isSelected
+                  ? "border-[#1c1c24] opacity-70"
+                  : hasFilterControls && isSubsetSelected && isSelected
+                    ? isRlGlobal
+                      ? "border-[#202028] border-l-2 border-l-purple-500"
+                      : "border-[#202028] border-l-2 border-l-[#8f171c]"
+                    : "border-[#202028]"
             }`}
           >
             <div>
+              {isActiveTurn && (
+                <div
+                  data-testid="active-turn-card-banner"
+                  className={`mb-2.5 pb-1.5 border-b flex items-center justify-between text-[10px] font-bold uppercase tracking-widest ${
+                    isRlGlobal
+                      ? "border-purple-500/40 text-purple-200"
+                      : "border-[#8f171c]/55 text-[#ff8a90]"
+                  }`}
+                >
+                  <span>Turno Ativo</span>
+                  <span className="tabular-nums">Rodada {reconciledTurn.round}</span>
+                </div>
+              )}
               {/* Header do Card */}
               <div className="flex justify-between items-start mb-3 gap-2">
                 <div className="flex items-start gap-2 min-w-0 flex-1">

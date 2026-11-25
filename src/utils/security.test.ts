@@ -91,8 +91,12 @@ test("sanitizeImportedSheetJson blocks oversized files, prototype pollution, and
 test("broadcast payload validators reject malformed or unexpected payloads", () => {
   assert.equal(isValidModeConfigPayload({ globalMode: "demologia" }), true);
   assert.equal(
-    isValidModeConfigPayload({ globalMode: "rl", playerModes: { p1: "demologia" } }),
+    isValidModeConfigPayload({ globalMode: "rl", playerModes: { p1: "demologia" }, skipTransition: true }),
     true
+  );
+  assert.equal(
+    isValidModeConfigPayload({ globalMode: "rl", skipTransition: "true" as unknown as boolean }),
+    false
   );
   assert.equal(isValidModeConfigPayload({ globalMode: "hacked" }), false);
   assert.equal(

@@ -55,6 +55,7 @@ export type GameMode = "demologia" | "rl";
 export interface GameModeConfig {
   globalMode: GameMode;
   playerModes?: Record<string, GameMode>;
+  skipTransition?: boolean;
 }
 
 export * from "./types/events";

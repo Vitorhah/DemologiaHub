@@ -213,6 +213,7 @@ export function sanitizeImportedSheetJson(rawText: string): SheetImportValidatio
 export function isValidModeConfigPayload(payload: unknown): payload is {
   globalMode: "demologia" | "rl";
   playerModes?: Record<string, "demologia" | "rl">;
+  skipTransition?: boolean;
 } {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
   const obj = payload as Record<string, unknown>;
@@ -224,6 +225,9 @@ export function isValidModeConfigPayload(payload: unknown): payload is {
     for (const val of Object.values(obj.playerModes as Record<string, unknown>)) {
       if (val !== "demologia" && val !== "rl") return false;
     }
+  }
+  if (obj.skipTransition !== undefined && typeof obj.skipTransition !== "boolean") {
+    return false;
   }
   return true;
 }

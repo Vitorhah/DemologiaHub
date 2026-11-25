@@ -9,6 +9,7 @@ import {
   evaluateVolumeFade,
   getNextFadeDuration,
   isStalePlaybackState,
+  isTransientNetworkError,
   normalizeFadeDuration,
   normalizeTrackUrl,
   PlaybackState,
@@ -204,4 +205,52 @@ test("evaluateVolumeFade linearly interpolates independent of frame rate and sup
   assert.equal(endOut.completed, true);
   assert.equal(reversedOut.finishAction, "pause");
 });
+
+test("isTransientNetworkError detects Supabase Failed to fetch and browser network errors while preserving real SQL/RLS errors", () => {
+  // Exatamente o payload retornado pelo Supabase JS quando o fetch falha por rede/offline
+  assert.equal(
+    isTransientNetworkError({
+      message: "TypeError: Failed to fetch",
+      details: "TypeError: Failed to fetch",
+      hint: "",
+      code: "",
+    }),
+    true,
+  );
+
+  // Variantes por navegador (Safari / Firefox / Abort)
+  assert.equal(isTransientNetworkError(new TypeError("Failed to fetch")), true);
+  assert.equal(isTransientNetworkError(new TypeError("Load failed")), true);
+  assert.equal(
+    isTransientNetworkError(new TypeError("NetworkError when attempting to fetch resource.")),
+    true,
+  );
+  assert.equal(
+    isTransientNetworkError({ name: "AbortError", message: "The user aborted a request." }),
+    true,
+  );
+
+  // Erros reais de banco/RLS/PostgREST NÃO devem ser mascarados como erro transitório de rede
+  assert.equal(
+    isTransientNetworkError({
+      message: "new row violates row-level security policy",
+      details: "",
+      hint: "",
+      code: "42501",
+    }),
+    false,
+  );
+  assert.equal(
+    isTransientNetworkError({
+      message: "JSON object requested, multiple (or no) rows returned",
+      details: "",
+      hint: "",
+      code: "PGRST116",
+    }),
+    false,
+  );
+  assert.equal(isTransientNetworkError(new Error("Invalid column name")), false);
+  assert.equal(isTransientNetworkError(null), false);
+});
+
 

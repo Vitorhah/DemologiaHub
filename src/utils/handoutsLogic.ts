@@ -22,6 +22,8 @@ export function isSystemRecordId(id: string | null | undefined): boolean {
     id === "TABLETOP_GRID" ||
     id === "CADERNO_CAMPO_SHARED" ||
     id === "MASTER_LIBRARY" ||
+    id === "SCENE_BACKGROUND_STATE" ||
+    id.startsWith("SCENE_DIRECTOR_") ||
     id === HANDOUTS_MASTER_RECORD_ID ||
     id === HANDOUTS_SHARED_RECORD_ID ||
     id.startsWith(HANDOUTS_INDIV_PREFIX) ||

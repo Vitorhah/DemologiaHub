@@ -1513,3 +1513,26 @@ body, .hud-container, .hud-container .status-bars .bar-fill {
     }
 }
 
+/* --- PREFERÊNCIAS LOCAIS DO JOGADOR (CONFIGURAÇÕES) --- */
+html.demologia-reduced-motion *,
+html.demologia-reduced-motion *::before,
+html.demologia-reduced-motion *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+}
+
+html.demologia-reduced-motion .eye-logo {
+    animation: none !important;
+}
+
+html[data-text-scale="compact"] {
+    font-size: 93.75%;
+}
+
+html[data-text-scale="large"] {
+    font-size: 108%;
+}
+
+

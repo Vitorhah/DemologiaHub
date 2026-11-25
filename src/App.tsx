@@ -23,7 +23,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { supabase, supabaseUrl, supabaseAnonKey } from "./lib/supabase";
-import { MusicSync, PlaybackState } from "./services/musicSync";
+import { MusicSync, PlaybackState, Track } from "./services/musicSync";
 import { useHandoutsSync } from "./services/useHandoutsSync";
 import { PasswordAuthModal } from "./components/PasswordAuthModal";
 import { ModeTransitionEffect } from "./components/ModeTransitionEffect";
@@ -156,8 +156,38 @@ import {
   UltimoSuspiroState,
 } from "./utils/ultimoSuspiro";
 import { useMinigamesSync } from "./services/useMinigamesSync";
-import { useMasterDataPushSync } from "./services/useMasterDataPushSync";
+import {
+  useMasterDataPushSync,
+  type DataPushFadePhase,
+} from "./services/useMasterDataPushSync";
+import {
+  MODE_FADE_HOLD_AFTER_SWAP_MS,
+  MODE_FADE_OUT_CLEANUP_MS,
+  MODE_FADE_SWAP_DELAY_MS,
+  resolveActiveGameMode,
+  resolveModeTransitionAction,
+} from "./utils/modeTransition";
 import { useMasterLibrarySync } from "./services/useMasterLibrarySync";
+import { useSceneDirectorSync } from "./services/useSceneDirectorSync";
+import { PlayerSceneOverlayBar } from "./components/PlayerSceneOverlayBar";
+import type { MasterTabId } from "./components/MasterHeaderBar";
+import type { NarrativeScene, SceneBackgroundPayload } from "./types/sceneDirector";
+import type { SoundBoardEffect } from "./utils/soundBoard";
+import {
+  SCENE_BACKGROUND_LOCAL_KEY,
+  SCENE_BACKGROUND_RECORD_ID,
+  buildExecutionSchedule,
+  clampBlackoutHoldSec,
+  clampFadeTransitionSec,
+  clampOstFadeOutSec,
+  detectBackgroundMediaType,
+  normalizeBlackoutEasingDirection,
+  normalizeBlackoutEasingStyle,
+  normalizeSceneBackgroundPayload,
+  normalizeSceneFadeCuePayload,
+  resolveFadeEasingCss,
+  type SceneFadeCuePayload,
+} from "./utils/sceneBuilder";
 import { PlayerDataPushFadeOverlay } from "./components/PlayerDataPushFadeOverlay";
 import {
   applyMasterDataToSheetState,
@@ -167,6 +197,9 @@ import {
   playDiceRollSound,
   unlockDiceAudioContext,
 } from "./utils/diceSound";
+import { usePlayerSettings } from "./hooks/usePlayerSettings";
+import { useWakeLock } from "./hooks/useWakeLock";
+import { PlayerSettingsView } from "./components/PlayerSettingsView";
 import { GameMode, GameModeConfig, HandoutItem } from "./types";
 import { DEMOLOGIA_LOGO_URL } from "./constants/branding";
 import { MotionConfig, AnimatePresence } from "motion/react";
@@ -197,6 +230,11 @@ const MasterUtilitiesView = React.lazy(() =>
 );
 const MasterLibraryView = React.lazy(() =>
   import("./components/MasterLibraryView").then((m) => ({ default: m.MasterLibraryView }))
+);
+const MasterSceneDirectorView = React.lazy(() =>
+  import("./components/MasterSceneDirectorView").then((m) => ({
+    default: m.MasterSceneDirectorView,
+  }))
 );
 const CadernoDeCampoView = React.lazy(() =>
   import("./components/CadernoDeCampoView").then((m) => ({ default: m.CadernoDeCampoView }))
@@ -644,16 +682,106 @@ export default function App() {
   const initiativeFilterRef = useRef<InitiativeFilterState>(
     createInitialInitiativeFilterState(),
   );
-  const [mestreTab, setMestreTab] = useState<
-    "fichas" | "ost" | "extras" | "handouts" | "biblioteca" | "utilities"
-  >("fichas");
+  const [mestreTab, setMestreTab] = useState<MasterTabId>("fichas");
   const [rollToast, setRollToast] = useState<RollToastData | null>(null);
   const dismissRollToast = useCallback(() => setRollToast(null), []);
+  const {
+    settings: playerSettings,
+    updateSettings: updatePlayerSettings,
+    resetSettings: resetPlayerSettings,
+  } = usePlayerSettings();
+  const wakeLock = useWakeLock();
   const [quickViewHandout, setQuickViewHandout] = useState<HandoutItem | null>(null);
   const [mestreViewMode, setMestreViewMode] = useState<"grid" | "list">("grid");
   const [globalGridState, setGlobalGridState] = useState<any>({ objects: [] });
   const [deletingFichaId, setDeletingFichaId] = useState<string | null>(null);
-  const [customStyle, setCustomStyle] = useState<any>({ backgroundUrl: null });
+  const bgUpdatedAtRef = useRef<number>(0);
+  const [customStyle, setCustomStyle] = useState<{
+    backgroundUrl: string | null;
+    backgroundMediaType?: "image" | "gif" | "video" | null;
+    backgroundFade?: number;
+  }>(() => {
+    try {
+      const saved = localStorage.getItem(SCENE_BACKGROUND_LOCAL_KEY);
+      if (saved) {
+        const parsed = normalizeSceneBackgroundPayload(JSON.parse(saved));
+        if (parsed) {
+          bgUpdatedAtRef.current = parsed.updatedAt;
+          if (parsed.mode === "custom" && parsed.url) {
+            return {
+              backgroundUrl: parsed.url,
+              backgroundMediaType:
+                parsed.mediaType || detectBackgroundMediaType(parsed.url),
+            };
+          }
+        }
+      }
+    } catch {
+      // ignore corrupted localStorage entry
+    }
+    return { backgroundUrl: null, backgroundMediaType: null };
+  });
+
+  const applySceneBackgroundLocally = useCallback(
+    (payload: SceneBackgroundPayload, force = false) => {
+      if (!force && payload.updatedAt > 0 && payload.updatedAt < bgUpdatedAtRef.current) {
+        return;
+      }
+      bgUpdatedAtRef.current = Math.max(bgUpdatedAtRef.current, payload.updatedAt || Date.now());
+      try {
+        localStorage.setItem(SCENE_BACKGROUND_LOCAL_KEY, JSON.stringify(payload));
+      } catch {
+        // ignore quota errors
+      }
+      if (payload.mode === "default" || !payload.url) {
+        setCustomStyle((prev) => ({
+          ...prev,
+          backgroundUrl: null,
+          backgroundMediaType: null,
+        }));
+      } else {
+        setCustomStyle((prev) => ({
+          ...prev,
+          backgroundUrl: payload.url,
+          backgroundMediaType:
+            payload.mediaType || detectBackgroundMediaType(payload.url!),
+        }));
+      }
+    },
+    [],
+  );
+
+  const handleApplySceneBackground = useCallback(
+    async (rawPayload: Partial<SceneBackgroundPayload>) => {
+      const normalized = normalizeSceneBackgroundPayload({
+        ...rawPayload,
+        updatedAt: Date.now(),
+      });
+      if (!normalized) return;
+
+      applySceneBackgroundLocally(normalized, true);
+
+      try {
+        globalChannelRef.current?.send({
+          type: "broadcast",
+          event: "scene_background",
+          payload: normalized,
+        });
+      } catch {
+        // realtime broadcast best-effort
+      }
+
+      try {
+        await supabase.from("players").upsert({
+          id: SCENE_BACKGROUND_RECORD_ID,
+          data: { sceneBackground: normalized },
+        });
+      } catch (err) {
+        console.warn("[SceneBackground] Falha ao persistir fundo da cena:", err);
+      }
+    },
+    [applySceneBackgroundLocally],
+  );
 
   // Sincronizador de Trilha Sonora Nativo via Supabase e Web Audio API
   const currentRoomId = useMemo(() => {
@@ -666,7 +794,26 @@ export default function App() {
 
   const musicSync = useMemo(() => new MusicSync(supabase), []);
   const [playbackState, setPlaybackState] = useState<PlaybackState | null>(null);
+  const [ostTracks, setOstTracks] = useState<Track[]>(() => musicSync.getTracks());
+  const [soundBoardEffects, setSoundBoardEffects] = useState<SoundBoardEffect[]>(
+    () => musicSync.soundBoard.getSnapshot().effects,
+  );
   const [ostAudioAccepted, setOstAudioAccepted] = useState(false);
+
+  useEffect(() => {
+    setOstTracks(musicSync.getTracks());
+    const unsubTracks = musicSync.onTracksChange((nextTracks) => {
+      setOstTracks(nextTracks);
+    });
+    setSoundBoardEffects(musicSync.soundBoard.getSnapshot().effects);
+    const unsubSfx = musicSync.soundBoard.onSnapshotChange((snap) => {
+      setSoundBoardEffects(snap.effects);
+    });
+    return () => {
+      unsubTracks();
+      unsubSfx();
+    };
+  }, [musicSync]);
 
   const handleUnlockOstAudio = () => {
     if (ostAudioAccepted) return;
@@ -700,13 +847,76 @@ export default function App() {
   });
   const [showModeModal, setShowModeModal] = useState(false);
 
-  // Modo ativo para o usuário local (se tiver override individual, usa ele; senão usa o global)
-  const activeMode: GameMode = (() => {
-    if (userUid && gameModeConfig.playerModes && gameModeConfig.playerModes[userUid]) {
-      return gameModeConfig.playerModes[userUid];
+  // Modo alvo para o usuário local (se tiver override individual, usa ele; senão usa o global)
+  const targetActiveMode: GameMode = resolveActiveGameMode(gameModeConfig, userUid);
+  const [displayedMode, setDisplayedMode] = useState<GameMode>(targetActiveMode);
+  const [modeFadePhase, setModeFadePhase] = useState<DataPushFadePhase>("idle");
+  const isInitialModeMountRef = useRef(true);
+  const prevTargetModeRef = useRef<GameMode>(targetActiveMode);
+  const prevModeUidRef = useRef<string | null>(userUid);
+  const modeFadeTimersRef = useRef<number[]>([]);
+
+  const clearModeFadeTimers = useCallback(() => {
+    modeFadeTimersRef.current.forEach((id) => window.clearTimeout(id));
+    modeFadeTimersRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    return () => clearModeFadeTimers();
+  }, [clearModeFadeTimers]);
+
+  useEffect(() => {
+    const isAuthHydration =
+      prevModeUidRef.current === null && userUid !== null;
+    prevModeUidRef.current = userUid;
+
+    if (isInitialModeMountRef.current) {
+      isInitialModeMountRef.current = false;
+      prevTargetModeRef.current = targetActiveMode;
+      setDisplayedMode(targetActiveMode);
+      return;
     }
-    return gameModeConfig.globalMode || "demologia";
-  })();
+
+    const action = resolveModeTransitionAction({
+      previousMode: prevTargetModeRef.current,
+      nextMode: targetActiveMode,
+      skipTransition: Boolean(gameModeConfig.skipTransition),
+      isAuthHydration,
+    });
+
+    prevTargetModeRef.current = targetActiveMode;
+
+    if (action === "none") return;
+
+    clearModeFadeTimers();
+
+    if (action === "instant") {
+      setModeFadePhase("idle");
+      setDisplayedMode(targetActiveMode);
+      return;
+    }
+
+    // Mesma animação de Fade preto do envio de dados: escurece -> troca modo -> clareia
+    setModeFadePhase("in");
+    const swapTimer = window.setTimeout(() => {
+      setDisplayedMode(targetActiveMode);
+
+      const outTimer = window.setTimeout(() => {
+        setModeFadePhase("out");
+
+        const idleTimer = window.setTimeout(() => {
+          setModeFadePhase("idle");
+        }, MODE_FADE_OUT_CLEANUP_MS);
+        modeFadeTimersRef.current.push(idleTimer);
+      }, MODE_FADE_HOLD_AFTER_SWAP_MS);
+
+      modeFadeTimersRef.current.push(outTimer);
+    }, MODE_FADE_SWAP_DELAY_MS);
+
+    modeFadeTimersRef.current.push(swapTimer);
+  }, [targetActiveMode, gameModeConfig.skipTransition, userUid, clearModeFadeTimers]);
+
+  const activeMode: GameMode = displayedMode;
   const isRlMode = activeMode === "rl";
 
   // Aplica classe .theme-rl no documento para alternar paleta para branco/prata e silenciar elementos paranormais
@@ -840,6 +1050,125 @@ export default function App() {
     isMestreAuth,
     isOnline,
   });
+
+  const handlePublicClockCompleted = useCallback((title: string) => {
+    setRollToast({
+      id: Date.now(),
+      formula: "RELÓGIO COMPLETO",
+      result: "MAX",
+      details: title,
+      critical: "fumble",
+    });
+  }, []);
+
+  const sceneDirectorSync = useSceneDirectorSync({
+    isMestreAuth,
+    isOnline,
+    onPublicClockCompleted: handlePublicClockCompleted,
+  });
+
+  const [runningTimelineSceneId, setRunningTimelineSceneId] = useState<string | null>(null);
+  const timelineTimersRef = useRef<number[]>([]);
+  const sceneFadeTimersRef = useRef<number[]>([]);
+  const sceneFadeRafsRef = useRef<number[]>([]);
+
+  const clearLocalScreenFade = useCallback(() => {
+    for (const raf of sceneFadeRafsRef.current) {
+      cancelAnimationFrame(raf);
+    }
+    sceneFadeRafsRef.current = [];
+    for (const tid of sceneFadeTimersRef.current) {
+      window.clearTimeout(tid);
+    }
+    sceneFadeTimersRef.current = [];
+    setFadeBlockState(null);
+  }, []);
+
+  const runLocalScreenFadeOverlay = useCallback(
+    (cue: SceneFadeCuePayload) => {
+      clearLocalScreenFade();
+      const timingFunction = resolveFadeEasingCss(
+        cue.easingStyle,
+        cue.easingDirection,
+      );
+      const targetOpacity = cue.mode === "blackout" ? 1 : cue.opacity;
+
+      const scheduleHoldAndFadeOut = (rafOffsetMs: number) => {
+        const fadeOutAtMs =
+          Math.round((cue.fadeInSec + cue.holdSeconds) * 1000) + rafOffsetMs;
+        const fadeOutTimer = window.setTimeout(() => {
+          setFadeBlockState({
+            layer: "Tela",
+            opacity: 0,
+            transitionDurationSec: cue.fadeOutSec,
+            timingFunction,
+          });
+          const clearTimer = window.setTimeout(() => {
+            setFadeBlockState(null);
+          }, Math.round(cue.fadeOutSec * 1000) + 90);
+          sceneFadeTimersRef.current.push(clearTimer);
+        }, fadeOutAtMs);
+        sceneFadeTimersRef.current.push(fadeOutTimer);
+      };
+
+      if (cue.fadeInSec > 0) {
+        setFadeBlockState({
+          layer: "Tela",
+          opacity: 0,
+          transitionDurationSec: 0,
+          timingFunction,
+        });
+        const raf1 = requestAnimationFrame(() => {
+          const raf2 = requestAnimationFrame(() => {
+            setFadeBlockState({
+              layer: "Tela",
+              opacity: targetOpacity,
+              transitionDurationSec: cue.fadeInSec,
+              timingFunction,
+            });
+          });
+          sceneFadeRafsRef.current.push(raf2);
+        });
+        sceneFadeRafsRef.current.push(raf1);
+        scheduleHoldAndFadeOut(34);
+      } else {
+        setFadeBlockState({
+          layer: "Tela",
+          opacity: targetOpacity,
+          transitionDurationSec: 0,
+          timingFunction,
+        });
+        scheduleHoldAndFadeOut(0);
+      }
+    },
+    [clearLocalScreenFade],
+  );
+
+  const cancelActiveTimeline = useCallback(() => {
+    for (const tid of timelineTimersRef.current) {
+      window.clearTimeout(tid);
+    }
+    timelineTimersRef.current = [];
+    setRunningTimelineSceneId(null);
+    clearLocalScreenFade();
+  }, [clearLocalScreenFade]);
+
+  useEffect(() => {
+    return () => {
+      for (const tid of timelineTimersRef.current) {
+        window.clearTimeout(tid);
+      }
+      timelineTimersRef.current = [];
+      for (const raf of sceneFadeRafsRef.current) {
+        cancelAnimationFrame(raf);
+      }
+      sceneFadeRafsRef.current = [];
+      for (const tid of sceneFadeTimersRef.current) {
+        window.clearTimeout(tid);
+      }
+      sceneFadeTimersRef.current = [];
+    };
+  }, []);
 
   const activeQuickViewHandout = useMemo(() => {
     if (!quickViewHandout) return null;
@@ -1584,6 +1913,25 @@ export default function App() {
           (err) =>
             console.warn("Fetch tabletop grid request failed:", err.message),
         );
+      supabase
+        .from("players")
+        .select("data")
+        .eq("id", SCENE_BACKGROUND_RECORD_ID)
+        .maybeSingle()
+        .then(
+          ({ data, error }) => {
+            if (!error && data?.data?.sceneBackground) {
+              const incomingBg = normalizeSceneBackgroundPayload(
+                data.data.sceneBackground,
+              );
+              if (incomingBg) {
+                applySceneBackgroundLocally(incomingBg);
+              }
+            }
+          },
+          (err) =>
+            console.warn("Fetch scene background request failed:", err.message),
+        );
     };
 
     const poller = createVisibilityPoller(fetchMasterState, {
@@ -1618,6 +1966,17 @@ export default function App() {
                 return newRecord.data;
               return prev;
             });
+          }
+          if (
+            newRecord?.id === SCENE_BACKGROUND_RECORD_ID &&
+            newRecord?.data?.sceneBackground
+          ) {
+            const incomingBg = normalizeSceneBackgroundPayload(
+              newRecord.data.sceneBackground,
+            );
+            if (incomingBg) {
+              applySceneBackgroundLocally(incomingBg);
+            }
           }
         },
       )
@@ -1846,6 +2205,34 @@ export default function App() {
           });
         }
       })
+      .on("broadcast", { event: "turn_notify" }, ({ payload }) => {
+        if (!payload || typeof payload !== "object") return;
+        const targetId =
+          typeof payload.targetPlayerId === "string" ? payload.targetPlayerId : "";
+        if (!targetId || targetId !== userUidRef.current) return;
+        const roundNum = typeof payload.round === "number" ? payload.round : 1;
+        const charName =
+          typeof payload.characterName === "string" && payload.characterName.trim()
+            ? payload.characterName.trim()
+            : "Seu Personagem";
+        setRollToast({
+          id: Date.now(),
+          formula: `RODADA ${roundNum}`,
+          result: "SUA VEZ",
+          details: `${charName}: é o seu turno na iniciativa.`,
+          critical: "crit",
+        });
+      })
+      .on("broadcast", { event: "scene_fade" }, ({ payload }) => {
+        const cue = normalizeSceneFadeCuePayload(payload);
+        if (!cue) return;
+        runLocalScreenFadeOverlay(cue);
+      })
+      .on("broadcast", { event: "scene_background" }, ({ payload }) => {
+        const incomingBg = normalizeSceneBackgroundPayload(payload);
+        if (!incomingBg) return;
+        applySceneBackgroundLocally(incomingBg);
+      })
       .subscribe();
 
     globalChannelRef.current = channel;
@@ -1978,6 +2365,7 @@ export default function App() {
           .not("id", "eq", "TABLETOP_GRID")
           .not("id", "eq", "CADERNO_CAMPO_SHARED")
           .not("id", "eq", "MASTER_LIBRARY")
+          .not("id", "eq", SCENE_BACKGROUND_RECORD_ID)
           .not("id", "like", "SOUNDBOARD_%")
           .not("id", "like", "MASTER_NOTE_%")
           .then(
@@ -2080,6 +2468,7 @@ export default function App() {
   }, [currentPage, isMestreAuth, userUid]);
 
   const vibrate = (ms: number | number[] = 50) => {
+    if (!playerSettings.hapticsEnabled) return;
     if (navigator.vibrate) navigator.vibrate(ms as any);
   };
 
@@ -2092,6 +2481,7 @@ export default function App() {
   };
 
   const triggerShake = () => {
+    if (!playerSettings.screenShakeEnabled) return;
     setIsShaking(false);
     setTimeout(() => setIsShaking(true), 10);
   };
@@ -2235,6 +2625,7 @@ export default function App() {
     playDiceRollSound({
       ostAudioAccepted,
       critical: payload.testResult.isCritical ? "crit" : "fumble",
+      enabled: playerSettings.diceSoundEnabled,
     });
     vibrate(payload.testResult.isCritical ? [40, 40, 80] : [120, 60, 120]);
 
@@ -2294,6 +2685,7 @@ export default function App() {
     playDiceRollSound({
       ostAudioAccepted,
       critical: outcome.won ? "crit" : "fumble",
+      enabled: playerSettings.diceSoundEnabled,
     });
     vibrate(outcome.won ? [45, 35, 90] : [160, 70, 160]);
 
@@ -2338,16 +2730,19 @@ export default function App() {
       playDiceRollSound({
         ostAudioAccepted,
         critical: roll.critical,
+        enabled: playerSettings.diceSoundEnabled,
       });
       const displayFormula = label ? `${label} (${roll.formula})` : roll.formula;
       setLastRollResult({ ...roll, formula: displayFormula });
-      setRollToast({
-        id: Date.now(),
-        formula: displayFormula,
-        result: roll.result,
-        details: roll.details,
-        critical: roll.critical,
-      });
+      if (playerSettings.showRollNotifications) {
+        setRollToast({
+          id: Date.now(),
+          formula: displayFormula,
+          result: roll.result,
+          details: roll.details,
+          critical: roll.critical,
+        });
+      }
       addToHistory(
         `Rolou: <b>${displayFormula}</b> <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
       );
@@ -2381,15 +2776,18 @@ export default function App() {
     playDiceRollSound({
       ostAudioAccepted,
       critical: roll.critical,
+      enabled: playerSettings.diceSoundEnabled,
     });
     const displayFormula = label ? `${label} (${roll.formula})` : roll.formula;
-    setRollToast({
-      id: Date.now(),
-      formula: displayFormula,
-      result: roll.result,
-      details: roll.details,
-      critical: roll.critical,
-    });
+    if (playerSettings.showRollNotifications) {
+      setRollToast({
+        id: Date.now(),
+        formula: displayFormula,
+        result: roll.result,
+        details: roll.details,
+        critical: roll.critical,
+      });
+    }
     return true;
   };
 
@@ -2735,13 +3133,15 @@ export default function App() {
         details: roll.details,
         critical: roll.critical,
       });
-      setRollToast({
-        id: Date.now(),
-        formula: rollLabel,
-        result: roll.result,
-        details: roll.details,
-        critical: roll.critical,
-      });
+      if (playerSettings.showRollNotifications) {
+        setRollToast({
+          id: Date.now(),
+          formula: rollLabel,
+          result: roll.result,
+          details: roll.details,
+          critical: roll.critical,
+        });
+      }
       addToHistory(
         `<b>${skill.name || "Habilidade"}</b> (${tipoStr}) <br>Fórmula: ${roll.formula} <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
       );
@@ -2938,13 +3338,15 @@ export default function App() {
       details: `${statusText} · ${roll.details}`,
       critical: roll.critical,
     });
-    setRollToast({
-      id: Date.now(),
-      formula: `${ritualLabel} · ${outcome.success ? "SUCESSO" : "FALHA"}`,
-      result: roll.result,
-      details: `${outcome.result} ${outcome.success ? ">" : "≤"} Dif. ${outcome.difficulty} · ${roll.details}`,
-      critical: roll.critical,
-    });
+    if (playerSettings.showRollNotifications) {
+      setRollToast({
+        id: Date.now(),
+        formula: `${ritualLabel} · ${outcome.success ? "SUCESSO" : "FALHA"}`,
+        result: roll.result,
+        details: `${outcome.result} ${outcome.success ? ">" : "≤"} Dif. ${outcome.difficulty} · ${roll.details}`,
+        critical: roll.critical,
+      });
+    }
     addToHistory(
       `<b>${ritualLabel}</b>${affLabels ? ` [${affLabels}]` : ""} <br>Teste: ${RITUAL_TEST_FORMULA} (Dif. ${outcome.difficulty}) <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result" style="color:${statusColor};">Resultado: ${roll.result} — ${outcome.success ? "SUCESSO" : "FALHA"}</span>`,
     );
@@ -3021,13 +3423,15 @@ export default function App() {
       details: roll.details,
       critical: roll.critical,
     });
-    setRollToast({
-      id: Date.now(),
-      formula: rollLabel,
-      result: roll.result,
-      details: roll.details,
-      critical: roll.critical,
-    });
+    if (playerSettings.showRollNotifications) {
+      setRollToast({
+        id: Date.now(),
+        formula: rollLabel,
+        result: roll.result,
+        details: roll.details,
+        critical: roll.critical,
+      });
+    }
     addToHistory(
       `<b>${ritual.name || "Ritual"}</b> (Dano) <br>Fórmula: ${roll.formula} <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
     );
@@ -4202,12 +4606,18 @@ export default function App() {
     }
   };
 
-  const handleApplyGameMode = async (target: "all" | string, newMode: GameMode) => {
+  const handleApplyGameMode = async (
+    target: "all" | string,
+    newMode: GameMode,
+    options?: { skipTransition?: boolean },
+  ) => {
+    const skipTransition = Boolean(options?.skipTransition);
     let updatedConfig: GameModeConfig;
     if (target === "all") {
       updatedConfig = {
         globalMode: newMode,
         playerModes: {},
+        skipTransition,
       };
     } else {
       updatedConfig = {
@@ -4216,6 +4626,7 @@ export default function App() {
           ...(gameModeConfig.playerModes || {}),
           [target]: newMode,
         },
+        skipTransition,
       };
     }
 
@@ -4267,8 +4678,203 @@ export default function App() {
     handleApplyGameMode(playerId, nextMode);
   };
 
+  const triggerSceneFadeCue = useCallback(
+    (cue: SceneFadeCuePayload) => {
+      globalChannelRef.current
+        ?.send({
+          type: "broadcast",
+          event: "scene_fade",
+          payload: cue,
+        })
+        .catch(() => {});
+
+      runLocalScreenFadeOverlay(cue);
+    },
+    [runLocalScreenFadeOverlay],
+  );
+
+  const handleDeactivateDirectorScene = async () => {
+    cancelActiveTimeline();
+    return sceneDirectorSync.deactivateScene();
+  };
+
+  const handleActivateDirectorScene = async (scene: NarrativeScene) => {
+    cancelActiveTimeline();
+    const result = await sceneDirectorSync.activateScene(scene.id);
+    const schedule = buildExecutionSchedule(scene.timelineNodes || []);
+    const hasOstNodeAtZero = schedule.some(
+      (item) => item.node.type === "ost" && item.executeAtMs === 0,
+    );
+    const hasModeNodeAtZero = schedule.some(
+      (item) => item.node.type === "mode" && item.executeAtMs === 0,
+    );
+
+    if (!hasOstNodeAtZero) {
+      if (scene.linkedTrackUrl === "stop") {
+        musicSync.stop().catch((err) => {
+          console.warn("[SceneDirector] Falha ao parar OST:", err);
+        });
+      } else if (scene.linkedTrackUrl && scene.linkedTrackUrl !== "keep") {
+        const targetTrack =
+          musicSync.getTracks().find((t) => t.url === scene.linkedTrackUrl) ||
+          ostTracks.find((t) => t.url === scene.linkedTrackUrl);
+        if (targetTrack) {
+          musicSync.playTrack(targetTrack).catch((err) => {
+            console.warn("[SceneDirector] Falha ao iniciar OST da cena:", err);
+          });
+        }
+      }
+    }
+
+    if (!hasModeNodeAtZero && scene.targetGameMode !== "keep") {
+      handleApplyGameMode("all", scene.targetGameMode).catch((err) => {
+        console.warn("[SceneDirector] Falha ao aplicar modo da cena:", err);
+      });
+    }
+
+    if (schedule.length > 0) {
+      setRunningTimelineSceneId(scene.id);
+      let maxMs = 0;
+
+      for (const item of schedule) {
+        if (item.executeAtMs > maxMs) maxMs = item.executeAtMs;
+        const tid = window.setTimeout(() => {
+          const { node } = item;
+          if (node.type === "ost") {
+            if (node.params.ostAction === "stop") {
+              const fadeOutSec = clampOstFadeOutSec(node.params.ostFadeOutSeconds);
+              musicSync.stop({ fadeOutSeconds: fadeOutSec }).catch(() => {});
+            } else if (node.params.trackUrl) {
+              const targetTrack =
+                musicSync.getTracks().find((t) => t.url === node.params.trackUrl) ||
+                ostTracks.find((t) => t.url === node.params.trackUrl);
+              if (targetTrack) {
+                musicSync.playTrack(targetTrack).catch(() => {});
+              }
+            }
+          } else if (node.type === "sfx" && node.params.effectId) {
+            const effects = musicSync.soundBoard.getSnapshot().effects;
+            const targetFx = effects.find((fx) => fx.id === node.params.effectId);
+            if (targetFx) {
+              musicSync.soundBoard.playEffect({
+                ...targetFx,
+                volume: node.params.volume ?? targetFx.volume,
+              });
+            }
+          } else if (node.type === "mode" && node.params.targetMode) {
+            handleApplyGameMode("all", node.params.targetMode, {
+              skipTransition: true,
+            }).catch(() => {});
+          } else if (node.type === "clock" && node.params.clockId) {
+            const act = node.params.clockAction || "advance";
+            const amt = node.params.amount || 1;
+            if (act === "advance") {
+              void sceneDirectorSync.stepClock(node.params.clockId, amt);
+            } else if (act === "regress") {
+              void sceneDirectorSync.stepClock(node.params.clockId, -amt);
+            } else if (act === "reset") {
+              void sceneDirectorSync.clearClockProgress(node.params.clockId);
+            } else if (act === "reveal" || act === "hide") {
+              const found = sceneDirectorSync.masterState.clocks.find(
+                (c) => c.id === node.params.clockId,
+              );
+              const wantVisible = act === "reveal";
+              if (found && found.visibleToPlayers !== wantVisible) {
+                void sceneDirectorSync.toggleClockVisibility(found.id);
+              }
+            }
+          } else if (node.type === "handout" && node.params.handoutId) {
+            if (node.params.handoutAction === "reveal_secret") {
+              void handoutsSync.toggleHandoutSecret(node.params.handoutId);
+            } else {
+              void handoutsSync.updateHandoutVisibility(node.params.handoutId, "all");
+            }
+          } else if (node.type === "fade") {
+            const opacity = node.params.opacity ?? 0.6;
+            const holdSec = node.params.holdSeconds || node.durationSec || 2.5;
+            triggerSceneFadeCue({
+              mode: "dim",
+              opacity,
+              fadeInSec: 0.7,
+              holdSeconds: holdSec,
+              fadeOutSec: 0.7,
+              easingStyle: "quad",
+              easingDirection: "inout",
+            });
+          } else if (node.type === "blackout") {
+            triggerSceneFadeCue({
+              mode: "blackout",
+              opacity: 1,
+              fadeInSec: clampFadeTransitionSec(node.params.fadeInSec, 1),
+              holdSeconds: clampBlackoutHoldSec(node.params.holdSeconds, 2),
+              fadeOutSec: clampFadeTransitionSec(node.params.fadeOutSec, 1),
+              easingStyle: normalizeBlackoutEasingStyle(node.params.easingStyle),
+              easingDirection: normalizeBlackoutEasingDirection(
+                node.params.easingDirection,
+              ),
+            });
+          } else if (node.type === "background") {
+            if (node.params.backgroundAction === "default") {
+              void handleApplySceneBackground({
+                mode: "default",
+                url: null,
+                mediaType: null,
+                name: "",
+              });
+            } else if (node.params.backgroundUrl) {
+              void handleApplySceneBackground({
+                mode: "custom",
+                url: node.params.backgroundUrl,
+                mediaType:
+                  node.params.backgroundMediaType ||
+                  detectBackgroundMediaType(node.params.backgroundUrl),
+                name: node.params.backgroundName || "",
+              });
+            }
+          }
+        }, item.executeAtMs);
+        timelineTimersRef.current.push(tid);
+      }
+
+      const endTid = window.setTimeout(() => {
+        setRunningTimelineSceneId((curr) => (curr === scene.id ? null : curr));
+      }, maxMs + 400);
+      timelineTimersRef.current.push(endTid);
+    }
+
+    return result;
+  };
+
+  const handleNotifyCombatTurn = useCallback(
+    (participant: any, round: number) => {
+      if (!participant || participant.isExtraSheet || !participant.id) return;
+      globalChannelRef.current
+        ?.send({
+          type: "broadcast",
+          event: "turn_notify",
+          payload: {
+            targetPlayerId: participant.id,
+            characterName: participant.name || "Agente",
+            round,
+          },
+        })
+        .catch(() => {});
+    },
+    [],
+  );
+
+  // Active-scene popup removed for players; overlay renders strictly for public Tension Clocks
+  const showPlayerSceneOverlay =
+    (currentPage === "ficha" ||
+      currentPage === "ficha_extra" ||
+      currentPage === "oraculo" ||
+      currentPage === "handouts") &&
+    sceneDirectorSync.publicState.visibleClocks.length > 0;
+
   return (
-    <MotionConfig reducedMotion="user">
+    <MotionConfig
+      reducedMotion={playerSettings.reducedMotion ? "always" : "user"}
+    >
     <div id="app" className="relative min-h-screen">
       {!ostAudioAccepted && (
         <button
@@ -4280,36 +4886,84 @@ export default function App() {
           className="fixed inset-0 z-[9998] w-full h-[100dvh] bg-transparent border-none outline-none opacity-0 cursor-default select-none touch-manipulation"
         />
       )}
-      <div 
-        id="app-bg"
-        className="fixed inset-0 z-0 pointer-events-none"
-        style={{
-          ...(customStyle.backgroundUrl
-            ? {
-                backgroundImage: isVideoBackground(customStyle.backgroundUrl)
-                  ? "none"
-                  : customStyle.backgroundFade !== undefined
-                    ? `linear-gradient(rgba(0,0,0,${customStyle.backgroundFade / 100}), rgba(0,0,0,${customStyle.backgroundFade / 100})), url(${customStyle.backgroundUrl})`
-                    : `url(${customStyle.backgroundUrl})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-                transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + 's ease-out' : '1s ease-out'}`,
-              }
-            : activeMode === "rl"
-            ? {
-                backgroundImage: `radial-gradient(ellipse 90% 60% at 50% -10%, rgba(168, 85, 247, 0.16) 0%, rgba(30, 20, 48, 0.35) 40%, rgba(8, 8, 12, 0.95) 80%, #060609 100%), linear-gradient(180deg, #0e0c16 0%, #090810 40%, #050508 100%)`,
-                backgroundColor: '#070609',
-                transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + 's ease-out' : '1s ease-out'}`,
-              }
-            : {
-                backgroundImage: `radial-gradient(ellipse 95% 55% at 50% -12%, rgba(181, 42, 48, 0.16) 0%, rgba(110, 14, 20, 0.08) 35%, rgba(11, 11, 14, 0) 70%), radial-gradient(ellipse 70% 45% at 85% 95%, rgba(143, 23, 28, 0.08) 0%, transparent 60%), linear-gradient(180deg, #0e0d12 0%, #0a0a0d 35%, #070709 100%)`,
-                backgroundColor: '#070709',
-              }),
-          transform: cutsceneState?.active ? `scale(${cutsceneState.zoom || 1}) translateZ(0)` : 'translateZ(0)',
-          willChange: 'transform',
-          backfaceVisibility: 'hidden',
-        }}
-      />
+      {(() => {
+        const hasCustomBg = Boolean(customStyle.backgroundUrl);
+        const resolvedBgMediaType = hasCustomBg
+          ? customStyle.backgroundMediaType ||
+            (isVideoBackground(customStyle.backgroundUrl)
+              ? "video"
+              : detectBackgroundMediaType(customStyle.backgroundUrl))
+          : "default";
+        const isVideoBg =
+          hasCustomBg &&
+          (resolvedBgMediaType === "video" ||
+            isVideoBackground(customStyle.backgroundUrl));
+
+        return (
+          <div
+            id="app-bg"
+            data-bg-mode={hasCustomBg ? "custom" : "default"}
+            data-bg-media-type={resolvedBgMediaType}
+            className="fixed inset-0 z-0 pointer-events-none overflow-hidden"
+            style={{
+              ...(hasCustomBg
+                ? {
+                    backgroundColor: "#060609",
+                    transition: `transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + "s ease-out" : "1s ease-out"}`,
+                  }
+                : activeMode === "rl"
+                  ? {
+                      backgroundImage: `radial-gradient(ellipse 90% 60% at 50% -10%, rgba(168, 85, 247, 0.16) 0%, rgba(30, 20, 48, 0.35) 40%, rgba(8, 8, 12, 0.95) 80%, #060609 100%), linear-gradient(180deg, #0e0c16 0%, #090810 40%, #050508 100%)`,
+                      backgroundColor: "#070609",
+                      transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + "s ease-out" : "1s ease-out"}`,
+                    }
+                  : {
+                      backgroundImage: `radial-gradient(ellipse 95% 55% at 50% -12%, rgba(181, 42, 48, 0.16) 0%, rgba(110, 14, 20, 0.08) 35%, rgba(11, 11, 14, 0) 70%), radial-gradient(ellipse 70% 45% at 85% 95%, rgba(143, 23, 28, 0.08) 0%, transparent 60%), linear-gradient(180deg, #0e0d12 0%, #0a0a0d 35%, #070709 100%)`,
+                      backgroundColor: "#070709",
+                    }),
+              transform: cutsceneState?.active
+                ? `scale(${cutsceneState.zoom || 1}) translateZ(0)`
+                : "translateZ(0)",
+              willChange: "transform",
+              backfaceVisibility: "hidden",
+            }}
+          >
+            {hasCustomBg &&
+              (isVideoBg ? (
+                <video
+                  key={customStyle.backgroundUrl!}
+                  src={customStyle.backgroundUrl!}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  data-testid="app-bg-video"
+                  onLoadedData={(e) => {
+                    e.currentTarget.play().catch(() => {});
+                  }}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <img
+                  key={customStyle.backgroundUrl!}
+                  src={customStyle.backgroundUrl!}
+                  alt=""
+                  aria-hidden="true"
+                  data-testid="app-bg-image"
+                  className="w-full h-full object-cover"
+                />
+              ))}
+            {hasCustomBg && customStyle.backgroundFade !== undefined && (
+              <div
+                className="absolute inset-0 transition-opacity duration-500"
+                style={{
+                  backgroundColor: `rgba(0,0,0,${customStyle.backgroundFade / 100})`,
+                }}
+              />
+            )}
+          </div>
+        );
+      })()}
       <AnimatePresence>
       {supabaseConfigError && (
         <MotionModalBackdrop className="fixed inset-0 z-[9999] flex items-center justify-center p-4 overflow-y-auto">
@@ -4460,43 +5114,17 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         </MotionModalBackdrop>
       )}
       </AnimatePresence>
-      {isVideoBackground(customStyle.backgroundUrl) && (
-        <div 
-          className="fixed inset-0 z-[-10] w-full h-full pointer-events-none overflow-hidden bg-black object-cover"
-          style={{
-             transform: cutsceneState?.active ? `scale(${cutsceneState.zoom || 1})` : 'scale(1)',
-             transition: cutsceneState?.active ? `transform ${cutsceneState.duration || 6}s ease-out` : 'transform 1s ease-out'
-          }}
-        >
-          <video
-            src={customStyle.backgroundUrl}
-            autoPlay
-            muted
-            playsInline
-            className="w-full h-full object-cover"
-            onEnded={() => {
-              setCustomStyle((prev: any) => ({ ...prev, backgroundUrl: null }));
-            }}
-          />
-          {customStyle.backgroundFade !== undefined && (
-            <div
-              className="absolute inset-0 transition-opacity duration-500"
-              style={{
-                backgroundColor: `rgba(0,0,0,${customStyle.backgroundFade / 100})`,
-              }}
-            />
-          )}
-        </div>
-      )}
       
-      {/* Fade Block Overlay */}
+      {/* Fade / Blackout Block Overlay */}
       {fadeBlockState !== null && (
-        <div 
-          className={`fixed inset-0 pointer-events-none transition-all ${fadeBlockState.layer === 'Tela' ? 'z-[999]' : 'z-[5]'}`}
+        <div
+          data-testid="scene-fade-overlay"
+          className={`fixed inset-0 bg-black pointer-events-none ${fadeBlockState.layer === 'Tela' ? 'z-[999]' : 'z-[5]'}`}
           style={{
-             backgroundColor: `rgba(0, 0, 0, ${fadeBlockState.active ? fadeBlockState.opacityEnd : fadeBlockState.opacityStart})`,
-             transitionDuration: `${fadeBlockState.duration || 1}s`,
-             transitionTimingFunction: fadeBlockState.fadeStyle === 'Exponencial' ? 'cubic-bezier(0.87, 0, 0.13, 1)' : fadeBlockState.fadeStyle === 'Quad' ? 'cubic-bezier(0.45, 0, 0.55, 1)' : 'linear',
+            opacity: fadeBlockState.opacity ?? 0,
+            transitionProperty: "opacity",
+            transitionDuration: `${fadeBlockState.transitionDurationSec ?? 0.7}s`,
+            transitionTimingFunction: fadeBlockState.timingFunction || "linear",
           }}
         />
       )}
@@ -4616,7 +5244,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         }}
       />
 
-      <ModeTransitionEffect activeMode={activeMode} />
+      <ModeTransitionEffect phase={modeFadePhase} />
 
       {(showModeModal || hasOpenedModeModal) && (
         <Suspense fallback={null}>
@@ -4775,12 +5403,19 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           </button>
         )}
 
+        {showPlayerSceneOverlay && (
+          <PlayerSceneOverlayBar
+            publicState={sceneDirectorSync.publicState}
+            isRlMode={isRlMode}
+          />
+        )}
+
         <MotionTabSwitch
           viewKey={currentPage === "ficha_extra" ? `ficha_extra:${activeFichaId}` : currentPage}
           className="flex-1 flex flex-col w-full min-w-0"
         >
         {(currentPage === "ficha" || currentPage === "ficha_extra") && (
-        <div className="home-sheet-container max-w-7xl mx-auto w-full pt-14 lg:pt-6 pb-32 sm:pb-28 lg:pb-20 px-2.5 sm:px-4 lg:px-6 flex flex-col gap-3.5 sm:gap-4 lg:gap-6">
+        <div className={`home-sheet-container max-w-7xl mx-auto w-full ${showPlayerSceneOverlay ? "pt-2.5 lg:pt-3" : "pt-14 lg:pt-6"} pb-32 sm:pb-28 lg:pb-20 px-2.5 sm:px-4 lg:px-6 flex flex-col gap-3.5 sm:gap-4 lg:gap-6`}>
           {currentPage === "ficha_extra" && activeFichaId !== "main" && (
             <div className="w-full bg-[#0d0d13]/95 border border-[#262634] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 font-mono">
               <div className="flex items-center gap-2 min-w-0">
@@ -5593,7 +6228,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       )}
 
       {currentPage === "oraculo" && (
-        <div className="pb-32 lg:pb-16 max-w-6xl mx-auto w-full px-3 sm:px-4 lg:px-6 pt-14 lg:pt-6 space-y-4">
+        <div className={`pb-32 lg:pb-16 max-w-6xl mx-auto w-full px-3 sm:px-4 lg:px-6 ${showPlayerSceneOverlay ? "pt-2.5 lg:pt-3" : "pt-14 lg:pt-6"} space-y-4`}>
           {/* Seletor / Indicador da Ficha Ativa para Dados e Fórmulas */}
           <div
             className={`border px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 font-mono ${
@@ -5921,6 +6556,36 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         </>
       )}
 
+      {currentPage === "configuracoes" && (
+        <PlayerSettingsView
+          settings={playerSettings}
+          onUpdateSettings={updatePlayerSettings}
+          onResetSettings={resetPlayerSettings}
+          wakeLock={wakeLock}
+          currentOstVolume={playbackState?.volume ?? 1}
+          isOstPlaying={Boolean(playbackState?.is_playing)}
+          isRlMode={isRlMode}
+          onTestSound={() => {
+            unlockDiceAudioContext();
+            playDiceRollSound({
+              ostAudioAccepted: true,
+              critical: "normal",
+              enabled: true,
+            });
+          }}
+          onTestNotification={() =>
+            setRollToast({
+              id: Date.now(),
+              formula: "Teste de Notificação",
+              result: "OK",
+              details: `Duração configurada: ${playerSettings.notificationDurationSec}s`,
+              critical: "normal",
+              kind: "roll",
+            })
+          }
+        />
+      )}
+
       {currentPage === "chat" && (
         <div className="w-full h-[100dvh] max-h-[100dvh] overflow-hidden flex flex-col items-center pt-14 lg:pt-6 px-2 sm:px-4 lg:px-6 pb-3 sm:pb-4">
           <div className="w-full max-w-5xl flex-1 min-h-0 flex flex-col">
@@ -5937,7 +6602,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       )}
 
       {currentPage === "handouts" && (
-        <div className="pt-14 lg:pt-6 pb-28">
+        <div className={`${showPlayerSceneOverlay ? "pt-2.5 lg:pt-3" : "pt-14 lg:pt-6"} pb-28`}>
           <LazyModuleBoundary isRlMode={isRlMode} label="Carregando Handouts...">
             <HandoutsView
               handouts={handoutsSync.handouts}
@@ -5969,6 +6634,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               handoutsCount={handoutsSync.handouts.length}
               libraryCount={masterLibrarySync.items.length}
               isOstPlaying={Boolean(playbackState?.is_playing)}
+              hasActiveScene={Boolean(sceneDirectorSync.masterState.activeSceneId)}
               onRollInitiative={handleRollAllInitiatives}
               onOpenMenu={handleOpenSidebar}
               onReturnToMainSheet={() => {
@@ -6040,6 +6706,38 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                     isMestreAuth ? handleMasterFinalizeUltimoSuspiroDeath : undefined
                   }
                   onRevivePlayer={isMestreAuth ? handleMasterRevivePlayer : undefined}
+                  onNotifyTurn={isMestreAuth ? handleNotifyCombatTurn : undefined}
+                />
+              </div>
+            )}
+
+            {mestreTab === "direcao" && (
+              <div>
+                <MasterSceneDirectorView
+                  masterState={sceneDirectorSync.masterState}
+                  syncStatus={sceneDirectorSync.syncStatus}
+                  syncError={sceneDirectorSync.syncError}
+                  tracks={ostTracks}
+                  soundBoardEffects={soundBoardEffects}
+                  handouts={handoutsSync.handouts}
+                  currentOstUrl={playbackState?.track_url || null}
+                  runningTimelineSceneId={runningTimelineSceneId}
+                  onStopTimeline={cancelActiveTimeline}
+                  onSaveScene={sceneDirectorSync.saveScene}
+                  onSaveSceneNodes={sceneDirectorSync.saveSceneNodes}
+                  onDuplicateScene={sceneDirectorSync.duplicateScene}
+                  onDeleteScene={sceneDirectorSync.deleteScene}
+                  onActivateScene={handleActivateDirectorScene}
+                  onDeactivateScene={handleDeactivateDirectorScene}
+                  onToggleSceneVisibility={sceneDirectorSync.toggleSceneVisibility}
+                  onSaveClock={sceneDirectorSync.saveClock}
+                  onStepClock={sceneDirectorSync.stepClock}
+                  onSetClockFilled={sceneDirectorSync.setClockSegmentsFilled}
+                  onResetClock={sceneDirectorSync.clearClockProgress}
+                  onToggleClockVisibility={sceneDirectorSync.toggleClockVisibility}
+                  onDeleteClock={sceneDirectorSync.deleteClock}
+                  roomId={currentRoomId}
+                  isRlMode={isRlMode}
                 />
               </div>
             )}
@@ -6319,11 +7017,13 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         roll={rollToast}
         onDismiss={dismissRollToast}
         isRlMode={isRlMode}
+        durationSec={playerSettings.notificationDurationSec}
       />
 
       <HandoutNotificationToast
         notification={handoutsSync.toastNotification}
         onDismiss={handoutsSync.dismissToast}
+        durationSec={playerSettings.notificationDurationSec}
         onOpenHandout={(handout) => {
           handoutsSync.markAsRead(handout.id);
           setQuickViewHandout(handout);

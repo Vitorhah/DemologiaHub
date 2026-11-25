@@ -3,6 +3,7 @@ import { Howl, Howler } from "howler";
 import {
   ActiveVolumeFade,
   arePlaybackStatesEqual,
+  clampCustomFadeSeconds,
   clampVolume,
   ClockSample,
   computeSignedDrift,
@@ -14,7 +15,9 @@ import {
   FadeDurationSeconds,
   FadeFinishAction,
   getNextFadeDuration,
+  isBrowserOnline,
   isStalePlaybackState,
+  isTransientNetworkError,
   normalizeFadeDuration,
   normalizeTrackUrl,
   OstHealthStatus,
@@ -94,6 +97,11 @@ export class MusicSync {
   private clockSyncInterval: number | null = null;
   private driftCheckInterval: number | null = null;
   private visibilityHandler: (() => void) | null = null;
+  private onlineHandler: (() => void) | null = null;
+  private visibilityResyncTimer: number | null = null;
+  private playbackRetryTimer: number | null = null;
+  private needsPlaybackResyncOnOnline: boolean = false;
+  private needsTracksResyncOnOnline: boolean = false;
   private reconnectTimer: number | null = null;
   private volumePersistTimer: number | null = null;
 
@@ -202,7 +210,13 @@ export class MusicSync {
 
       this.setupRealtimeSubscriptions();
     } catch (error) {
-      console.error(`[MusicSync] Falha ao conectar na sala ${roomId}:`, error);
+      if (isTransientNetworkError(error)) {
+        console.warn(
+          `[MusicSync] Conexão instável ao entrar na sala ${roomId}; sincronização será retomada ao reconectar.`,
+        );
+      } else {
+        console.error(`[MusicSync] Falha ao conectar na sala ${roomId}:`, error);
+      }
     }
   }
 
@@ -223,6 +237,19 @@ export class MusicSync {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+
+    if (this.visibilityResyncTimer) {
+      clearTimeout(this.visibilityResyncTimer);
+      this.visibilityResyncTimer = null;
+    }
+
+    if (this.playbackRetryTimer) {
+      clearTimeout(this.playbackRetryTimer);
+      this.playbackRetryTimer = null;
+    }
+
+    this.needsPlaybackResyncOnOnline = false;
+    this.needsTracksResyncOnOnline = false;
 
     if (this.volumePersistTimer) {
       clearTimeout(this.volumePersistTimer);
@@ -275,10 +302,13 @@ export class MusicSync {
   // ============================================================================
 
   public async syncClock(sampleCount: number = 1): Promise<void> {
+    if (this.isDestroyed || !isBrowserOnline()) return;
+
     const samples: ClockSample[] = [];
     const iterations = Math.max(1, Math.min(3, sampleCount));
 
     for (let i = 0; i < iterations; i++) {
+      if (this.isDestroyed || !isBrowserOnline()) break;
       try {
         const tRequest = Date.now();
         const { data, error } = await this.supabase.rpc("server_now");
@@ -384,10 +414,12 @@ export class MusicSync {
     direction: FadeDirection;
     fromVolume: number;
     targetVolume: number;
-    durationSeconds?: FadeDurationSeconds;
+    durationSeconds?: number;
     finishAction?: FadeFinishAction;
   }): void {
-    const durationSec = params.durationSeconds ?? this.fadeDurationSeconds;
+    const durationSec = clampCustomFadeSeconds(
+      params.durationSeconds ?? this.fadeDurationSeconds,
+    );
     const finishAction = params.finishAction ?? "none";
 
     this.stopFadeTimers();
@@ -914,21 +946,67 @@ export class MusicSync {
   }
 
   private attachVisibilityListener(): void {
-    if (this.visibilityHandler || typeof document === "undefined") return;
-    this.visibilityHandler = () => {
-      if (!document.hidden && this.roomId && !this.isDestroyed) {
+    if (!this.visibilityHandler && typeof document !== "undefined") {
+      this.visibilityHandler = () => {
+        if (!document.hidden && this.roomId && !this.isDestroyed) {
+          if (this.visibilityResyncTimer) {
+            clearTimeout(this.visibilityResyncTimer);
+          }
+          // Pequeno atraso evita falha transitória de rede ao acordar aba/WebView móvel
+          this.visibilityResyncTimer = window.setTimeout(() => {
+            this.visibilityResyncTimer = null;
+            if (this.isDestroyed || !this.roomId || !isBrowserOnline()) return;
+            this.syncClock(1)
+              .then(() => this.fetchInitialPlaybackState(true))
+              .then(() => {
+                if (this.needsTracksResyncOnOnline) {
+                  return this.fetchTracks().then(() => undefined);
+                }
+              })
+              .catch(() => {});
+          }, 300);
+        }
+      };
+      document.addEventListener("visibilitychange", this.visibilityHandler);
+    }
+
+    if (!this.onlineHandler && typeof window !== "undefined") {
+      this.onlineHandler = () => {
+        if (this.isDestroyed || !this.roomId) return;
+        if (this.playbackRetryTimer) {
+          clearTimeout(this.playbackRetryTimer);
+          this.playbackRetryTimer = null;
+        }
         this.syncClock(1)
           .then(() => this.fetchInitialPlaybackState(true))
+          .then(() => {
+            if (this.needsTracksResyncOnOnline) {
+              return this.fetchTracks().then(() => undefined);
+            }
+          })
+          .then(() => {
+            if (this.isMaster) {
+              return this.soundBoard.fetchEffects().then(() => undefined);
+            }
+          })
           .catch(() => {});
-      }
-    };
-    document.addEventListener("visibilitychange", this.visibilityHandler);
+      };
+      window.addEventListener("online", this.onlineHandler);
+    }
   }
 
   private detachVisibilityListener(): void {
+    if (this.visibilityResyncTimer) {
+      clearTimeout(this.visibilityResyncTimer);
+      this.visibilityResyncTimer = null;
+    }
     if (this.visibilityHandler && typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", this.visibilityHandler);
       this.visibilityHandler = null;
+    }
+    if (this.onlineHandler && typeof window !== "undefined") {
+      window.removeEventListener("online", this.onlineHandler);
+      this.onlineHandler = null;
     }
   }
 
@@ -976,74 +1054,175 @@ export class MusicSync {
   // BUSCAS INICIAIS E REALTIME (BROADCAST + POSTGRES CHANGES)
   // ============================================================================
 
-  private async fetchInitialPlaybackState(resyncOnly = false): Promise<void> {
-    if (!this.roomId) return;
+  private waitBeforeRetry(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+  }
 
-    try {
-      const { data, error } = await this.supabase
-        .from("playback_state")
-        .select("*")
-        .eq("room_id", this.roomId)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data) {
-        const incoming = data as PlaybackState;
-        if (!resyncOnly || !isStalePlaybackState(this.currentState, incoming)) {
-          this.applyPlaybackState(incoming);
-        } else if (incoming.is_playing) {
-          this.checkAndCorrectDrift();
-        }
-      } else {
-        const defaultState: PlaybackState = {
-          room_id: this.roomId,
-          track_url: null,
-          started_at: null,
-          is_playing: false,
-          paused_position: 0,
-          volume: 1.0,
-          loop: false,
-        };
-
-        if (this.isMaster) {
-          const { data: created, error: createErr } = await this.supabase
-            .from("playback_state")
-            .upsert(defaultState, { onConflict: "room_id" })
-            .select()
-            .single();
-
-          if (!createErr && created) {
-            this.applyPlaybackState(created as PlaybackState);
-            return;
-          }
-        }
-        this.applyPlaybackState(defaultState);
+  private scheduleDeferredPlaybackResync(delayMs = 10000): void {
+    if (this.isDestroyed || !this.roomId || !isBrowserOnline()) return;
+    if (this.playbackRetryTimer) return;
+    this.playbackRetryTimer = window.setTimeout(() => {
+      this.playbackRetryTimer = null;
+      if (!this.isDestroyed && this.roomId && isBrowserOnline()) {
+        this.fetchInitialPlaybackState(true).catch(() => {});
       }
-    } catch (err) {
-      console.error("[MusicSync] Erro ao buscar estado inicial de reprodução:", err);
+    }, delayMs);
+  }
+
+  private async fetchInitialPlaybackState(resyncOnly = false): Promise<void> {
+    const targetRoomId = this.roomId;
+    if (!targetRoomId || this.isDestroyed) return;
+
+    if (this.playbackRetryTimer) {
+      clearTimeout(this.playbackRetryTimer);
+      this.playbackRetryTimer = null;
+    }
+
+    const buildDefaultState = (): PlaybackState => ({
+      room_id: targetRoomId,
+      track_url: null,
+      started_at: null,
+      is_playing: false,
+      paused_position: 0,
+      volume: 1.0,
+      loop: false,
+    });
+
+    const applyFallbackStateIfNeeded = () => {
+      if (
+        !resyncOnly &&
+        !this.currentState &&
+        !this.isDestroyed &&
+        this.roomId === targetRoomId
+      ) {
+        this.applyPlaybackState(buildDefaultState());
+      }
+    };
+
+    if (!isBrowserOnline()) {
+      this.needsPlaybackResyncOnOnline = true;
+      applyFallbackStateIfNeeded();
+      return;
+    }
+
+    const retryDelaysMs = [600, 1500];
+
+    for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+      if (this.isDestroyed || this.roomId !== targetRoomId) return;
+
+      try {
+        const { data, error } = await this.supabase
+          .from("playback_state")
+          .select("*")
+          .eq("room_id", targetRoomId)
+          .maybeSingle();
+
+        if (this.isDestroyed || this.roomId !== targetRoomId) return;
+        if (error) throw error;
+
+        this.needsPlaybackResyncOnOnline = false;
+
+        if (data) {
+          const incoming = data as PlaybackState;
+          if (!resyncOnly || !isStalePlaybackState(this.currentState, incoming)) {
+            this.applyPlaybackState(incoming);
+          } else if (incoming.is_playing) {
+            this.checkAndCorrectDrift();
+          }
+        } else {
+          const defaultState = buildDefaultState();
+
+          if (this.isMaster) {
+            const { data: created, error: createErr } = await this.supabase
+              .from("playback_state")
+              .upsert(defaultState, { onConflict: "room_id" })
+              .select()
+              .single();
+
+            if (this.isDestroyed || this.roomId !== targetRoomId) return;
+
+            if (!createErr && created) {
+              this.applyPlaybackState(created as PlaybackState);
+              return;
+            }
+          }
+          this.applyPlaybackState(defaultState);
+        }
+        return;
+      } catch (err) {
+        if (this.isDestroyed || this.roomId !== targetRoomId) return;
+
+        if (isTransientNetworkError(err)) {
+          if (attempt < retryDelaysMs.length && isBrowserOnline()) {
+            await this.waitBeforeRetry(retryDelaysMs[attempt]);
+            continue;
+          }
+          this.needsPlaybackResyncOnOnline = true;
+          applyFallbackStateIfNeeded();
+          console.warn(
+            "[MusicSync] Rede indisponível ao sincronizar estado de reprodução; tentando novamente ao reconectar.",
+          );
+          this.scheduleDeferredPlaybackResync();
+          return;
+        }
+
+        console.error("[MusicSync] Erro ao buscar estado inicial de reprodução:", err);
+        return;
+      }
     }
   }
 
   public async fetchTracks(): Promise<Track[]> {
-    if (!this.roomId) return [];
+    const targetRoomId = this.roomId;
+    if (!targetRoomId || this.isDestroyed) return [];
 
-    try {
-      const { data, error } = await this.supabase
-        .from("tracks")
-        .select("*")
-        .eq("room_id", this.roomId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-
-      this.tracksList = (data || []) as Track[];
-      this.notifyTracksSubscribers(this.tracksList);
+    if (!isBrowserOnline()) {
+      this.needsTracksResyncOnOnline = true;
       return this.tracksList;
-    } catch (err) {
-      console.error("[MusicSync] Erro ao listar faixas:", err);
-      return [];
     }
+
+    const retryDelaysMs = [600, 1500];
+
+    for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+      if (this.isDestroyed || this.roomId !== targetRoomId) return this.tracksList;
+
+      try {
+        const { data, error } = await this.supabase
+          .from("tracks")
+          .select("*")
+          .eq("room_id", targetRoomId)
+          .order("created_at", { ascending: false });
+
+        if (this.isDestroyed || this.roomId !== targetRoomId) return this.tracksList;
+        if (error) throw error;
+
+        this.needsTracksResyncOnOnline = false;
+        this.tracksList = (data || []) as Track[];
+        this.notifyTracksSubscribers(this.tracksList);
+        return this.tracksList;
+      } catch (err) {
+        if (this.isDestroyed || this.roomId !== targetRoomId) return this.tracksList;
+
+        if (isTransientNetworkError(err)) {
+          if (attempt < retryDelaysMs.length && isBrowserOnline()) {
+            await this.waitBeforeRetry(retryDelaysMs[attempt]);
+            continue;
+          }
+          this.needsTracksResyncOnOnline = true;
+          console.warn(
+            "[MusicSync] Rede indisponível ao listar faixas; mantendo lista atual até reconexão.",
+          );
+          return this.tracksList;
+        }
+
+        console.error("[MusicSync] Erro ao listar faixas:", err);
+        return this.tracksList;
+      }
+    }
+
+    return this.tracksList;
   }
 
   private setupRealtimeSubscriptions(): void {
@@ -1095,7 +1274,7 @@ export class MusicSync {
           payload: {
             room_id: string;
             direction: FadeDirection;
-            duration_sec: FadeDurationSeconds;
+            duration_sec: number;
           };
         }) => {
           if (
@@ -1105,7 +1284,7 @@ export class MusicSync {
           ) {
             return;
           }
-          const durationSec = normalizeFadeDuration(payload.duration_sec);
+          const durationSec = clampCustomFadeSeconds(payload.duration_sec);
           if (durationSec <= 0) return;
 
           if (payload.direction === "out") {
@@ -1240,8 +1419,16 @@ export class MusicSync {
       .catch(() => {});
   }
 
-  private broadcastFadeSignal(direction: FadeDirection): void {
-    if (!this.playbackChannel || !this.roomId || this.fadeDurationSeconds <= 0) return;
+  private broadcastFadeSignal(
+    direction: FadeDirection,
+    overrideDurationSec?: number,
+  ): void {
+    const durationSec = clampCustomFadeSeconds(
+      overrideDurationSec !== undefined
+        ? overrideDurationSec
+        : this.fadeDurationSeconds,
+    );
+    if (!this.playbackChannel || !this.roomId || durationSec <= 0) return;
     this.playbackChannel
       .send({
         type: "broadcast",
@@ -1249,7 +1436,7 @@ export class MusicSync {
         payload: {
           room_id: this.roomId,
           direction,
-          duration_sec: this.fadeDurationSeconds,
+          duration_sec: durationSec,
         },
       })
       .catch(() => {});
@@ -1517,21 +1704,26 @@ export class MusicSync {
     }
   }
 
-  public async stop(): Promise<void> {
+  public async stop(options?: { fadeOutSeconds?: number }): Promise<void> {
     if (!this.roomId) return;
 
-    if (this.currentState?.is_playing && this.fadeDurationSeconds > 0) {
+    const effectiveFadeSec =
+      options?.fadeOutSeconds !== undefined
+        ? clampCustomFadeSeconds(options.fadeOutSeconds)
+        : this.fadeDurationSeconds;
+
+    if (this.currentState?.is_playing && effectiveFadeSec > 0) {
       if (this.activeFade?.direction === "out") {
         this.activeFade.finishAction = "stop";
         return;
       }
 
-      this.broadcastFadeSignal("out");
+      this.broadcastFadeSignal("out", effectiveFadeSec);
       this.startVolumeFade({
         direction: "out",
         fromVolume: this.effectiveVolume,
         targetVolume: 0,
-        durationSeconds: this.fadeDurationSeconds,
+        durationSeconds: effectiveFadeSec,
         finishAction: "stop",
       });
       return;
