@@ -30,6 +30,7 @@ export function isSystemRecordId(id: string | null | undefined): boolean {
     id.startsWith("OST_FILE_") ||
     id.startsWith("SOUNDBOARD_") ||
     id.startsWith("MASTER_NOTE_") ||
+    id.startsWith("CREATURE_") ||
     id.startsWith("EXTRA_FICHA_") ||
     id.startsWith("CHAT_") ||
     id.startsWith("MINIGAME_") ||

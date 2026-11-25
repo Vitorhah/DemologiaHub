@@ -1512,20 +1512,33 @@ export function MasterPlayersView({
 
                     <td className="py-3 px-3 sm:px-4 text-right">
                       {p.isExtraSheet ? (
-                        <button
-                          type="button"
-                          onClick={() => onOpenInteractiveSheet(p.rawExtraSheetId)}
-                          className="p-1.5 bg-[#121217] hover:bg-[#1a1a24] text-[#60a5fa] border border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none transition-all cursor-pointer inline-flex items-center justify-center"
-                          title="Abrir ficha"
-                        >
-                          <Maximize2 size={13} />
-                        </button>
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => onOpenInteractiveSheet(p.rawExtraSheetId)}
+                            className="p-1.5 bg-[#121217] hover:bg-[#1a1a24] text-[#60a5fa] border border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none transition-all cursor-pointer inline-flex items-center justify-center"
+                            title="Abrir ficha"
+                            aria-label={`Abrir ficha de ${p.name}`}
+                          >
+                            <Maximize2 size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onKickPlayer(p)}
+                            className="p-1.5 bg-[#121217] hover:bg-[#1a1215] text-[#9ca3af] hover:text-[var(--op-red-bright)] border border-[#202028] hover:border-[var(--op-red)] outline outline-1 outline-[#181820] hover:outline-[var(--op-red-bright)]/40 rounded-none transition-all cursor-pointer inline-flex items-center justify-center"
+                            title="Remover da sessão"
+                            aria-label={`Remover ${p.name} da sessão`}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       ) : (
                         <button
                           type="button"
                           onClick={() => onKickPlayer(p)}
                           className="p-1.5 bg-[#121217] hover:bg-[#1a1215] text-[#9ca3af] hover:text-[var(--op-red-bright)] border border-[#202028] hover:border-[var(--op-red)] outline outline-1 outline-[#181820] hover:outline-[var(--op-red-bright)]/40 rounded-none transition-all cursor-pointer inline-flex items-center justify-center"
                           title="Remover participante"
+                          aria-label={`Remover ${p.name} da sessão`}
                         >
                           <Trash2 size={13} />
                         </button>
@@ -1704,20 +1717,33 @@ export function MasterPlayersView({
                   )}
 
                   {p.isExtraSheet ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpenInteractiveSheet(p.rawExtraSheetId)}
-                      className="p-1.5 text-[#60a5fa] hover:text-white bg-[#121217] hover:bg-[#1a1a24] border border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
-                      title="Abrir ficha"
-                    >
-                      <Maximize2 size={13} />
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onOpenInteractiveSheet(p.rawExtraSheetId)}
+                        className="p-1.5 text-[#60a5fa] hover:text-white bg-[#121217] hover:bg-[#1a1a24] border border-[#202028] outline outline-1 outline-[#181820] hover:outline-[#3c3c4a] rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
+                        title="Abrir ficha"
+                        aria-label={`Abrir ficha de ${p.name}`}
+                      >
+                        <Maximize2 size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onKickPlayer(p)}
+                        className="p-1.5 text-[#9ca3af] hover:text-[var(--op-red-bright)] bg-[#121217] hover:bg-[#1a1215] border border-[#202028] hover:border-[var(--op-red)] outline outline-1 outline-[#181820] hover:outline-[var(--op-red-bright)]/40 rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
+                        title="Remover da sessão"
+                        aria-label={`Remover ${p.name} da sessão`}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </>
                   ) : (
                     <button
                       type="button"
                       onClick={() => onKickPlayer(p)}
                       className="p-1.5 text-[#9ca3af] hover:text-[var(--op-red-bright)] bg-[#121217] hover:bg-[#1a1215] border border-[#202028] hover:border-[var(--op-red)] outline outline-1 outline-[#181820] hover:outline-[var(--op-red-bright)]/40 rounded-none transition-all cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
                       title="Remover da sessão"
+                      aria-label={`Remover ${p.name} da sessão`}
                     >
                       <Trash2 size={13} />
                     </button>

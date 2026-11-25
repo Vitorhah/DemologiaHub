@@ -135,8 +135,8 @@ export function useMasterDataPushSync({
     };
 
     const poller = createVisibilityPoller(fetchPendingPush, {
-      intervalMs: 15000,
-      minWakeGapMs: 1500,
+      intervalMs: 45000,
+      minWakeGapMs: 2000,
       runImmediately: true,
     });
 

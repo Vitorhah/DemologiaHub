@@ -164,8 +164,8 @@ export function useMinigamesSync({
         if (isMestreAuth) fetchMasterResults();
       },
       {
-        intervalMs: 15000,
-        minWakeGapMs: 1500,
+        intervalMs: 45000,
+        minWakeGapMs: 2000,
         runImmediately: true,
       }
     );

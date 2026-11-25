@@ -237,6 +237,22 @@ export function useHandoutsSync({
 
     let isMounted = true;
 
+    let lastMasterVaultSig = "";
+    let lastPlayerHandoutsSig = "";
+
+    const buildHandoutsSig = (items: HandoutItem[], folders: HandoutFolder[]): string => {
+      let sig = `${items.length}:${folders.length}`;
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        sig += `|${it.id}:${it.updatedAt}:${it.secretRevealed ? 1 : 0}:${it.folderId || ""}`;
+      }
+      for (let j = 0; j < folders.length; j++) {
+        const fl = folders[j];
+        sig += `#${fl.id}:${fl.name}`;
+      }
+      return sig;
+    };
+
     const fetchMasterVault = async () => {
       if (!isMestreAuth) return;
       try {
@@ -252,11 +268,15 @@ export function useHandoutsSync({
             ? data.data.items.map(normalizeHandoutItem)
             : [];
           const flds = Array.isArray(data.data.folders) ? data.data.folders : [];
-          setMasterItems(items);
-          setMasterFolders(flds);
-          items.forEach((it: HandoutItem) => {
-            it.sharedWith.forEach((pid) => knownIndividualTargetsRef.current.add(pid));
-          });
+          const nextSig = buildHandoutsSig(items, flds);
+          if (nextSig !== lastMasterVaultSig) {
+            lastMasterVaultSig = nextSig;
+            setMasterItems(items);
+            setMasterFolders(flds);
+            items.forEach((it: HandoutItem) => {
+              it.sharedWith.forEach((pid) => knownIndividualTargetsRef.current.add(pid));
+            });
+          }
         }
         setSyncStatus("synced");
       } catch {
@@ -297,10 +317,14 @@ export function useHandoutsSync({
           }
         });
 
-        setSharedItems(nextShared);
-        setSharedFolders(nextSharedFolders);
-        setIndivItems(nextIndiv);
-        setIndivFolders(nextIndivFolders);
+        const nextSig = `${buildHandoutsSig(nextShared, nextSharedFolders)}||${buildHandoutsSig(nextIndiv, nextIndivFolders)}`;
+        if (nextSig !== lastPlayerHandoutsSig) {
+          lastPlayerHandoutsSig = nextSig;
+          setSharedItems(nextShared);
+          setSharedFolders(nextSharedFolders);
+          setIndivItems(nextIndiv);
+          setIndivFolders(nextIndivFolders);
+        }
         setSyncStatus("synced");
       } catch {
         if (isMounted) setSyncStatus("offline");
@@ -313,8 +337,8 @@ export function useHandoutsSync({
         else fetchPlayerVisibleHandouts();
       },
       {
-        intervalMs: 20000,
-        minWakeGapMs: 1500,
+        intervalMs: 45000,
+        minWakeGapMs: 2000,
         runImmediately: true,
       }
     );

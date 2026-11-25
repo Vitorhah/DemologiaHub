@@ -20,11 +20,13 @@ import {
   Search,
   Send,
   Shield,
+  Skull,
   Sparkles,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
+import type { GameMode } from "../types";
 import {
   MASTER_LIBRARY_TYPE_META,
   MasterLibraryFolder,
@@ -45,7 +47,7 @@ import {
   parseImportedLibraryJson,
 } from "../utils/masterLibrary";
 import { formatPdiModifierChips, PdiItem } from "../utils/pdi";
-import { RITUAL_TEST_FORMULA } from "../utils/rituals";
+import { RITUAL_TEST_FORMULA, type RitualItem } from "../utils/rituals";
 import { RitualAffiliationTag } from "./RitualsSection";
 import { CLINICAL_EASE, MotionAccordion } from "./MotionPrimitives";
 import { PdiEditorModal } from "./PdiEditorModal";
@@ -55,6 +57,7 @@ import {
   MasterLibrarySendModal,
 } from "./MasterLibrarySendModal";
 import { MasterNotesSection } from "./MasterNotesSection";
+import { MasterCreaturesSection } from "./MasterCreaturesSection";
 
 export interface MasterLibraryViewProps {
   masterId?: string | null;
@@ -62,7 +65,12 @@ export interface MasterLibraryViewProps {
   items: MasterLibraryItem[];
   syncStatus: "synced" | "syncing" | "offline";
   syncError: string | null;
-  players: LibraryPlayerTarget[];
+  players: Array<LibraryPlayerTarget & { rituals?: unknown }>;
+  localPlayerRituals?: RitualItem[];
+  localPlayerName?: string;
+  extraFichas?: Record<string, any>[];
+  defaultState?: Record<string, any>;
+  currentGlobalMode?: GameMode;
   isSendingDataPush: boolean;
   onCreateFolder: (
     name: string,
@@ -83,6 +91,10 @@ export interface MasterLibraryViewProps {
     targetPlayerIds: string[],
     payload: MasterDataPushPayload
   ) => Promise<{ ok: boolean; updatedCount: number; error?: string }>;
+  onInvokeCreatureSheets?: (
+    sheets: Record<string, any>[]
+  ) => Promise<{ ok: true; count: number } | { ok: false; error: string }>;
+  onOpenInitiativesTab?: () => void;
 }
 
 const ALL_TYPES: readonly MasterLibraryItemType[] = [
@@ -112,6 +124,11 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
   syncStatus,
   syncError,
   players,
+  localPlayerRituals = [],
+  localPlayerName,
+  extraFichas = [],
+  defaultState = {},
+  currentGlobalMode = "demologia",
   isSendingDataPush,
   onCreateFolder,
   onRenameFolder,
@@ -120,8 +137,13 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
   onDeleteItem,
   onMoveItemToFolder,
   onSendDataToPlayers,
+  onInvokeCreatureSheets,
+  onOpenInitiativesTab,
 }) => {
-  const [activeSection, setActiveSection] = useState<"arquivos" | "anotacoes">("arquivos");
+  const [activeSection, setActiveSection] = useState<
+    "arquivos" | "criaturas" | "anotacoes"
+  >("arquivos");
+  const [creaturesCount, setCreaturesCount] = useState<number | null>(null);
   const [notesCount, setNotesCount] = useState<number | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -482,11 +504,11 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
         )}
       </div>
 
-      {/* SEÇÕES DA BIBLIOTECA: ARQUIVOS / ANOTAÇÕES */}
+      {/* SEÇÕES DA BIBLIOTECA: ARQUIVOS / CRIATURAS / ANOTAÇÕES */}
       <div
         role="tablist"
         aria-label="Seções da Biblioteca do Mestre"
-        className="grid grid-cols-2 bg-[#0c0c10] border border-[#202028] p-1 gap-1"
+        className="grid grid-cols-3 bg-[#0c0c10] border border-[#202028] p-1 gap-1"
       >
         <button
           type="button"
@@ -494,7 +516,7 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
           aria-selected={activeSection === "arquivos"}
           data-testid="library-tab-arquivos"
           onClick={() => setActiveSection("arquivos")}
-          className={`relative min-h-[42px] px-3 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 border transition-colors cursor-pointer touch-manipulation ${
+          className={`relative min-h-[44px] sm:min-h-[42px] px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-wider sm:tracking-widest flex items-center justify-center gap-1.5 sm:gap-2 border transition-colors cursor-pointer touch-manipulation ${
             activeSection === "arquivos"
               ? "bg-[#151520] border-[var(--op-red)]/80 text-white"
               : "bg-transparent border-transparent text-[#8e90a0] hover:text-white hover:bg-[#111119]"
@@ -505,9 +527,33 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
           )}
           <Library size={14} className="text-[var(--op-red-bright)] shrink-0" />
           <span className="truncate">Arquivos</span>
-          <span className="text-[10px] text-[#8e90a0] tabular-nums">
+          <span className="text-[10px] text-[#8e90a0] tabular-nums hidden xs:inline">
             ({items.length})
           </span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "criaturas"}
+          data-testid="library-tab-criaturas"
+          onClick={() => setActiveSection("criaturas")}
+          className={`relative min-h-[44px] sm:min-h-[42px] px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-wider sm:tracking-widest flex items-center justify-center gap-1.5 sm:gap-2 border transition-colors cursor-pointer touch-manipulation ${
+            activeSection === "criaturas"
+              ? "bg-[#151520] border-[var(--op-red)]/80 text-white"
+              : "bg-transparent border-transparent text-[#8e90a0] hover:text-white hover:bg-[#111119]"
+          }`}
+        >
+          {activeSection === "criaturas" && (
+            <span className="absolute top-0 left-0 right-0 h-[2px] bg-[var(--op-red)]" />
+          )}
+          <Skull size={14} className="text-[var(--op-red-bright)] shrink-0" />
+          <span className="truncate">Criaturas</span>
+          {creaturesCount !== null && (
+            <span className="text-[10px] text-[#8e90a0] tabular-nums hidden xs:inline">
+              ({creaturesCount})
+            </span>
+          )}
         </button>
 
         <button
@@ -516,7 +562,7 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
           aria-selected={activeSection === "anotacoes"}
           data-testid="library-tab-anotacoes"
           onClick={() => setActiveSection("anotacoes")}
-          className={`relative min-h-[42px] px-3 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 border transition-colors cursor-pointer touch-manipulation ${
+          className={`relative min-h-[44px] sm:min-h-[42px] px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-wider sm:tracking-widest flex items-center justify-center gap-1.5 sm:gap-2 border transition-colors cursor-pointer touch-manipulation ${
             activeSection === "anotacoes"
               ? "bg-[#151520] border-[var(--op-red)]/80 text-white"
               : "bg-transparent border-transparent text-[#8e90a0] hover:text-white hover:bg-[#111119]"
@@ -528,7 +574,7 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
           <FileText size={14} className="text-[var(--op-red-bright)] shrink-0" />
           <span className="truncate">Anotações</span>
           {notesCount !== null && (
-            <span className="text-[10px] text-[#8e90a0] tabular-nums">
+            <span className="text-[10px] text-[#8e90a0] tabular-nums hidden xs:inline">
               ({notesCount})
             </span>
           )}
@@ -539,6 +585,26 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
         <MasterNotesSection
           masterId={masterId}
           onCountChange={setNotesCount}
+        />
+      ) : activeSection === "criaturas" ? (
+        <MasterCreaturesSection
+          masterId={masterId}
+          libraryItems={items}
+          players={players}
+          localPlayerRituals={localPlayerRituals}
+          localPlayerName={localPlayerName}
+          extraFichas={extraFichas}
+          defaultState={defaultState}
+          currentGlobalMode={currentGlobalMode}
+          onInvokeCreatureSheets={
+            onInvokeCreatureSheets ||
+            (async () => ({
+              ok: false,
+              error: "Invocação de criaturas indisponível nesta sessão.",
+            }))
+          }
+          onOpenInitiativesTab={onOpenInitiativesTab}
+          onCountChange={setCreaturesCount}
         />
       ) : (
         <>

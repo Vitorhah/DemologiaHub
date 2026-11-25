@@ -87,10 +87,16 @@ export function useMasterLibrarySync({
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const localMutationTsRef = useRef<number>(0);
+  const lastAppliedSigRef = useRef<string>("");
+  const hasMountedRef = useRef<boolean>(false);
 
-  // Persist local cache whenever Master modifies library
+  // Persist local cache only when Master actually modifies library after initial hydration
   useEffect(() => {
     if (!isMestreAuth) return;
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
     saveLocalLibrary(folders, items);
   }, [folders, items, isMestreAuth]);
 
@@ -109,6 +115,13 @@ export function useMasterLibrarySync({
       if (remoteUpdatedAt > 0 && remoteUpdatedAt < localMutationTsRef.current) {
         return;
       }
+      const rawFoldersLen = Array.isArray(rawData.folders) ? rawData.folders.length : 0;
+      const rawItemsLen = Array.isArray(rawData.items) ? rawData.items.length : 0;
+      const sig = `${remoteUpdatedAt}|${rawFoldersLen}|${rawItemsLen}`;
+      if (remoteUpdatedAt > 0 && sig === lastAppliedSigRef.current) {
+        return;
+      }
+      lastAppliedSigRef.current = sig;
       const nextFolders = normalizeLibraryFolders(rawData.folders);
       const nextItems = normalizeLibraryItems(rawData.items, nextFolders);
       setFolders(nextFolders);
@@ -142,8 +155,8 @@ export function useMasterLibrarySync({
     };
 
     const poller = createVisibilityPoller(fetchMasterLibrary, {
-      intervalMs: 25000,
-      minWakeGapMs: 2000,
+      intervalMs: 60000,
+      minWakeGapMs: 2500,
       runImmediately: true,
     });
 

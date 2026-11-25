@@ -2,7 +2,6 @@ import React from "react";
 import {
   Users,
   Music,
-  Files,
   ArrowLeft,
   LayoutGrid,
   List,
@@ -24,7 +23,6 @@ export type MasterTabId =
   | "fichas"
   | "direcao"
   | "ost"
-  | "extras"
   | "handouts"
   | "biblioteca"
   | "utilities";
@@ -33,7 +31,6 @@ export interface MasterHeaderBarProps {
   activeTab: MasterTabId;
   setActiveTab: (tab: MasterTabId) => void;
   playersCount: number;
-  extrasCount: number;
   handoutsCount?: number;
   libraryCount?: number;
   hasActiveScene?: boolean;
@@ -53,7 +50,6 @@ export function MasterHeaderBar({
   activeTab,
   setActiveTab,
   playersCount,
-  extrasCount,
   handoutsCount,
   libraryCount,
   hasActiveScene = false,
@@ -87,12 +83,6 @@ export function MasterHeaderBar({
       isActiveTrack: isOstPlaying,
     },
     {
-      id: "extras" as const,
-      label: "Extras",
-      icon: Files,
-      count: extrasCount,
-    },
-    {
       id: "handouts" as const,
       label: "Handouts",
       icon: FolderOpen,
@@ -112,7 +102,7 @@ export function MasterHeaderBar({
   ];
 
   return (
-    <header className="w-full bg-[#0c0c10]/95 backdrop-blur-md border-b border-[#202028] sticky top-0 z-30 font-mono transition-colors duration-200">
+    <header className="w-full bg-[#0c0c10]/[0.98] border-b border-[#202028] sticky top-0 z-30 font-mono transition-colors duration-200">
       <div className="max-w-7xl mx-auto px-2.5 sm:px-4">
         <div className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-2 py-2.5">
           {/* Esquerda: Botão Sidebar (Mobile) + Voltar + Abas com indicador inferior animado */}

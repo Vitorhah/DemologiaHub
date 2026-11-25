@@ -36,6 +36,9 @@ export default defineConfig(() => {
             if (id.includes('/lucide-react/')) {
               return 'vendor-icons';
             }
+            if (id.includes('/howler/')) {
+              return 'vendor-audio';
+            }
           },
         },
       },

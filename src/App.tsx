@@ -219,9 +219,6 @@ const MasterOstPanel = React.lazy(() =>
 const MasterPlayersView = React.lazy(() =>
   import("./components/MasterPlayersView").then((m) => ({ default: m.MasterPlayersView }))
 );
-const MasterExtrasView = React.lazy(() =>
-  import("./components/MasterExtrasView").then((m) => ({ default: m.MasterExtrasView }))
-);
 const MasterGameModeModal = React.lazy(() =>
   import("./components/MasterGameModeModal").then((m) => ({ default: m.MasterGameModeModal }))
 );
@@ -1224,53 +1221,58 @@ export default function App() {
     [userUid, state?.name, isMestreAuth],
   );
 
-  const toggleFichaSync = async (ficha: any) => {
-    if (!userUid) {
-      alert("Você precisa estar conectado à internet/Supabase para sincronizar fichas.");
-      return;
-    }
-    const isNowSynced = !ficha.synchronized;
-    if (isNowSynced) {
-      const { last_local_edit, ...pureData } = ficha;
-      const updatedFicha = {
-        ...pureData,
-        synchronized: true,
-        ...(isOcultistaSheetName(ficha.name) ? { manualOcultistaSync: true } : {}),
-      };
-      setExtraFichas((prev) =>
-        prev.map((f) => (f.id === ficha.id ? updatedFicha : f))
-      );
-      const { error } = await supabase
-        .from("players")
-        .upsert({
-          id: `EXTRA_FICHA_${ficha.id}`,
-          data: updatedFicha,
-          updated_at: new Date().toISOString(),
-        });
-      if (error) {
-        console.warn("Erro ao sincronizar ficha extra:", error.message);
-        handleSupabaseError(error, "Sincronizar Ficha Extra");
+  const handleInvokeCreatureSheets = useCallback(
+    async (
+      sheets: Record<string, any>[],
+    ): Promise<{ ok: true; count: number } | { ok: false; error: string }> => {
+      if (!isMestreAuth) {
+        return {
+          ok: false,
+          error: "Apenas o Mestre pode invocar criaturas na sessão ativa.",
+        };
       }
-    } else {
-      const updatedFicha = {
-        ...ficha,
-        synchronized: false,
-        manualOcultistaSync: false,
-        last_local_edit: undefined,
-      };
-      setExtraFichas((prev) =>
-        prev.map((f) => (f.id === ficha.id ? updatedFicha : f))
-      );
-      const { error } = await supabase
-        .from("players")
-        .delete()
-        .eq("id", `EXTRA_FICHA_${ficha.id}`);
-      if (error) {
-        console.warn("Erro ao parar sincronização de ficha extra:", error.message);
-        handleSupabaseError(error, "Desativar Sincronização Ficha Extra");
+      if (!userUid) {
+        return {
+          ok: false,
+          error: "Você precisa estar conectado ao Supabase para invocar criaturas na sessão.",
+        };
       }
-    }
-  };
+      if (!Array.isArray(sheets) || sheets.length === 0) {
+        return { ok: false, error: "Nenhuma criatura selecionada para invocação." };
+      }
+
+      const nowIso = new Date().toISOString();
+      const rows = sheets.map((sheet) => {
+        const { last_local_edit, ...pureData } = sheet;
+        return {
+          id: `EXTRA_FICHA_${sheet.id}`,
+          data: {
+            ...pureData,
+            synchronized: true,
+          },
+          updated_at: nowIso,
+        };
+      });
+
+      const { error } = await supabase.from("players").upsert(rows);
+      if (error) {
+        console.warn("Erro ao invocar criatura na sessão:", error.message);
+        handleSupabaseError(error, "Invocar Criatura na Sessão");
+        return {
+          ok: false,
+          error: error.message || "Falha ao sincronizar criatura invocada na sessão.",
+        };
+      }
+
+      setExtraFichas((prev) => [
+        ...sheets.map((s) => ({ ...s, synchronized: true })),
+        ...prev,
+      ]);
+
+      return { ok: true, count: sheets.length };
+    },
+    [isMestreAuth, userUid],
+  );
 
   const extraSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -1704,8 +1706,8 @@ export default function App() {
     };
 
     const poller = createVisibilityPoller(fetchOwnState, {
-      intervalMs: 20000,
-      minWakeGapMs: 1500,
+      intervalMs: 45000,
+      minWakeGapMs: 2000,
       runImmediately: true,
     });
 
@@ -1870,73 +1872,57 @@ export default function App() {
     const fetchMasterState = () => {
       supabase
         .from("players")
-        .select("data")
-        .eq("id", "MASTER_STATE")
-        .maybeSingle()
+        .select("id, data")
+        .in("id", ["MASTER_STATE", "TABLETOP_GRID", SCENE_BACKGROUND_RECORD_ID])
         .then(
           ({ data, error }) => {
             if (error) {
-              console.warn("Error fetching master state:", error.message);
+              console.warn("Error fetching master global state:", error.message);
               return;
             }
-            if (data?.data?.modeConfig) {
-              setGameModeConfig((prev: any) => {
-                if (JSON.stringify(prev) !== JSON.stringify(data.data.modeConfig)) {
-                  try {
-                    localStorage.setItem("demologia_game_mode_config", JSON.stringify(data.data.modeConfig));
-                  } catch {}
-                  return data.data.modeConfig;
+            if (!Array.isArray(data)) return;
+            for (const row of data) {
+              if (row.id === "MASTER_STATE" && row.data?.modeConfig) {
+                setGameModeConfig((prev: any) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(row.data.modeConfig)) {
+                    try {
+                      localStorage.setItem(
+                        "demologia_game_mode_config",
+                        JSON.stringify(row.data.modeConfig),
+                      );
+                    } catch {}
+                    return row.data.modeConfig;
+                  }
+                  return prev;
+                });
+              } else if (row.id === "TABLETOP_GRID" && row.data) {
+                setGlobalGridState((prev: any) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(row.data)) {
+                    return row.data;
+                  }
+                  return prev;
+                });
+              } else if (
+                row.id === SCENE_BACKGROUND_RECORD_ID &&
+                row.data?.sceneBackground
+              ) {
+                const incomingBg = normalizeSceneBackgroundPayload(
+                  row.data.sceneBackground,
+                );
+                if (incomingBg) {
+                  applySceneBackgroundLocally(incomingBg);
                 }
-                return prev;
-              });
-            }
-          },
-          (err) =>
-            console.warn("Fetch master state request failed:", err.message),
-        );
-
-      supabase
-        .from("players")
-        .select("data")
-        .eq("id", "TABLETOP_GRID")
-        .maybeSingle()
-        .then(
-          ({ data, error }) => {
-            if (!error && data?.data) {
-              setGlobalGridState((prev: any) => {
-                if (JSON.stringify(prev) !== JSON.stringify(data.data))
-                  return data.data;
-                return prev;
-              });
-            }
-          },
-          (err) =>
-            console.warn("Fetch tabletop grid request failed:", err.message),
-        );
-      supabase
-        .from("players")
-        .select("data")
-        .eq("id", SCENE_BACKGROUND_RECORD_ID)
-        .maybeSingle()
-        .then(
-          ({ data, error }) => {
-            if (!error && data?.data?.sceneBackground) {
-              const incomingBg = normalizeSceneBackgroundPayload(
-                data.data.sceneBackground,
-              );
-              if (incomingBg) {
-                applySceneBackgroundLocally(incomingBg);
               }
             }
           },
           (err) =>
-            console.warn("Fetch scene background request failed:", err.message),
+            console.warn("Fetch master global state request failed:", err.message),
         );
     };
 
     const poller = createVisibilityPoller(fetchMasterState, {
-      intervalMs: 20000,
-      minWakeGapMs: 1500,
+      intervalMs: 45000,
+      minWakeGapMs: 2000,
       runImmediately: true,
     });
 
@@ -2258,7 +2244,8 @@ export default function App() {
           }
           if (!error && data) {
             setExtraFichas((prev) => {
-              let updated = [...prev];
+              let changed = false;
+              let updated = prev;
               data.forEach((row) => {
                 const sheetId = row.id.replace("EXTRA_FICHA_", "");
                 const sheetProfile = normalizeCharacterProfile(row.data?.profile);
@@ -2277,21 +2264,29 @@ export default function App() {
                 if (idx >= 0) {
                   if (updated[idx].last_local_edit) return;
                   if (JSON.stringify(updated[idx]) !== JSON.stringify(sheetData)) {
+                    if (!changed) {
+                      updated = [...updated];
+                      changed = true;
+                    }
                     updated[idx] = sheetData;
                   }
                 } else {
+                  if (!changed) {
+                    updated = [...updated];
+                    changed = true;
+                  }
                   updated.push(sheetData);
                 }
               });
-              return updated;
+              return changed ? updated : prev;
             });
           }
         });
     };
 
     const poller = createVisibilityPoller(fetchExtraFichasGlobal, {
-      intervalMs: 20000,
-      minWakeGapMs: 1500,
+      intervalMs: 45000,
+      minWakeGapMs: 2000,
       runImmediately: true,
     });
 
@@ -2368,6 +2363,7 @@ export default function App() {
           .not("id", "eq", SCENE_BACKGROUND_RECORD_ID)
           .not("id", "like", "SOUNDBOARD_%")
           .not("id", "like", "MASTER_NOTE_%")
+          .not("id", "like", "CREATURE_%")
           .then(
             ({ data, error }) => {
               if (error) {
@@ -2415,8 +2411,8 @@ export default function App() {
       };
 
       const poller = createVisibilityPoller(fetchPlayersList, {
-        intervalMs: 20000,
-        minWakeGapMs: 1500,
+        intervalMs: 45000,
+        minWakeGapMs: 2000,
         runImmediately: true,
       });
 
@@ -5275,14 +5271,29 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               <div className="w-10 h-1 bg-[#32323e] rounded-none" />
             </div>
             <h2 className="text-base font-bold text-white uppercase tracking-wider font-mono mb-2">
-              Confirmar Desconexão
+              {playerToKick.isExtraSheet
+                ? "Remover Criatura da Sessão"
+                : "Confirmar Desconexão"}
             </h2>
             <p className="text-xs text-[#8c8c96] font-mono leading-relaxed mb-6 border-b border-[#1c1c24] pb-4">
-              Deseja desconectar a ficha de{" "}
-              <strong className="text-white uppercase font-bold">
-                {playerToKick.name}
-              </strong>{" "}
-              da sessão atual? A ficha poderá se reconectar caso o jogador clique em Conectar.
+              {playerToKick.isExtraSheet ? (
+                <>
+                  Deseja remover o exemplar{" "}
+                  <strong className="text-white uppercase font-bold">
+                    {playerToKick.name}
+                  </strong>{" "}
+                  das Iniciativas da sessão atual? A ficha original na Biblioteca de
+                  Criaturas não será alterada nem excluída.
+                </>
+              ) : (
+                <>
+                  Deseja desconectar a ficha de{" "}
+                  <strong className="text-white uppercase font-bold">
+                    {playerToKick.name}
+                  </strong>{" "}
+                  da sessão atual? A ficha poderá se reconectar caso o jogador clique em Conectar.
+                </>
+              )}
             </p>
 
             <div className="flex gap-2.5">
@@ -5296,9 +5307,22 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               <button
                 type="button"
                 onClick={async () => {
-                  const id = playerToKick.id;
+                  const target = playerToKick;
                   setPlayerToKick(null);
-                  await supabase.from("players").delete().eq("id", id);
+                  if (target.isExtraSheet && target.rawExtraSheetId) {
+                    setExtraFichas((prev) =>
+                      prev.filter((f) => f.id !== target.rawExtraSheetId),
+                    );
+                    if (activeFichaId === target.rawExtraSheetId) {
+                      setActiveFichaId("main");
+                    }
+                    await supabase
+                      .from("players")
+                      .delete()
+                      .eq("id", `EXTRA_FICHA_${target.rawExtraSheetId}`);
+                  } else {
+                    await supabase.from("players").delete().eq("id", target.id);
+                  }
                 }}
                 className="flex-1 min-h-[44px] bg-blood-red hover:bg-red-700 active:scale-95 border border-blood-red text-white font-mono text-xs uppercase tracking-wider font-bold py-2.5 px-3 rounded-none transition-all shadow-[0_0_15px_rgba(143,23,28,0.4)] cursor-pointer text-center touch-manipulation"
               >
@@ -6630,7 +6654,6 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               activeTab={mestreTab}
               setActiveTab={setMestreTab}
               playersCount={players.length}
-              extrasCount={extraFichas.length}
               handoutsCount={handoutsSync.handouts.length}
               libraryCount={masterLibrarySync.items.length}
               isOstPlaying={Boolean(playbackState?.is_playing)}
@@ -6748,34 +6771,6 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               </div>
             )}
 
-            {mestreTab === "extras" && (
-              <div>
-                <MasterExtrasView
-                  extraFichas={extraFichas}
-                  setExtraFichas={setExtraFichas}
-                  defaultState={defaultState}
-                  activeFichaId={activeFichaId}
-                  setActiveFichaId={setActiveFichaId}
-                  setCurrentPage={setCurrentPage}
-                  setMestreTab={setMestreTab}
-                  toggleFichaSync={toggleFichaSync}
-                  supabase={supabase}
-                  currentGlobalMode={gameModeConfig.globalMode || "demologia"}
-                  isMaster={isMestreAuth}
-                  onUpdatePdis={isMestreAuth ? updatePlayerPdis : undefined}
-                  onUpdateEp={isMestreAuth ? updatePlayerEp : undefined}
-                  onUpdateLv={isMestreAuth ? updatePlayerLv : undefined}
-                  onAdvanceUltimoSuspiroTurn={
-                    isMestreAuth ? handleMasterAdvanceUltimoSuspiroTurn : undefined
-                  }
-                  onFinalizeUltimoSuspiroDeath={
-                    isMestreAuth ? handleMasterFinalizeUltimoSuspiroDeath : undefined
-                  }
-                  onRevivePlayer={isMestreAuth ? handleMasterRevivePlayer : undefined}
-                />
-              </div>
-            )}
-
             {mestreTab === "handouts" && (
               <div className="pt-4">
                 <HandoutsView
@@ -6805,6 +6800,11 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   syncStatus={masterLibrarySync.syncStatus}
                   syncError={masterLibrarySync.syncError}
                   players={players}
+                  localPlayerRituals={state.rituals}
+                  localPlayerName={state.name}
+                  extraFichas={extraFichas}
+                  defaultState={defaultState}
+                  currentGlobalMode={gameModeConfig.globalMode || "demologia"}
                   isSendingDataPush={masterDataPushSync.isSending}
                   onCreateFolder={masterLibrarySync.createFolder}
                   onRenameFolder={masterLibrarySync.renameFolder}
@@ -6813,6 +6813,8 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   onDeleteItem={masterLibrarySync.deleteItem}
                   onMoveItemToFolder={masterLibrarySync.moveItemToFolder}
                   onSendDataToPlayers={masterDataPushSync.sendDataToPlayers}
+                  onInvokeCreatureSheets={handleInvokeCreatureSheets}
+                  onOpenInitiativesTab={() => setMestreTab("fichas")}
                 />
               </div>
             )}
