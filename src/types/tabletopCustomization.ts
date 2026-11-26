@@ -52,12 +52,16 @@ export interface TabletopBackgroundConfig {
 export interface TabletopInterfaceStyleConfig {
   cornerRadius: TabletopCornerRadius;
   shadowIntensity: TabletopShadowIntensity;
-  /** Transparência/opacidade dos painéis em porcentagem (60 a 100). */
+  /** Opacidade dos painéis em porcentagem (0 a 100; 0 = 100% transparente / painéis invisíveis). */
   panelOpacity: number;
   density: TabletopInterfaceDensity;
   animationIntensity: TabletopAnimationIntensity;
   /** Quando true, deixa apenas o painel de fundo (caixa/borda/sombra) de HP e PE invisível, preservando todos os elementos internos. */
   hideHpPePanelBackground: boolean;
+  /** Escala de tamanho da logo em porcentagem (50 a 180; padrão 100). */
+  logoScale: number;
+  /** Espessura da outline (contorno) do nome da ficha em px (0 a 10; padrão 2.5). */
+  sheetNameOutlineSize: number;
 }
 
 export interface TabletopCustomizationConfig {

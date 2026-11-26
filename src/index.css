@@ -1565,11 +1565,14 @@ html[data-custom-theme="true"] .master-header-bar {
 
 html[data-custom-theme="true"] .hud-wrapper-box,
 html[data-custom-theme="true"] .section,
+html[data-custom-theme="true"] .dice-panel,
+html[data-custom-theme="true"] .skill-details,
 html[data-custom-theme="true"] .var-box,
+html[data-custom-theme="true"] .var-list-row,
 html[data-custom-theme="true"] .inv-slot,
 html[data-custom-theme="true"] .btn-menu {
     background: var(--ct-panel-rgba) !important;
-    border-color: var(--ct-border) !important;
+    border-color: var(--ct-panel-border-rgba, var(--ct-border)) !important;
     box-shadow: var(--ct-shadow-panel) !important;
     color: var(--ct-text) !important;
     border-radius: var(--ct-radius) !important;
@@ -1577,7 +1580,7 @@ html[data-custom-theme="true"] .btn-menu {
 
 html[data-custom-theme="true"] .hud-container {
     background: radial-gradient(circle at 50% -10%, var(--ct-primary-soft) 0%, transparent 72%) !important;
-    border-bottom-color: var(--ct-border) !important;
+    border-bottom-color: var(--ct-panel-border-rgba, var(--ct-border)) !important;
 }
 
 html[data-custom-theme="true"] .eye-logo {
@@ -1599,7 +1602,7 @@ html[data-custom-theme="true"] #app :is(
     [class*="bg-[#101016]"],
     [class*="bg-[#0d0d13]"],
     [class*="bg-[#0b0b0f]"]
-):not([data-testid="customization-live-preview"]):not([data-testid="customization-live-preview"] *) {
+):not([role="dialog"]):not([role="dialog"] *):not([data-testid="customization-live-preview"]):not([data-testid="customization-live-preview"] *) {
     background-color: var(--ct-panel-rgba) !important;
 }
 
@@ -1615,8 +1618,8 @@ html[data-custom-theme="true"] #app :is(
     [class*="border-[#2a2a38]"],
     [class*="border-[#24242e]"],
     [class*="border-[#242430]"]
-):not([data-testid="customization-live-preview"]):not([data-testid="customization-live-preview"] *) {
-    border-color: var(--ct-border) !important;
+):not([role="dialog"]):not([role="dialog"] *):not([data-testid="customization-live-preview"]):not([data-testid="customization-live-preview"] *) {
+    border-color: var(--ct-panel-border-rgba, var(--ct-border)) !important;
 }
 
 html[data-custom-theme="true"] #app :is(
@@ -1695,5 +1698,102 @@ html[data-ct-hide-hud-panel="true"].theme-rl .hud-container {
     border-width: 0 !important;
     box-shadow: none !important;
 }
+
+/* Painéis 100% transparentes (eles somem, mantendo textos, campos, barras e botões funcionais) */
+html[data-ct-panels-transparent="full"] .hud-wrapper-box,
+html[data-ct-panels-transparent="full"] .hud-container,
+html[data-ct-panels-transparent="full"] .section,
+html[data-ct-panels-transparent="full"] .dice-panel,
+html[data-ct-panels-transparent="full"] .skill-details,
+html[data-ct-panels-transparent="full"] .var-box,
+html[data-ct-panels-transparent="full"] .var-list-row,
+html[data-ct-panels-transparent="full"] .inv-slot,
+html[data-ct-panels-transparent="full"] .btn-menu,
+html[data-ct-panels-transparent="full"] .btn-add,
+html[data-ct-panels-transparent="full"] .app-sidebar-panel,
+html[data-ct-panels-transparent="full"] .master-header-bar,
+html[data-ct-panels-transparent="full"].theme-rl .hud-wrapper-box,
+html[data-ct-panels-transparent="full"].theme-rl .hud-container,
+html[data-ct-panels-transparent="full"].theme-rl .section,
+html[data-ct-panels-transparent="full"].theme-rl .dice-panel,
+html[data-ct-panels-transparent="full"].theme-rl .var-box,
+html[data-ct-panels-transparent="full"].theme-rl .var-list-row,
+html[data-ct-panels-transparent="full"].theme-rl .inv-slot,
+html[data-ct-panels-transparent="full"].theme-rl .btn-menu {
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+}
+
+html[data-ct-panels-transparent="full"] #app :is(
+    [class*="bg-[#0e0e13]"],
+    [class*="bg-[#0c0c10]"],
+    [class*="bg-[#151518]"],
+    [class*="bg-[#111115]"],
+    [class*="bg-[#121218]"],
+    [class*="bg-[#101016]"],
+    [class*="bg-[#0d0d13]"],
+    [class*="bg-[#0b0b0f]"]
+):not([role="dialog"]):not([role="dialog"] *):not([data-testid="customization-live-preview"]):not([data-testid="customization-live-preview"] *) {
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+}
+
+/* Tamanho personalizado da logo (ficha + sidebar, responsivo e sem overflow) */
+html[data-ct-logo-scale="custom"] .eye-logo {
+    width: min(calc(180px * var(--ct-logo-scale, 1)), 86vw) !important;
+    max-width: min(calc(180px * var(--ct-logo-scale, 1)), 86vw) !important;
+    height: auto !important;
+}
+
+html[data-ct-logo-scale="custom"].theme-rl .eye-logo {
+    width: min(calc(126px * var(--ct-logo-scale, 1)), 82vw) !important;
+    max-width: min(calc(126px * var(--ct-logo-scale, 1)), 82vw) !important;
+    height: auto !important;
+}
+
+@media (max-width: 640px) {
+    html[data-ct-logo-scale="custom"] .eye-logo {
+        width: min(calc(136px * var(--ct-logo-scale, 1)), 82vw) !important;
+        max-width: min(calc(136px * var(--ct-logo-scale, 1)), 82vw) !important;
+    }
+
+    html[data-ct-logo-scale="custom"].theme-rl .eye-logo {
+        width: min(calc(100px * var(--ct-logo-scale, 1)), 78vw) !important;
+        max-width: min(calc(100px * var(--ct-logo-scale, 1)), 78vw) !important;
+    }
+}
+
+html[data-ct-logo-scale="custom"] .sidebar-brand-logo {
+    width: clamp(18px, calc(24px * var(--ct-logo-scale, 1)), 40px) !important;
+    height: clamp(18px, calc(24px * var(--ct-logo-scale, 1)), 40px) !important;
+}
+
+/* Tamanho personalizado da outline (contorno) do nome da ficha */
+html[data-ct-name-outline="custom"] .character-name-input {
+    -webkit-text-stroke: var(--ct-name-outline, 2.5px) #050507 !important;
+    paint-order: stroke fill;
+    text-shadow:
+        calc(var(--ct-name-outline-shadow, 1.5px) * -1) calc(var(--ct-name-outline-shadow, 1.5px) * -1) 0 #050507,
+        var(--ct-name-outline-shadow, 1.5px) calc(var(--ct-name-outline-shadow, 1.5px) * -1) 0 #050507,
+        calc(var(--ct-name-outline-shadow, 1.5px) * -1) var(--ct-name-outline-shadow, 1.5px) 0 #050507,
+        var(--ct-name-outline-shadow, 1.5px) var(--ct-name-outline-shadow, 1.5px) 0 #050507,
+        0 calc(var(--ct-name-outline-shadow, 1.5px) * -1) 0 #050507,
+        0 var(--ct-name-outline-shadow, 1.5px) 0 #050507,
+        calc(var(--ct-name-outline-shadow, 1.5px) * -1) 0 0 #050507,
+        var(--ct-name-outline-shadow, 1.5px) 0 0 #050507,
+        0 0 12px var(--ct-primary-glow, rgba(211, 0, 0, 0.55)) !important;
+}
+
+html[data-ct-name-outline="none"] .character-name-input {
+    -webkit-text-stroke: 0px transparent !important;
+    text-shadow: 0 0 12px var(--ct-primary-glow, rgba(211, 0, 0, 0.35)) !important;
+}
+
 
 

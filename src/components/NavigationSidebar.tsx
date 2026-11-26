@@ -258,7 +258,7 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
                     e.currentTarget.src = DEMOLOGIA_LOGO_URL;
                   }
                 }}
-                className="w-6 h-6 object-cover rounded-none border border-[#2a2a34] group-hover:border-[var(--op-red)] transition-colors duration-200 shrink-0"
+                className="sidebar-brand-logo w-6 h-6 object-cover rounded-none border border-[#2a2a34] group-hover:border-[var(--op-red)] transition-colors duration-200 shrink-0"
               />
               <div className="min-w-0 flex flex-col">
                 <span className="flex items-center gap-1.5 min-w-0">

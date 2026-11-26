@@ -24,13 +24,31 @@ export const TabletopThemePreview = React.memo(function TabletopThemePreview({
   const branding = resolveEffectiveBranding(config);
   const radius = CORNER_RADIUS_PX[interfaceStyle.cornerRadius];
   const shadow = SHADOW_TOKENS[interfaceStyle.shadowIntensity];
-  const panelAlpha = Math.max(0.6, Math.min(1, interfaceStyle.panelOpacity / 100));
-  const panelBg = hexToRgba(colors.panel, panelAlpha);
-  const headerBg = hexToRgba(adjustHexBrightness(colors.background, 5), Math.min(0.99, panelAlpha + 0.04));
+  const panelAlpha = Math.max(0, Math.min(1, interfaceStyle.panelOpacity / 100));
+  const panelTransparencyPct = Math.round((1 - panelAlpha) * 100);
+  const panelsVanished = panelAlpha === 0;
+  const panelBg = panelsVanished ? "transparent" : hexToRgba(colors.panel, panelAlpha);
+  const panelBorderColor = panelsVanished
+    ? "transparent"
+    : hexToRgba(colors.border, panelAlpha);
+  const effectivePanelShadow = panelsVanished ? "none" : shadow.panel;
+  const headerBg = panelsVanished
+    ? "transparent"
+    : hexToRgba(adjustHexBrightness(colors.background, 5), Math.min(0.99, panelAlpha + 0.04));
   const softPrimaryBg = hexToRgba(colors.primary, 0.18);
   const softAccentBg = hexToRgba(colors.accent, 0.16);
   const hasCustomBgMedia = Boolean(background?.url);
-  const hideHudPanel = Boolean(interfaceStyle.hideHpPePanelBackground);
+  const hideHudPanel = Boolean(interfaceStyle.hideHpPePanelBackground) || panelsVanished;
+  const logoScalePct = Math.max(50, Math.min(180, interfaceStyle.logoScale ?? 100));
+  const logoRatio = logoScalePct / 100;
+  const previewHeaderLogoPx = Math.round(Math.max(20, Math.min(44, 30 * logoRatio)));
+  const previewHudLogoPx = Math.round(Math.max(28, Math.min(86, 48 * logoRatio)));
+  const outlineSize = Math.max(0, Math.min(10, interfaceStyle.sheetNameOutlineSize ?? 2.5));
+  const outlineShadowPx = Number((outlineSize * 0.6).toFixed(2));
+  const sheetNameTextShadow =
+    outlineSize === 0
+      ? `0 0 10px ${hexToRgba(colors.accent, 0.4)}`
+      : `${-outlineShadowPx}px ${-outlineShadowPx}px 0 #050507, ${outlineShadowPx}px ${-outlineShadowPx}px 0 #050507, ${-outlineShadowPx}px ${outlineShadowPx}px 0 #050507, ${outlineShadowPx}px ${outlineShadowPx}px 0 #050507, 0 ${-outlineShadowPx}px 0 #050507, 0 ${outlineShadowPx}px 0 #050507, ${-outlineShadowPx}px 0 0 #050507, ${outlineShadowPx}px 0 0 #050507, 0 0 10px ${hexToRgba(colors.accent, 0.5)}`;
 
   const densityPad =
     interfaceStyle.density === "compact"
@@ -117,9 +135,9 @@ export const TabletopThemePreview = React.memo(function TabletopThemePreview({
             className="flex items-center justify-between gap-2.5 px-3 py-2.5 border transition-all"
             style={{
               backgroundColor: headerBg,
-              borderColor: colors.border,
+              borderColor: panelBorderColor,
               borderRadius: radius,
-              boxShadow: shadow.panel,
+              boxShadow: effectivePanelShadow,
               transitionDuration,
             }}
           >
@@ -132,10 +150,13 @@ export const TabletopThemePreview = React.memo(function TabletopThemePreview({
                     e.currentTarget.src = DEMOLOGIA_LOGO_URL;
                   }
                 }}
-                className="w-8 h-8 object-cover border shrink-0"
+                className="object-cover border shrink-0 transition-all"
                 style={{
+                  width: `${previewHeaderLogoPx}px`,
+                  height: `${previewHeaderLogoPx}px`,
                   borderColor: colors.primary,
                   borderRadius: radius,
+                  transitionDuration,
                 }}
               />
               <div className="min-w-0">
@@ -188,16 +209,17 @@ export const TabletopThemePreview = React.memo(function TabletopThemePreview({
           {/* 2. Painel principal com Logo Secundária, Textos e Destaque */}
           <div
             data-testid="preview-panel"
+            data-panels-vanished={panelsVanished ? "true" : "false"}
             className={`border flex flex-col transition-all ${densityPad}`}
             style={{
               backgroundColor: panelBg,
-              borderColor: colors.border,
+              borderColor: panelBorderColor,
               borderRadius: radius,
-              boxShadow: shadow.panel,
+              boxShadow: effectivePanelShadow,
               transitionDuration,
             }}
           >
-            <div className="flex items-center justify-between gap-2 border-b pb-2" style={{ borderColor: colors.border }}>
+            <div className="flex items-center justify-between gap-2 border-b pb-2" style={{ borderColor: panelBorderColor }}>
               <div className="flex items-center gap-2 min-w-0">
                 <img
                   src={branding.secondaryLogo}
@@ -268,7 +290,7 @@ export const TabletopThemePreview = React.memo(function TabletopThemePreview({
               <span style={{ color: colors.accent }}>ATIVO</span>
             </div>
 
-            {/* Prévia do painel de HP e PE (respeita desligar painel de fundo) */}
+            {/* Prévia do painel de HP e PE + Logo + Nome da Ficha */}
             <div
               data-testid="preview-hud-hp-pe"
               data-hud-panel-hidden={hideHudPanel ? "true" : "false"}
@@ -283,14 +305,46 @@ export const TabletopThemePreview = React.memo(function TabletopThemePreview({
                       transitionDuration,
                     }
                   : {
-                      backgroundColor: hexToRgba(colors.background, 0.72),
-                      border: `1px solid ${colors.border}`,
-                      boxShadow: shadow.panel,
+                      backgroundColor: hexToRgba(colors.background, Math.min(0.85, panelAlpha * 0.78)),
+                      border: `1px solid ${panelBorderColor}`,
+                      boxShadow: effectivePanelShadow,
                       borderRadius: radius,
                       transitionDuration,
                     }
               }
             >
+              <div className="flex flex-col items-center text-center mb-2">
+                <img
+                  data-testid="preview-hud-logo"
+                  src={branding.secondaryLogo}
+                  alt="Logo da ficha"
+                  onError={(e) => {
+                    if (e.currentTarget.src !== DEMOLOGIA_LOGO_URL) {
+                      e.currentTarget.src = DEMOLOGIA_LOGO_URL;
+                    }
+                  }}
+                  className="object-contain transition-all"
+                  style={{
+                    width: `${previewHudLogoPx}px`,
+                    height: "auto",
+                    maxHeight: "96px",
+                    transitionDuration,
+                  }}
+                />
+                <div
+                  data-testid="preview-sheet-name"
+                  className="text-lg font-bold uppercase tracking-wider leading-tight mt-1"
+                  style={{
+                    color: "#ffffff",
+                    WebkitTextStroke:
+                      outlineSize === 0 ? "0px transparent" : `${outlineSize}px #050507`,
+                    paintOrder: "stroke fill",
+                    textShadow: sheetNameTextShadow,
+                  }}
+                >
+                  OCULTISTA
+                </div>
+              </div>
               <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider mb-1.5">
                 <span className="text-[#dc2626]">26/26 HP</span>
                 <span className="text-[#00a8ff]">10/10 PE</span>
@@ -342,15 +396,15 @@ export const TabletopThemePreview = React.memo(function TabletopThemePreview({
           <div
             className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 border text-[9px] uppercase tracking-wider"
             style={{
-              backgroundColor: hexToRgba(colors.panel, 0.7),
-              borderColor: colors.border,
+              backgroundColor: panelsVanished ? "transparent" : hexToRgba(colors.panel, Math.min(0.85, panelAlpha)),
+              borderColor: panelBorderColor,
               color: colors.textSecondary,
               borderRadius: radius,
             }}
           >
-            <span>Cantos: {radius}</span>
-            <span>Opacidade: {interfaceStyle.panelOpacity}%</span>
-            <span>Painel HP/PE: {hideHudPanel ? "Invisível" : "Visível"}</span>
+            <span>Logo: {logoScalePct}%</span>
+            <span>Outline: {outlineSize}px</span>
+            <span>Transparência: {panelTransparencyPct}%</span>
           </div>
         </div>
       </div>

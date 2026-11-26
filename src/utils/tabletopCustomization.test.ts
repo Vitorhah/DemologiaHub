@@ -147,7 +147,7 @@ test("normalizeTabletopCustomization clamps panelOpacity and sanitizes invalid p
       interfaceStyle: {
         cornerRadius: "rounded",
         shadowIntensity: "strong",
-        panelOpacity: 15, // below minimum 60 -> clamped to 60
+        panelOpacity: -15, // below minimum 0 -> clamped to 0
         density: "compact",
         animationIntensity: "reduced",
       },
@@ -161,7 +161,7 @@ test("normalizeTabletopCustomization clamps panelOpacity and sanitizes invalid p
   assert.equal(normalized.branding.campaignIconUrl, "https://example.com/icon.png");
   assert.equal(normalized.colors.primary, "#c59b3c");
   assert.equal(normalized.colors.background, DEMOLOGIA_ORIGINAL_COLORS.background);
-  assert.equal(normalized.interfaceStyle.panelOpacity, 60);
+  assert.equal(normalized.interfaceStyle.panelOpacity, 0);
   assert.equal(normalized.interfaceStyle.cornerRadius, "rounded");
   assert.equal(normalized.interfaceStyle.animationIntensity, "reduced");
 });
@@ -229,3 +229,53 @@ test("hideHpPePanelBackground and custom background normalize cleanly and mark c
   assert.equal(withGifBg.background.mediaType, "gif");
   assert.equal(withGifBg.background.overlayOpacity, 0);
 });
+
+test("logoScale, sheetNameOutlineSize, and 100% transparent panels normalize, export CSS vars, and mark customized", () => {
+  const base = createDefaultTabletopCustomization("mesa-visual");
+  assert.equal(base.interfaceStyle.logoScale, 100);
+  assert.equal(base.interfaceStyle.sheetNameOutlineSize, 2.5);
+  assert.equal(base.interfaceStyle.panelOpacity, 100);
+  assert.equal(isDefaultTabletopCustomization(base), true);
+
+  const customized = normalizeTabletopCustomization(
+    {
+      ...base,
+      interfaceStyle: {
+        ...base.interfaceStyle,
+        logoScale: 240, // clamped to 180
+        sheetNameOutlineSize: 6.3, // rounded to 6.5
+        panelOpacity: 0, // 100% transparent (panels vanish)
+      },
+    },
+    "mesa-visual",
+  );
+
+  assert.equal(customized.interfaceStyle.logoScale, 180);
+  assert.equal(customized.interfaceStyle.sheetNameOutlineSize, 6.5);
+  assert.equal(customized.interfaceStyle.panelOpacity, 0);
+  assert.equal(isDefaultTabletopCustomization(customized), false);
+
+  const vars = buildThemeCssVariables(customized);
+  assert.equal(vars["--ct-logo-scale"], "1.8");
+  assert.equal(vars["--ct-name-outline"], "6.5px");
+  assert.equal(vars["--ct-name-outline-shadow"], "3.9px");
+  assert.equal(vars["--ct-panel-rgba"], "rgba(21, 21, 24, 0)");
+  assert.equal(vars["--ct-panel-border-rgba"], "rgba(48, 48, 54, 0)");
+  assert.equal(vars["--ct-shadow-panel"], "none");
+
+  const zeroOutline = normalizeTabletopCustomization(
+    {
+      ...base,
+      interfaceStyle: {
+        ...base.interfaceStyle,
+        logoScale: 20, // clamped to 50
+        sheetNameOutlineSize: 0,
+      },
+    },
+    "mesa-visual",
+  );
+  assert.equal(zeroOutline.interfaceStyle.logoScale, 50);
+  assert.equal(zeroOutline.interfaceStyle.sheetNameOutlineSize, 0);
+  assert.equal(isDefaultTabletopCustomization(zeroOutline), false);
+});
+

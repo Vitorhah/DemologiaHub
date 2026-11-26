@@ -1249,32 +1249,147 @@ export const MasterCustomizationView: React.FC<MasterCustomizationViewProps> = (
                 </div>
               </div>
 
-              {/* Transparência / Opacidade dos painéis */}
+              {/* Tamanho da Logo + Tamanho da Outline do Nome da Ficha */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Tamanho da Logo */}
+                <div className="bg-[#121218] border border-[#252532] p-3">
+                  <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#a2a3b4] mb-2">
+                    <label htmlFor="ct-logo-scale">Tamanho da Logo</label>
+                    <div className="flex items-center gap-2">
+                      {(draft.interfaceStyle.logoScale ?? 100) !== 100 && (
+                        <button
+                          type="button"
+                          onClick={() => handleInterfaceStyleChange("logoScale", 100)}
+                          className="text-[9px] px-1.5 py-0.5 bg-[#1b1b26] hover:bg-[#262636] border border-[#323244] text-[#c2c3d2] uppercase cursor-pointer"
+                        >
+                          Padrão
+                        </button>
+                      )}
+                      <span className="text-white tabular-nums text-xs">
+                        {draft.interfaceStyle.logoScale ?? 100}%
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    id="ct-logo-scale"
+                    data-testid="customization-logo-scale-range"
+                    type="range"
+                    min={50}
+                    max={180}
+                    step={5}
+                    value={draft.interfaceStyle.logoScale ?? 100}
+                    onChange={(e) =>
+                      handleInterfaceStyleChange("logoScale", Number(e.target.value))
+                    }
+                    className="w-full accent-[var(--op-red-bright)] cursor-pointer"
+                  />
+                  <div className="flex items-center justify-between text-[9px] text-[#7a7b8c] uppercase mt-1">
+                    <span>Menor (50%)</span>
+                    <span>Padrão (100%)</span>
+                    <span>Maior (180%)</span>
+                  </div>
+                </div>
+
+                {/* Tamanho da Outline do Nome da Ficha */}
+                <div className="bg-[#121218] border border-[#252532] p-3">
+                  <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#a2a3b4] mb-2">
+                    <label htmlFor="ct-name-outline">
+                      Outline do Nome da Ficha
+                    </label>
+                    <div className="flex items-center gap-2">
+                      {(draft.interfaceStyle.sheetNameOutlineSize ?? 2.5) !== 2.5 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleInterfaceStyleChange("sheetNameOutlineSize", 2.5)
+                          }
+                          className="text-[9px] px-1.5 py-0.5 bg-[#1b1b26] hover:bg-[#262636] border border-[#323244] text-[#c2c3d2] uppercase cursor-pointer"
+                        >
+                          Padrão
+                        </button>
+                      )}
+                      <span className="text-white tabular-nums text-xs">
+                        {(draft.interfaceStyle.sheetNameOutlineSize ?? 2.5) === 0
+                          ? "0px (Sem)"
+                          : `${draft.interfaceStyle.sheetNameOutlineSize ?? 2.5}px`}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    id="ct-name-outline"
+                    data-testid="customization-name-outline-range"
+                    type="range"
+                    min={0}
+                    max={10}
+                    step={0.5}
+                    value={draft.interfaceStyle.sheetNameOutlineSize ?? 2.5}
+                    onChange={(e) =>
+                      handleInterfaceStyleChange(
+                        "sheetNameOutlineSize",
+                        Number(e.target.value),
+                      )
+                    }
+                    className="w-full accent-[var(--op-red-bright)] cursor-pointer"
+                  />
+                  <div className="flex items-center justify-between text-[9px] text-[#7a7b8c] uppercase mt-1">
+                    <span>Sem (0px)</span>
+                    <span>Padrão (2.5px)</span>
+                    <span>Forte (10px)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Transparência dos painéis (0% sólido até 100% invisível / somem) */}
               <div className="bg-[#121218] border border-[#252532] p-3">
-                <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#a2a3b4] mb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#a2a3b4] mb-2">
                   <label htmlFor="ct-panel-opacity">
-                    Opacidade / Transparência dos painéis
+                    Transparência dos painéis
                   </label>
-                  <span className="text-white tabular-nums text-xs">
-                    {draft.interfaceStyle.panelOpacity}%
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="customization-panels-vanish-btn"
+                      onClick={() =>
+                        handleInterfaceStyleChange(
+                          "panelOpacity",
+                          draft.interfaceStyle.panelOpacity === 0 ? 100 : 0,
+                        )
+                      }
+                      className={`text-[9px] px-2 py-0.5 border uppercase font-bold cursor-pointer transition-colors ${
+                        draft.interfaceStyle.panelOpacity === 0
+                          ? "bg-[#1a0b0f] border-[var(--op-red-bright)] text-white"
+                          : "bg-[#191924] hover:bg-[#232332] border-[#303042] text-[#c2c3d2]"
+                      }`}
+                    >
+                      {draft.interfaceStyle.panelOpacity === 0
+                        ? "Restaurar Sólido"
+                        : "100% (Sumir Painéis)"}
+                    </button>
+                    <span className="text-white tabular-nums text-xs">
+                      {100 - draft.interfaceStyle.panelOpacity}%
+                    </span>
+                  </div>
                 </div>
                 <input
                   id="ct-panel-opacity"
                   data-testid="customization-panel-opacity-range"
                   type="range"
-                  min={60}
+                  min={0}
                   max={100}
                   step={2}
-                  value={draft.interfaceStyle.panelOpacity}
+                  value={100 - draft.interfaceStyle.panelOpacity}
                   onChange={(e) =>
-                    handleInterfaceStyleChange("panelOpacity", Number(e.target.value))
+                    handleInterfaceStyleChange(
+                      "panelOpacity",
+                      100 - Number(e.target.value),
+                    )
                   }
                   className="w-full accent-[var(--op-red-bright)] cursor-pointer"
                 />
                 <div className="flex items-center justify-between text-[9px] text-[#7a7b8c] uppercase mt-1">
-                  <span>Mais translúcido (60%)</span>
-                  <span>Sólido (100%)</span>
+                  <span>Sólido (0%)</span>
+                  <span>Translúcido (50%)</span>
+                  <span>Invisível / Somem (100%)</span>
                 </div>
               </div>
 

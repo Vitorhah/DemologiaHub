@@ -40,6 +40,8 @@ export const DEMOLOGIA_ORIGINAL_INTERFACE: TabletopInterfaceStyleConfig = {
   density: "normal",
   animationIntensity: "normal",
   hideHpPePanelBackground: false,
+  logoScale: 100,
+  sheetNameOutlineSize: 2.5,
 };
 
 export const DEMOLOGIA_ORIGINAL_BRANDING: TabletopBrandingConfig = {
@@ -90,6 +92,8 @@ export const TABLETOP_THEME_PRESETS: readonly TabletopThemePresetDefinition[] = 
       density: "normal",
       animationIntensity: "normal",
       hideHpPePanelBackground: false,
+      logoScale: 100,
+      sheetNameOutlineSize: 2.5,
     },
   },
   {
@@ -116,6 +120,8 @@ export const TABLETOP_THEME_PRESETS: readonly TabletopThemePresetDefinition[] = 
       density: "normal",
       animationIntensity: "normal",
       hideHpPePanelBackground: false,
+      logoScale: 100,
+      sheetNameOutlineSize: 2.5,
     },
   },
 ] as const;
@@ -347,7 +353,20 @@ export function validateCustomBrandImageFile(
 function clampPanelOpacity(val: unknown): number {
   const num = Number(val);
   if (!Number.isFinite(num)) return DEMOLOGIA_ORIGINAL_INTERFACE.panelOpacity;
-  return Math.max(60, Math.min(100, Math.round(num)));
+  return Math.max(0, Math.min(100, Math.round(num)));
+}
+
+export function clampLogoScale(val: unknown): number {
+  const num = Number(val);
+  if (!Number.isFinite(num)) return DEMOLOGIA_ORIGINAL_INTERFACE.logoScale;
+  return Math.max(50, Math.min(180, Math.round(num)));
+}
+
+export function clampSheetNameOutlineSize(val: unknown): number {
+  const num = Number(val);
+  if (!Number.isFinite(num)) return DEMOLOGIA_ORIGINAL_INTERFACE.sheetNameOutlineSize;
+  const clamped = Math.max(0, Math.min(10, num));
+  return Math.round(clamped * 2) / 2;
 }
 
 function normalizeCornerRadius(val: unknown): TabletopCornerRadius {
@@ -464,6 +483,8 @@ export function normalizeTabletopCustomization(
     density: normalizeDensity(rawInterface.density),
     animationIntensity: normalizeAnimationIntensity(rawInterface.animationIntensity),
     hideHpPePanelBackground: Boolean(rawInterface.hideHpPePanelBackground),
+    logoScale: clampLogoScale(rawInterface.logoScale),
+    sheetNameOutlineSize: clampSheetNameOutlineSize(rawInterface.sheetNameOutlineSize),
   };
 
   const updatedAt =
@@ -498,6 +519,8 @@ export function applyPresetToConfig(
     interfaceStyle: {
       ...preset.interfaceStyle,
       hideHpPePanelBackground: current.interfaceStyle.hideHpPePanelBackground,
+      logoScale: current.interfaceStyle.logoScale,
+      sheetNameOutlineSize: current.interfaceStyle.sheetNameOutlineSize,
     },
   };
 }
@@ -547,6 +570,18 @@ export function isDefaultTabletopCustomization(
   if (hasBranding) return false;
   if (config.background?.url) return false;
   if (config.interfaceStyle.hideHpPePanelBackground) return false;
+  if (
+    clampLogoScale(config.interfaceStyle.logoScale) !==
+    DEMOLOGIA_ORIGINAL_INTERFACE.logoScale
+  ) {
+    return false;
+  }
+  if (
+    clampSheetNameOutlineSize(config.interfaceStyle.sheetNameOutlineSize) !==
+    DEMOLOGIA_ORIGINAL_INTERFACE.sheetNameOutlineSize
+  ) {
+    return false;
+  }
 
   const matchedPreset = detectMatchingPresetId(
     config.colors,
@@ -585,7 +620,11 @@ export function areTabletopCustomizationsEqual(
     a.interfaceStyle.density === b.interfaceStyle.density &&
     a.interfaceStyle.animationIntensity === b.interfaceStyle.animationIntensity &&
     Boolean(a.interfaceStyle.hideHpPePanelBackground) ===
-      Boolean(b.interfaceStyle.hideHpPePanelBackground)
+      Boolean(b.interfaceStyle.hideHpPePanelBackground) &&
+    clampLogoScale(a.interfaceStyle.logoScale) ===
+      clampLogoScale(b.interfaceStyle.logoScale) &&
+    clampSheetNameOutlineSize(a.interfaceStyle.sheetNameOutlineSize) ===
+      clampSheetNameOutlineSize(b.interfaceStyle.sheetNameOutlineSize)
   );
 }
 
@@ -663,16 +702,23 @@ export function buildThemeCssVariables(
 ): Record<string, string> {
   const c = config.colors;
   const ui = config.interfaceStyle;
-  const panelAlpha = clampPanelOpacity(ui.panelOpacity) / 100;
+  const panelOpacityPct = clampPanelOpacity(ui.panelOpacity);
+  const panelAlpha = panelOpacityPct / 100;
   const radius = CORNER_RADIUS_PX[ui.cornerRadius];
   const shadows = SHADOW_TOKENS[ui.shadowIntensity];
   const timings = ANIMATION_TIMING_TOKENS[ui.animationIntensity];
+  const logoScaleRatio = Number((clampLogoScale(ui.logoScale) / 100).toFixed(2));
+  const outlineSize = clampSheetNameOutlineSize(ui.sheetNameOutlineSize);
+  const outlineShadow = Number((outlineSize * 0.6).toFixed(2));
 
   const panelLight = adjustHexBrightness(c.panel, 10);
   const bgSecondary = adjustHexBrightness(c.background, 7);
   const borderLight = adjustHexBrightness(c.border, 18);
   const interactiveHover = adjustHexBrightness(c.interactive, 20);
   const sidebarBg = adjustHexBrightness(c.background, 4);
+  const headerAlpha =
+    panelAlpha === 0 ? 0 : Math.min(0.99, panelAlpha + 0.04);
+  const effectivePanelShadow = panelAlpha === 0 ? "none" : shadows.panel;
 
   return {
     "--op-bg": c.background,
@@ -695,7 +741,7 @@ export function buildThemeCssVariables(
     "--op-sidebar-indicator": c.accent,
     "--bg-dark": c.background,
     "--text-light": c.textPrimary,
-    "--shadow-panel": shadows.panel,
+    "--shadow-panel": effectivePanelShadow,
     "--shadow-elevated": shadows.elevated,
     "--transition-fast": timings.fast,
     "--transition-base": timings.base,
@@ -707,7 +753,8 @@ export function buildThemeCssVariables(
     "--ct-bg": c.background,
     "--ct-panel": c.panel,
     "--ct-panel-rgba": hexToRgba(c.panel, panelAlpha),
-    "--ct-panel-header-rgba": hexToRgba(sidebarBg, Math.min(0.99, panelAlpha + 0.04)),
+    "--ct-panel-header-rgba": hexToRgba(sidebarBg, headerAlpha),
+    "--ct-panel-border-rgba": hexToRgba(c.border, panelAlpha),
     "--ct-panel-light": panelLight,
     "--ct-text": c.textPrimary,
     "--ct-text-secondary": c.textSecondary,
@@ -717,8 +764,11 @@ export function buildThemeCssVariables(
     "--ct-interactive-hover": interactiveHover,
     "--ct-interactive-text": getContrastTextColor(c.interactive),
     "--ct-radius": radius,
-    "--ct-shadow-panel": shadows.panel,
+    "--ct-shadow-panel": effectivePanelShadow,
     "--ct-shadow-elevated": shadows.elevated,
+    "--ct-logo-scale": String(logoScaleRatio),
+    "--ct-name-outline": `${outlineSize}px`,
+    "--ct-name-outline-shadow": `${outlineShadow}px`,
   };
 }
 
@@ -744,6 +794,9 @@ export function applyTabletopCustomizationToDom(
     root.removeAttribute("data-ct-radius");
     root.removeAttribute("data-ct-shadow");
     root.removeAttribute("data-ct-hide-hud-panel");
+    root.removeAttribute("data-ct-logo-scale");
+    root.removeAttribute("data-ct-name-outline");
+    root.removeAttribute("data-ct-panels-transparent");
     for (const key of MANAGED_THEME_CSS_KEYS) {
       root.style.removeProperty(key);
     }
@@ -782,10 +835,49 @@ export function applyTabletopCustomizationToDom(
     }
   }
 
+  // Transparência dos painéis (0 = 100% transparente / painéis invisíveis)
+  const panelOpacityPct = clampPanelOpacity(config.interfaceStyle.panelOpacity);
+  if (panelOpacityPct === 0) {
+    root.setAttribute("data-ct-panels-transparent", "full");
+  } else if (panelOpacityPct < 100) {
+    root.setAttribute("data-ct-panels-transparent", "partial");
+  } else {
+    root.removeAttribute("data-ct-panels-transparent");
+  }
+
   if (config.interfaceStyle.hideHpPePanelBackground) {
     root.setAttribute("data-ct-hide-hud-panel", "true");
   } else {
     root.removeAttribute("data-ct-hide-hud-panel");
+  }
+
+  // Tamanho da logo (aplicável independentemente da paleta)
+  const logoScale = clampLogoScale(config.interfaceStyle.logoScale);
+  if (logoScale !== DEMOLOGIA_ORIGINAL_INTERFACE.logoScale) {
+    root.style.setProperty("--ct-logo-scale", String(Number((logoScale / 100).toFixed(2))));
+    root.setAttribute("data-ct-logo-scale", "custom");
+  } else {
+    root.removeAttribute("data-ct-logo-scale");
+    if (!hasThemeStyleOverrides) {
+      root.style.removeProperty("--ct-logo-scale");
+    }
+  }
+
+  // Tamanho da outline do nome da ficha (aplicável independentemente da paleta)
+  const outlineSize = clampSheetNameOutlineSize(config.interfaceStyle.sheetNameOutlineSize);
+  if (outlineSize !== DEMOLOGIA_ORIGINAL_INTERFACE.sheetNameOutlineSize) {
+    root.style.setProperty("--ct-name-outline", `${outlineSize}px`);
+    root.style.setProperty(
+      "--ct-name-outline-shadow",
+      `${Number((outlineSize * 0.6).toFixed(2))}px`,
+    );
+    root.setAttribute("data-ct-name-outline", outlineSize === 0 ? "none" : "custom");
+  } else {
+    root.removeAttribute("data-ct-name-outline");
+    if (!hasThemeStyleOverrides) {
+      root.style.removeProperty("--ct-name-outline");
+      root.style.removeProperty("--ct-name-outline-shadow");
+    }
   }
 
   const effective = resolveEffectiveBranding(config);
