@@ -1,4 +1,5 @@
 import type {
+  AppearanceActionMode,
   BackgroundActionMode,
   BackgroundMediaType,
   BackgroundSourceType,
@@ -34,6 +35,7 @@ export const SCENE_NODE_TYPE_ORDER: readonly SceneNodeType[] = [
   "fade",
   "blackout",
   "background",
+  "appearance",
 ];
 
 export const SCENE_NODE_CATALOG: Record<SceneNodeType, SceneNodeCategoryMeta> = {
@@ -154,6 +156,20 @@ export const SCENE_NODE_CATALOG: Record<SceneNodeType, SceneNodeCategoryMeta> = 
     accentTextClass: "text-indigo-300",
     trackBlockBgClass: "bg-[#12162b]/95",
     trackBlockBorderClass: "border-[#6366f1]/80",
+    defaultDurationSec: 1.5,
+  },
+  appearance: {
+    type: "appearance",
+    label: "APARÊNCIA",
+    shortLabel: "APARÊNCIA",
+    description:
+      "Troca a aparência do HUB entre presets (padrão ou salvos) ou reseta para a aparência original.",
+    barBgClass: "bg-[#220e1b]",
+    barBorderClass: "border-[#be185d]/80",
+    barHoverClass: "hover:bg-[#311326] hover:border-[#f43f5e]",
+    accentTextClass: "text-rose-300",
+    trackBlockBgClass: "bg-[#260f1e]/95",
+    trackBlockBorderClass: "border-[#e11d48]/80",
     defaultDurationSec: 1.5,
   },
 };
@@ -583,6 +599,30 @@ export function normalizeSceneNodeParams(
         backgroundName,
       };
     }
+    case "appearance": {
+      const appearanceAction: AppearanceActionMode =
+        obj.appearanceAction === "reset" ? "reset" : "preset";
+      if (appearanceAction === "reset") {
+        return {
+          appearanceAction: "reset",
+          appearancePresetId: "demologia",
+          appearancePresetName: "Demologia Original",
+        };
+      }
+      const appearancePresetId =
+        typeof obj.appearancePresetId === "string"
+          ? obj.appearancePresetId.trim().slice(0, 80)
+          : "";
+      const appearancePresetName =
+        typeof obj.appearancePresetName === "string"
+          ? obj.appearancePresetName.trim().slice(0, 80)
+          : "";
+      return {
+        appearanceAction: "preset",
+        appearancePresetId,
+        appearancePresetName,
+      };
+    }
   }
 }
 
@@ -779,6 +819,7 @@ export interface SceneNodeSummaryLookup {
   effectNameById?: Map<string, string>;
   clockTitleById?: Map<string, string>;
   handoutTitleById?: Map<string, string>;
+  appearancePresetNameById?: Map<string, string>;
 }
 
 export function summarizeSceneNode(
@@ -896,6 +937,26 @@ export function summarizeSceneNode(
         return `FUNDO · ${node.params.backgroundName.trim()} (${typeTag})`;
       }
       return `FUNDO · ${typeTag}`;
+    }
+    case "appearance": {
+      if (
+        node.params.appearanceAction === "reset" ||
+        node.params.appearancePresetId === "demologia"
+      ) {
+        return "APARÊNCIA · Original (Reset)";
+      }
+      const presetId = node.params.appearancePresetId || "";
+      const builtInNames: Record<string, string> = {
+        demologia: "Demologia Original",
+        nirvana: "Nirvana",
+        profano: "Profano",
+      };
+      const resolvedName =
+        (presetId && lookup?.appearancePresetNameById?.get(presetId)) ||
+        (presetId && builtInNames[presetId]) ||
+        node.params.appearancePresetName ||
+        "Selecionar preset";
+      return `APARÊNCIA · ${resolvedName}`;
     }
   }
 }

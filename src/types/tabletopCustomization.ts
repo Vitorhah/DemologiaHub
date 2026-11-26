@@ -88,3 +88,15 @@ export type TabletopBrandImageSlot =
   | "primaryLogoUrl"
   | "secondaryLogoUrl"
   | "campaignIconUrl";
+
+export interface TabletopCustomPreset {
+  id: string;
+  name: string;
+  branding: TabletopBrandingConfig;
+  background: TabletopBackgroundConfig;
+  colors: TabletopColorsConfig;
+  interfaceStyle: TabletopInterfaceStyleConfig;
+  createdAt: number;
+  updatedAt: number;
+}
+

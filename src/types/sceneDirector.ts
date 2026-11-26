@@ -19,7 +19,10 @@ export type SceneNodeType =
   | "delay"
   | "fade"
   | "blackout"
-  | "background";
+  | "background"
+  | "appearance";
+
+export type AppearanceActionMode = "preset" | "reset";
 
 export type BlackoutEasingStyle = "linear" | "quad" | "exponential";
 
@@ -77,6 +80,10 @@ export interface SceneBuilderNodeParams {
   backgroundUrl?: string;
   backgroundMediaType?: BackgroundMediaType;
   backgroundName?: string;
+  // Appearance ("Aparência do HUB")
+  appearanceAction?: AppearanceActionMode;
+  appearancePresetId?: string;
+  appearancePresetName?: string;
 }
 
 export interface SceneBuilderNode {

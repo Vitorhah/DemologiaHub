@@ -2,19 +2,27 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEMOLOGIA_ORIGINAL_COLORS,
+  MAX_SAVED_CUSTOM_PRESETS,
   TABLETOP_THEME_PRESETS,
+  applyCustomPresetToConfig,
   applyPresetToConfig,
   areTabletopCustomizationsEqual,
   buildThemeCssVariables,
+  createCustomPresetFromConfig,
   createDefaultTabletopCustomization,
+  deleteSavedCustomPreset,
   detectMatchingPresetId,
   getTabletopThemeRecordId,
   isDefaultTabletopCustomization,
+  matchesCustomPreset,
   normalizeHexColor,
+  normalizeSavedCustomPresets,
   normalizeTabletopCustomization,
+  resolveCustomizationForAppearanceAction,
   resolveEffectiveBranding,
   sanitizeCustomImageUrl,
   sanitizeSvgContent,
+  upsertSavedCustomPreset,
   validateCustomBrandImageFile,
 } from "./tabletopCustomization";
 import { isSystemRecordId } from "./handoutsLogic";
@@ -278,4 +286,125 @@ test("logoScale, sheetNameOutlineSize, and 100% transparent panels normalize, ex
   assert.equal(zeroOutline.interfaceStyle.sheetNameOutlineSize, 0);
   assert.equal(isDefaultTabletopCustomization(zeroOutline), false);
 });
+
+test("custom saved presets create, upsert, overwrite, apply, match, delete, and cap properly", () => {
+  const base = createDefaultTabletopCustomization("mesa-custom");
+  const nirvana = applyPresetToConfig(base, "nirvana");
+  const styled = normalizeTabletopCustomization(
+    {
+      ...nirvana,
+      branding: {
+        ...nirvana.branding,
+        headerTitle: "Catedral",
+        seasonSubtitle: "Ato II",
+      },
+      background: {
+        url: "https://cdn.example.com/catedral.webp",
+        mediaType: "image",
+        overlayOpacity: 60,
+      },
+      interfaceStyle: {
+        ...nirvana.interfaceStyle,
+        panelOpacity: 0,
+        logoScale: 135,
+        sheetNameOutlineSize: 4,
+        hideHpPePanelBackground: true,
+      },
+    },
+    "mesa-custom",
+  );
+
+  // Rejects empty/whitespace name
+  assert.equal(createCustomPresetFromConfig("   ", styled), null);
+
+  const created = createCustomPresetFromConfig("Catedral Sombria", styled, "preset_cat", 1000);
+  assert.ok(created);
+  assert.equal(created.id, "preset_cat");
+  assert.equal(created.name, "Catedral Sombria");
+  assert.equal(created.branding.headerTitle, "Catedral");
+  assert.equal(created.background.url, "https://cdn.example.com/catedral.webp");
+  assert.equal(created.interfaceStyle.panelOpacity, 0);
+  assert.equal(created.interfaceStyle.logoScale, 135);
+  assert.equal(created.interfaceStyle.sheetNameOutlineSize, 4);
+  assert.equal(created.interfaceStyle.hideHpPePanelBackground, true);
+
+  let list = upsertSavedCustomPreset([], created);
+  assert.equal(list.length, 1);
+
+  // Overwrite preserves original createdAt
+  const updated = createCustomPresetFromConfig(
+    "Catedral Sombria",
+    { ...styled, colors: { ...styled.colors, primary: "#aa2233" } },
+    "preset_cat",
+    2000,
+  );
+  assert.ok(updated);
+  list = upsertSavedCustomPreset(list, updated);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].createdAt, 1000);
+  assert.equal(list[0].updatedAt, 2000);
+  assert.equal(list[0].colors.primary, "#aa2233");
+
+  // Apply custom preset onto default config restores full visual configuration
+  const applied = applyCustomPresetToConfig(base, list[0]);
+  assert.equal(applied.presetId, "custom");
+  assert.equal(applied.colors.primary, "#aa2233");
+  assert.equal(applied.branding.headerTitle, "Catedral");
+  assert.equal(applied.interfaceStyle.panelOpacity, 0);
+  assert.equal(matchesCustomPreset(applied, list[0]), true);
+  assert.equal(matchesCustomPreset(base, list[0]), false);
+
+  // Delete removes preset cleanly
+  list = deleteSavedCustomPreset(list, "preset_cat");
+  assert.equal(list.length, 0);
+
+  // Cap at MAX_SAVED_CUSTOM_PRESETS
+  const many = Array.from({ length: MAX_SAVED_CUSTOM_PRESETS + 5 }, (_, i) => ({
+    id: `p_${i}`,
+    name: `Preset ${i}`,
+    updatedAt: 100 + i,
+  }));
+  const normalizedMany = normalizeSavedCustomPresets(many);
+  assert.equal(normalizedMany.length, MAX_SAVED_CUSTOM_PRESETS);
+});
+
+test("resolveCustomizationForAppearanceAction resolves reset, built-in presets, and custom presets", () => {
+  const base = createDefaultTabletopCustomization("mesa-scene");
+  const customPreset = createCustomPresetFromConfig(
+    "Ritual Rubro",
+    {
+      ...applyPresetToConfig(base, "profano"),
+      branding: { ...base.branding, headerTitle: "Ritual" },
+      interfaceStyle: { ...base.interfaceStyle, panelOpacity: 20, logoScale: 140 },
+    },
+    "preset_ritual",
+    5000,
+  )!;
+
+  // Reset restores clean Demologia Original
+  const resetRes = resolveCustomizationForAppearanceAction("reset", "demologia", [customPreset], "mesa-scene", 6000);
+  assert.ok(resetRes);
+  assert.equal(isDefaultTabletopCustomization(resetRes.config), true);
+  assert.equal(resetRes.clearSceneBackground, true);
+
+  // Built-in preset (Nirvana) applies clean Nirvana colors/interface
+  const nirvanaRes = resolveCustomizationForAppearanceAction("preset", "nirvana", [customPreset], "mesa-scene", 6100);
+  assert.ok(nirvanaRes);
+  assert.equal(nirvanaRes.config.presetId, "nirvana");
+  assert.equal(nirvanaRes.config.colors.primary, "#c59b3c");
+  assert.equal(nirvanaRes.clearSceneBackground, true);
+
+  // Custom saved preset applies full saved config
+  const customRes = resolveCustomizationForAppearanceAction("preset", "preset_ritual", [customPreset], "mesa-scene", 6200);
+  assert.ok(customRes);
+  assert.equal(customRes.config.presetId, "custom");
+  assert.equal(customRes.config.branding.headerTitle, "Ritual");
+  assert.equal(customRes.config.interfaceStyle.panelOpacity, 20);
+  assert.equal(customRes.config.interfaceStyle.logoScale, 140);
+
+  // Unknown preset returns null safely
+  const missingRes = resolveCustomizationForAppearanceAction("preset", "non_existent", [customPreset], "mesa-scene", 6300);
+  assert.equal(missingRes, null);
+});
+
 

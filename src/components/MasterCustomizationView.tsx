@@ -19,12 +19,15 @@ import {
   Cloud,
   CloudOff,
   Wallpaper,
+  BookmarkPlus,
+  RefreshCw,
 } from "lucide-react";
 import type {
   TabletopAnimationIntensity,
   TabletopBrandImageSlot,
   TabletopColorsConfig,
   TabletopCornerRadius,
+  TabletopCustomPreset,
   TabletopCustomizationConfig,
   TabletopInterfaceDensity,
   TabletopShadowIntensity,
@@ -33,13 +36,16 @@ import type {
 import {
   DEFAULT_HEADER_TITLE,
   DEMOLOGIA_ORIGINAL_BACKGROUND,
+  MAX_SAVED_CUSTOM_PRESETS,
   TABLETOP_THEME_PRESETS,
+  applyCustomPresetToConfig,
   applyPresetToConfig,
   areTabletopCustomizationsEqual,
   detectCustomBackgroundMediaType,
   detectMatchingPresetId,
   isDefaultTabletopCustomization,
   isValidHexInput,
+  matchesCustomPreset,
   normalizeHexColor,
   sanitizeCustomImageUrl,
 } from "../utils/tabletopCustomization";
@@ -53,6 +59,7 @@ import { MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
 export interface MasterCustomizationViewProps {
   roomId: string;
   activeConfig: TabletopCustomizationConfig;
+  savedPresets: TabletopCustomPreset[];
   syncStatus: "synced" | "syncing" | "offline";
   syncError: string | null;
   isSaving: boolean;
@@ -60,6 +67,12 @@ export interface MasterCustomizationViewProps {
     next: TabletopCustomizationConfig,
   ) => Promise<TabletopThemeActionResult>;
   onResetCustomization: () => Promise<TabletopThemeActionResult>;
+  onSaveCustomPreset: (
+    name: string,
+    config: TabletopCustomizationConfig,
+    existingId?: string,
+  ) => Promise<TabletopThemeActionResult>;
+  onDeleteCustomPreset: (presetId: string) => Promise<TabletopThemeActionResult>;
 }
 
 interface ColorFieldMeta {
@@ -110,11 +123,14 @@ const IMAGE_SLOTS: readonly ImageSlotMeta[] = [
 export const MasterCustomizationView: React.FC<MasterCustomizationViewProps> = ({
   roomId,
   activeConfig,
+  savedPresets,
   syncStatus,
   syncError,
   isSaving,
   onSaveCustomization,
   onResetCustomization,
+  onSaveCustomPreset,
+  onDeleteCustomPreset,
 }) => {
   const [draft, setDraft] = useState<TabletopCustomizationConfig>(activeConfig);
   const [hexDrafts, setHexDrafts] = useState<Record<keyof TabletopColorsConfig, string>>(
@@ -135,6 +151,8 @@ export const MasterCustomizationView: React.FC<MasterCustomizationViewProps> = (
     text: string;
   } | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [customPresetName, setCustomPresetName] = useState("");
+  const [confirmDeletePresetId, setConfirmDeletePresetId] = useState<string | null>(null);
 
   const lastSyncedUpdatedAtRef = useRef<number>(activeConfig.updatedAt);
 
@@ -186,6 +204,86 @@ export const MasterCustomizationView: React.FC<MasterCustomizationViewProps> = (
       setHexDrafts({ ...next.colors });
       return next;
     });
+  };
+
+  const handleApplySavedCustomPreset = (preset: TabletopCustomPreset) => {
+    setFeedback(null);
+    setConfirmDeletePresetId(null);
+    setDraft((prev) => {
+      const next = applyCustomPresetToConfig(prev, preset);
+      setHexDrafts({ ...next.colors });
+      setUrlInputs({
+        primaryLogoUrl: next.branding.primaryLogoUrl,
+        secondaryLogoUrl: next.branding.secondaryLogoUrl,
+        campaignIconUrl: next.branding.campaignIconUrl,
+      });
+      setBgUrlInput(next.background?.url || "");
+      return next;
+    });
+    setFeedback({
+      type: "success",
+      text: `Predefinição "${preset.name}" carregada na pré-visualização. Clique em "Salvar e Aplicar na Sala" para publicar.`,
+    });
+  };
+
+  const handleSaveNewCustomPreset = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = customPresetName.trim();
+    if (!trimmed) {
+      setFeedback({
+        type: "error",
+        text: "Digite um nome para salvar a predefinição custom.",
+      });
+      return;
+    }
+    setFeedback(null);
+    const res = await onSaveCustomPreset(trimmed, draft);
+    if (res.ok) {
+      setCustomPresetName("");
+      setFeedback({
+        type: "success",
+        text: `Predefinição "${trimmed}" salva! Agora ela também pode ser usada no bloco "Aparência" do Scene Builder.`,
+      });
+    } else {
+      setFeedback({
+        type: "error",
+        text: res.error || "Não foi possível salvar a predefinição custom.",
+      });
+    }
+  };
+
+  const handleOverwriteCustomPreset = async (preset: TabletopCustomPreset) => {
+    setFeedback(null);
+    setConfirmDeletePresetId(null);
+    const res = await onSaveCustomPreset(preset.name, draft, preset.id);
+    if (res.ok) {
+      setFeedback({
+        type: "success",
+        text: `Predefinição "${preset.name}" atualizada com as configurações atuais.`,
+      });
+    } else {
+      setFeedback({
+        type: "error",
+        text: res.error || "Não foi possível atualizar a predefinição.",
+      });
+    }
+  };
+
+  const handleDeleteSavedCustomPreset = async (preset: TabletopCustomPreset) => {
+    setFeedback(null);
+    setConfirmDeletePresetId(null);
+    const res = await onDeleteCustomPreset(preset.id);
+    if (res.ok) {
+      setFeedback({
+        type: "success",
+        text: `Predefinição "${preset.name}" removida da biblioteca da sala.`,
+      });
+    } else {
+      setFeedback({
+        type: "error",
+        text: res.error || "Não foi possível excluir a predefinição.",
+      });
+    }
   };
 
   const handleColorPickerChange = (key: keyof TabletopColorsConfig, rawHex: string) => {
@@ -698,6 +796,194 @@ export const MasterCustomizationView: React.FC<MasterCustomizationViewProps> = (
                   ))}
                 </div>
               </button>
+            </div>
+
+            {/* SUBSEÇÃO: PREDEFINIÇÕES CUSTOM SALVAS */}
+            <div
+              className="mt-4 pt-4 border-t border-[#1d1d28]"
+              data-testid="saved-custom-presets-section"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <BookmarkPlus size={14} className="text-[var(--op-red-bright)]" />
+                  <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-white">
+                    Predefinições Custom Salvas
+                  </h3>
+                </div>
+                <span className="text-[10px] text-[#8a8b9c] uppercase tracking-wider tabular-nums">
+                  {savedPresets.length}/{MAX_SAVED_CUSTOM_PRESETS} salvas · Disponíveis no Scene Builder
+                </span>
+              </div>
+
+              <form
+                onSubmit={handleSaveNewCustomPreset}
+                className="flex flex-col sm:flex-row gap-2 mb-3.5"
+              >
+                <input
+                  type="text"
+                  maxLength={48}
+                  value={customPresetName}
+                  onChange={(e) => setCustomPresetName(e.target.value)}
+                  placeholder="Nome da predefinição (ex: Catedral Sombria)"
+                  data-testid="custom-preset-name-input"
+                  className="flex-1 min-h-[44px] px-3 bg-[#09090d] border border-[#282836] text-xs text-white placeholder-[#636476] focus:outline-none focus:border-[var(--op-red-bright)]"
+                />
+                <button
+                  type="submit"
+                  disabled={isSaving || !customPresetName.trim() || savedPresets.length >= MAX_SAVED_CUSTOM_PRESETS}
+                  data-testid="custom-preset-save-btn"
+                  className="min-h-[44px] px-4 bg-[var(--op-red)] hover:bg-[var(--op-red-bright)] disabled:opacity-45 disabled:cursor-not-allowed border border-[var(--op-red-bright)]/70 text-white text-[11px] font-bold uppercase tracking-wider inline-flex items-center justify-center gap-2 transition-colors cursor-pointer touch-manipulation shrink-0"
+                >
+                  <BookmarkPlus size={14} />
+                  <span>Salvar Atual como Preset</span>
+                </button>
+              </form>
+
+              {savedPresets.length === 0 ? (
+                <div
+                  data-testid="saved-custom-presets-empty"
+                  className="bg-[#0b0b10] border border-dashed border-[#272736] px-3.5 py-3 text-[11px] text-[#8a8b9c] leading-relaxed"
+                >
+                  Nenhuma predefinição custom salva ainda. Ajuste cores, logos, fundo ou transparência e salve acima para reutilizar aqui ou disparar em cenas pelo bloco <strong className="text-white">APARÊNCIA</strong> do Scene Builder.
+                </div>
+              ) : (
+                <div
+                  data-testid="saved-custom-presets-list"
+                  className="grid grid-cols-1 sm:grid-cols-2 gap-2.5"
+                >
+                  {savedPresets.map((preset) => {
+                    const isMatched = matchesCustomPreset(draft, preset);
+                    const isConfirmingDelete = confirmDeletePresetId === preset.id;
+                    const featureBadges: string[] = [];
+                    if (preset.background?.url) featureBadges.push("Fundo");
+                    if (preset.interfaceStyle.panelOpacity === 0) {
+                      featureBadges.push("Sem painéis");
+                    } else if (preset.interfaceStyle.panelOpacity < 100) {
+                      featureBadges.push(`Transp. ${100 - preset.interfaceStyle.panelOpacity}%`);
+                    }
+                    if (preset.interfaceStyle.hideHpPePanelBackground) {
+                      featureBadges.push("HUD limpo");
+                    }
+                    if (preset.interfaceStyle.logoScale !== 100) {
+                      featureBadges.push(`Logo ${preset.interfaceStyle.logoScale}%`);
+                    }
+
+                    return (
+                      <div
+                        key={preset.id}
+                        data-testid={`custom-preset-card-${preset.id}`}
+                        className={`p-3 border transition-colors flex flex-col justify-between gap-2.5 ${
+                          isMatched
+                            ? "bg-[#180d11] border-[var(--op-red-bright)]"
+                            : "bg-[#111117] border-[#252532] hover:border-[#39394d]"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          data-testid={`custom-preset-load-${preset.id}`}
+                          onClick={() => handleApplySavedCustomPreset(preset)}
+                          className="text-left w-full cursor-pointer touch-manipulation space-y-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold uppercase tracking-wider text-white truncate">
+                                {preset.name}
+                              </div>
+                              {preset.branding.headerTitle && (
+                                <div className="text-[10px] text-[#9b9caa] truncate mt-0.5">
+                                  Título: {preset.branding.headerTitle}
+                                </div>
+                              )}
+                            </div>
+                            {isMatched && (
+                              <span className="px-1.5 py-0.5 bg-[var(--op-red)] text-white text-[9px] font-bold uppercase tracking-wider shrink-0">
+                                Ativo
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {[
+                              preset.colors.background,
+                              preset.colors.panel,
+                              preset.colors.primary,
+                              preset.colors.accent,
+                              preset.colors.textPrimary,
+                            ].map((hex, i) => (
+                              <span
+                                key={i}
+                                className="w-5 h-3.5 border border-white/15"
+                                style={{ backgroundColor: hex }}
+                                title={hex}
+                              />
+                            ))}
+                          </div>
+
+                          {featureBadges.length > 0 && (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {featureBadges.map((badge) => (
+                                <span
+                                  key={badge}
+                                  className="px-1.5 py-0.5 bg-[#09090d] border border-[#2a2a38] text-[9px] uppercase tracking-wider text-[#b5b7c8]"
+                                >
+                                  {badge}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </button>
+
+                        <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-[#1e1e2a]">
+                          <button
+                            type="button"
+                            disabled={isSaving}
+                            data-testid={`custom-preset-update-${preset.id}`}
+                            onClick={() => handleOverwriteCustomPreset(preset)}
+                            title="Sobrescrever esta predefinição com o rascunho atual"
+                            className="min-h-[34px] px-2.5 bg-[#0c0c12] hover:bg-[#171722] border border-[#282838] text-[10px] font-bold uppercase tracking-wider text-[#c5c7d6] hover:text-white inline-flex items-center gap-1.5 cursor-pointer touch-manipulation disabled:opacity-45"
+                          >
+                            <RefreshCw size={11} />
+                            <span>Atualizar</span>
+                          </button>
+
+                          {isConfirmingDelete ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={isSaving}
+                                data-testid={`custom-preset-confirm-delete-${preset.id}`}
+                                onClick={() => handleDeleteSavedCustomPreset(preset)}
+                                className="min-h-[34px] px-2.5 bg-red-900/80 hover:bg-red-800 border border-red-500/70 text-[10px] font-bold uppercase tracking-wider text-white cursor-pointer touch-manipulation"
+                              >
+                                Confirmar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeletePresetId(null)}
+                                aria-label="Cancelar exclusão"
+                                className="min-h-[34px] w-[34px] bg-[#0c0c12] hover:bg-[#171722] border border-[#282838] text-[#9b9caa] hover:text-white inline-flex items-center justify-center cursor-pointer touch-manipulation"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              data-testid={`custom-preset-delete-${preset.id}`}
+                              onClick={() => setConfirmDeletePresetId(preset.id)}
+                              className="min-h-[34px] px-2.5 bg-[#150b0e] hover:bg-red-950/60 border border-red-900/50 text-[10px] font-bold uppercase tracking-wider text-red-300 hover:text-red-100 inline-flex items-center gap-1 cursor-pointer touch-manipulation disabled:opacity-45"
+                            >
+                              <Trash2 size={11} />
+                              <span>Excluir</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </section>
 

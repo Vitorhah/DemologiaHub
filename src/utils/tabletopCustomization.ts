@@ -6,6 +6,7 @@ import type {
   TabletopBrandingConfig,
   TabletopColorsConfig,
   TabletopCornerRadius,
+  TabletopCustomPreset,
   TabletopCustomizationConfig,
   TabletopInterfaceDensity,
   TabletopInterfaceStyleConfig,
@@ -16,6 +17,8 @@ import type {
 
 export const TABLETOP_THEME_RECORD_PREFIX = "TABLETOP_THEME_";
 export const TABLETOP_THEME_LOCAL_CACHE_PREFIX = "demologia_tabletop_theme_v1_";
+export const TABLETOP_PRESETS_LOCAL_CACHE_PREFIX = "demologia_tabletop_presets_v1_";
+export const MAX_SAVED_CUSTOM_PRESETS = 24;
 export const MAX_CUSTOM_BRAND_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
 export const MAX_CUSTOM_BRAND_INLINE_FALLBACK_BYTES = 1.5 * 1024 * 1024; // 1.5 MB
 
@@ -140,6 +143,10 @@ export function getTabletopThemeRecordId(roomId: string | null | undefined): str
 
 export function getTabletopThemeLocalKey(roomId: string | null | undefined): string {
   return `${TABLETOP_THEME_LOCAL_CACHE_PREFIX}${sanitizeRoomKey(roomId)}`;
+}
+
+export function getTabletopPresetsLocalKey(roomId: string | null | undefined): string {
+  return `${TABLETOP_PRESETS_LOCAL_CACHE_PREFIX}${sanitizeRoomKey(roomId)}`;
 }
 
 export function createDefaultTabletopCustomization(
@@ -626,6 +633,174 @@ export function areTabletopCustomizationsEqual(
     clampSheetNameOutlineSize(a.interfaceStyle.sheetNameOutlineSize) ===
       clampSheetNameOutlineSize(b.interfaceStyle.sheetNameOutlineSize)
   );
+}
+
+export function normalizeCustomPreset(raw: unknown): TabletopCustomPreset | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, any>;
+  const name = sanitizeTextField(obj.name, 48);
+  if (!name) return null;
+
+  const rawId =
+    typeof obj.id === "string"
+      ? obj.id.trim().replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64)
+      : "";
+  const id =
+    rawId ||
+    `preset_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+  const normalizedConfig = normalizeTabletopCustomization(
+    {
+      branding: obj.branding,
+      background: obj.background,
+      colors: obj.colors,
+      interfaceStyle: obj.interfaceStyle,
+      presetId: "custom",
+    },
+    "default-table",
+  );
+
+  const createdAt =
+    typeof obj.createdAt === "number" && Number.isFinite(obj.createdAt) && obj.createdAt >= 0
+      ? Math.floor(obj.createdAt)
+      : 0;
+  const updatedAt =
+    typeof obj.updatedAt === "number" && Number.isFinite(obj.updatedAt) && obj.updatedAt >= 0
+      ? Math.floor(obj.updatedAt)
+      : createdAt;
+
+  return {
+    id,
+    name,
+    branding: { ...normalizedConfig.branding },
+    background: { ...normalizedConfig.background },
+    colors: { ...normalizedConfig.colors },
+    interfaceStyle: { ...normalizedConfig.interfaceStyle },
+    createdAt,
+    updatedAt,
+  };
+}
+
+export function normalizeSavedCustomPresets(raw: unknown): TabletopCustomPreset[] {
+  if (!Array.isArray(raw)) return [];
+  const byId = new Map<string, TabletopCustomPreset>();
+  for (const item of raw) {
+    const normalized = normalizeCustomPreset(item);
+    if (!normalized) continue;
+    byId.set(normalized.id, normalized);
+  }
+  return Array.from(byId.values())
+    .sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name))
+    .slice(0, MAX_SAVED_CUSTOM_PRESETS);
+}
+
+export function createCustomPresetFromConfig(
+  name: string,
+  config: TabletopCustomizationConfig,
+  existingId?: string,
+  now: number = Date.now(),
+): TabletopCustomPreset | null {
+  const cleanName = sanitizeTextField(name, 48);
+  if (!cleanName) return null;
+  const normalizedConfig = normalizeTabletopCustomization(config, config.roomId);
+  const safeId =
+    existingId && existingId.trim()
+      ? existingId.trim().replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64)
+      : `preset_${now}_${Math.random().toString(36).slice(2, 7)}`;
+
+  return {
+    id: safeId,
+    name: cleanName,
+    branding: { ...normalizedConfig.branding },
+    background: { ...normalizedConfig.background },
+    colors: { ...normalizedConfig.colors },
+    interfaceStyle: { ...normalizedConfig.interfaceStyle },
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function upsertSavedCustomPreset(
+  list: TabletopCustomPreset[],
+  preset: TabletopCustomPreset,
+): TabletopCustomPreset[] {
+  const existing = list.find((item) => item.id === preset.id);
+  const merged: TabletopCustomPreset = existing
+    ? { ...preset, createdAt: existing.createdAt || preset.createdAt }
+    : preset;
+  const rest = list.filter((item) => item.id !== preset.id);
+  return normalizeSavedCustomPresets([merged, ...rest]);
+}
+
+export function deleteSavedCustomPreset(
+  list: TabletopCustomPreset[],
+  presetId: string,
+): TabletopCustomPreset[] {
+  return list.filter((item) => item.id !== presetId);
+}
+
+export function applyCustomPresetToConfig(
+  current: TabletopCustomizationConfig,
+  preset: TabletopCustomPreset,
+): TabletopCustomizationConfig {
+  const normalizedPreset = normalizeCustomPreset(preset);
+  if (!normalizedPreset) return current;
+  return {
+    ...current,
+    presetId: "custom",
+    branding: { ...normalizedPreset.branding },
+    background: { ...normalizedPreset.background },
+    colors: { ...normalizedPreset.colors },
+    interfaceStyle: { ...normalizedPreset.interfaceStyle },
+  };
+}
+
+export function matchesCustomPreset(
+  config: TabletopCustomizationConfig,
+  preset: TabletopCustomPreset,
+): boolean {
+  const asConfig: TabletopCustomizationConfig = {
+    version: 1,
+    roomId: config.roomId,
+    presetId: config.presetId,
+    branding: preset.branding,
+    background: preset.background,
+    colors: preset.colors,
+    interfaceStyle: preset.interfaceStyle,
+    updatedAt: config.updatedAt,
+  };
+  return areTabletopCustomizationsEqual(config, asConfig);
+}
+
+export function resolveCustomizationForAppearanceAction(
+  action: "preset" | "reset",
+  presetId: string | undefined,
+  savedPresets: TabletopCustomPreset[],
+  roomId: string = "default-table",
+  now: number = Date.now(),
+): { config: TabletopCustomizationConfig; clearSceneBackground: boolean } | null {
+  const baseDefault = createDefaultTabletopCustomization(roomId, now);
+
+  if (action === "reset" || presetId === "demologia") {
+    return { config: baseDefault, clearSceneBackground: true };
+  }
+
+  if (presetId === "nirvana" || presetId === "profano") {
+    return {
+      config: applyPresetToConfig(baseDefault, presetId),
+      clearSceneBackground: true,
+    };
+  }
+
+  if (!presetId) return null;
+  const customPreset = savedPresets.find((p) => p.id === presetId);
+  if (!customPreset) return null;
+
+  const applied = applyCustomPresetToConfig(baseDefault, customPreset);
+  return {
+    config: applied,
+    clearSceneBackground: true,
+  };
 }
 
 export function resolveEffectiveBranding(config: TabletopCustomizationConfig) {

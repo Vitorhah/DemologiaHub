@@ -388,3 +388,50 @@ test("Background node supports Link/Upload, detects GIF/MP4/WebM/Image, handles 
   });
 });
 
+test("Appearance node supports built-in presets, custom saved presets, reset to original, scheduling, and JSON round-trip", () => {
+  const builtinNode = createDefaultSceneNode("appearance", [], {
+    appearanceAction: "preset",
+    appearancePresetId: "nirvana",
+    appearancePresetName: "Nirvana",
+  });
+  assert.equal(builtinNode.type, "appearance");
+  assert.equal(builtinNode.params.appearanceAction, "preset");
+  assert.equal(builtinNode.params.appearancePresetId, "nirvana");
+  assert.equal(summarizeSceneNode(builtinNode), "APARÊNCIA · Nirvana");
+
+  const customNode = createDefaultSceneNode("appearance", [builtinNode], {
+    appearanceAction: "preset",
+    appearancePresetId: "preset_catedral",
+    appearancePresetName: "Catedral Sombria",
+  });
+  const lookup = {
+    appearancePresetNameById: new Map([["preset_catedral", "Catedral Dourada"]]),
+  };
+  assert.equal(summarizeSceneNode(customNode), "APARÊNCIA · Catedral Sombria");
+  assert.equal(summarizeSceneNode(customNode, lookup), "APARÊNCIA · Catedral Dourada");
+
+  const resetNode = createDefaultSceneNode("appearance", [builtinNode, customNode], {
+    appearanceAction: "reset",
+  });
+  assert.equal(resetNode.params.appearanceAction, "reset");
+  assert.equal(resetNode.params.appearancePresetId, "demologia");
+  assert.equal(summarizeSceneNode(resetNode), "APARÊNCIA · Original (Reset)");
+
+  const schedule = buildExecutionSchedule([builtinNode, customNode, resetNode]);
+  assert.equal(schedule.length, 3);
+  assert.equal(schedule[0].node.type, "appearance");
+  assert.equal(schedule[2].node.params.appearanceAction, "reset");
+
+  const imported = parseImportedSceneBuilderNodes(
+    serializeSceneBuilderNodes([builtinNode, customNode, resetNode]),
+  );
+  assert.equal(imported.ok, true);
+  if (imported.ok) {
+    assert.equal(imported.nodes.length, 3);
+    assert.equal(imported.nodes[0].params.appearancePresetId, "nirvana");
+    assert.equal(imported.nodes[1].params.appearancePresetId, "preset_catedral");
+    assert.equal(imported.nodes[2].params.appearanceAction, "reset");
+  }
+});
+
+

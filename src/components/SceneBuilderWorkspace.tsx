@@ -17,6 +17,7 @@ import {
   Minus,
   Moon,
   Music,
+  Palette,
   Play,
   Plus,
   RotateCcw,
@@ -31,7 +32,10 @@ import {
 import type { Track } from "../services/musicSync";
 import type { SoundBoardEffect } from "../utils/soundBoard";
 import type { HandoutItem } from "../types";
+import type { TabletopCustomPreset } from "../types/tabletopCustomization";
+import { TABLETOP_THEME_PRESETS } from "../utils/tabletopCustomization";
 import type {
+  AppearanceActionMode,
   BackgroundActionMode,
   BackgroundSourceType,
   BlackoutEasingDirection,
@@ -77,6 +81,7 @@ export interface SceneBuilderWorkspaceProps {
   soundBoardEffects: SoundBoardEffect[];
   clocks: TensionClock[];
   handouts: HandoutItem[];
+  savedCustomPresets?: TabletopCustomPreset[];
   onSaveNodes: (
     sceneId: string,
     nodes: SceneBuilderNode[],
@@ -96,6 +101,7 @@ const NODE_ICON_MAP: Record<SceneNodeType, React.ComponentType<{ size?: number; 
   fade: Film,
   blackout: Moon,
   background: ImageIcon,
+  appearance: Palette,
 };
 
 export const SceneBuilderWorkspace: React.FC<SceneBuilderWorkspaceProps> = ({
@@ -104,6 +110,7 @@ export const SceneBuilderWorkspace: React.FC<SceneBuilderWorkspaceProps> = ({
   soundBoardEffects,
   clocks,
   handouts,
+  savedCustomPresets = [],
   onSaveNodes,
   onClose,
   roomId = "default-table",
@@ -264,13 +271,21 @@ export const SceneBuilderWorkspace: React.FC<SceneBuilderWorkspaceProps> = ({
     for (const c of clocks) clockTitleById.set(c.id, c.title);
     const handoutTitleById = new Map<string, string>();
     for (const h of handouts) handoutTitleById.set(h.id, h.title);
+    const appearancePresetNameById = new Map<string, string>();
+    for (const builtin of TABLETOP_THEME_PRESETS) {
+      appearancePresetNameById.set(builtin.id, builtin.name);
+    }
+    for (const custom of savedCustomPresets) {
+      appearancePresetNameById.set(custom.id, custom.name);
+    }
     return {
       trackNameByUrl,
       effectNameById,
       clockTitleById,
       handoutTitleById,
+      appearancePresetNameById,
     };
-  }, [tracks, soundBoardEffects, clocks, handouts]);
+  }, [tracks, soundBoardEffects, clocks, handouts, savedCustomPresets]);
 
   const sortedNodes = useMemo(() => sortSceneBuilderNodes(nodes), [nodes]);
   const totalDurationSec = useMemo(
@@ -403,6 +418,16 @@ export const SceneBuilderWorkspace: React.FC<SceneBuilderWorkspaceProps> = ({
       overrides.handoutId = handouts[0].id;
       overrides.handoutTitle = handouts[0].title;
       overrides.handoutAction = "reveal_all";
+    } else if (type === "appearance") {
+      if (savedCustomPresets.length > 0) {
+        overrides.appearanceAction = "preset";
+        overrides.appearancePresetId = savedCustomPresets[0].id;
+        overrides.appearancePresetName = savedCustomPresets[0].name;
+      } else {
+        overrides.appearanceAction = "preset";
+        overrides.appearancePresetId = "nirvana";
+        overrides.appearancePresetName = "Nirvana";
+      }
     }
 
     const created = createDefaultSceneNode(type, sortedNodes, overrides);
@@ -1665,6 +1690,256 @@ export const SceneBuilderWorkspace: React.FC<SceneBuilderWorkspaceProps> = ({
                           <span>Remover</span>
                         </button>
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {node.type === "appearance" && (() => {
+          const action: AppearanceActionMode =
+            node.params.appearanceAction === "reset" ? "reset" : "preset";
+          const selectedPresetId = node.params.appearancePresetId || "";
+          const builtInOptions = TABLETOP_THEME_PRESETS.filter(
+            (p) => p.id !== "demologia",
+          );
+          const selectedExistsInLibrary =
+            selectedPresetId === "demologia" ||
+            selectedPresetId === "nirvana" ||
+            selectedPresetId === "profano" ||
+            savedCustomPresets.some((p) => p.id === selectedPresetId);
+
+          return (
+            <div
+              className="space-y-3"
+              data-testid="inspector-appearance-section"
+            >
+              {/* Ação: Aplicar Preset vs Resetar Original */}
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-[#8c8e9e] mb-1">
+                  Ação na Aparência do HUB
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="appearance-action-preset"
+                    onClick={() => {
+                      const fallbackPreset =
+                        savedCustomPresets[0]
+                          ? {
+                              id: savedCustomPresets[0].id,
+                              name: savedCustomPresets[0].name,
+                            }
+                          : { id: "nirvana", name: "Nirvana" };
+                      updateSelectedNode((prev) => ({
+                        ...prev,
+                        params: {
+                          ...prev.params,
+                          appearanceAction: "preset",
+                          appearancePresetId:
+                            prev.params.appearancePresetId &&
+                            prev.params.appearancePresetId !== "demologia"
+                              ? prev.params.appearancePresetId
+                              : fallbackPreset.id,
+                          appearancePresetName:
+                            prev.params.appearancePresetId &&
+                            prev.params.appearancePresetId !== "demologia"
+                              ? prev.params.appearancePresetName
+                              : fallbackPreset.name,
+                        },
+                      }));
+                    }}
+                    className={`min-h-[40px] px-2 text-[10px] uppercase tracking-wider font-bold border cursor-pointer touch-manipulation inline-flex items-center justify-center gap-1.5 ${
+                      action === "preset"
+                        ? "bg-[#2a0f1f] border-rose-400 text-rose-100"
+                        : "bg-[#08080c] border-[#262634] text-[#8c8e9e] hover:text-white"
+                    }`}
+                  >
+                    <Palette size={12} />
+                    <span>Aplicar Preset</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="appearance-action-reset"
+                    onClick={() =>
+                      updateSelectedNode((prev) => ({
+                        ...prev,
+                        params: {
+                          ...prev.params,
+                          appearanceAction: "reset",
+                          appearancePresetId: "demologia",
+                          appearancePresetName: "Demologia Original",
+                        },
+                      }))
+                    }
+                    className={`min-h-[40px] px-2 text-[10px] uppercase tracking-wider font-bold border cursor-pointer touch-manipulation inline-flex items-center justify-center gap-1.5 ${
+                      action === "reset"
+                        ? "bg-[#2a0f1f] border-rose-400 text-rose-100"
+                        : "bg-[#08080c] border-[#262634] text-[#8c8e9e] hover:text-white"
+                    }`}
+                  >
+                    <RotateCcw size={12} />
+                    <span>Original (Reset)</span>
+                  </button>
+                </div>
+              </div>
+
+              {action === "reset" ? (
+                <div
+                  data-testid="appearance-reset-info"
+                  className="bg-[#08080c] border border-rose-500/35 px-3 py-2.5 space-y-1"
+                >
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-rose-300">
+                    Restaurar Aparência Original
+                  </div>
+                  <p className="text-[11px] font-sans text-[#9da0b2] leading-relaxed">
+                    Reseta imediatamente o HUB de todos os jogadores para a identidade
+                    visual oficial <strong className="text-white">Demologia Original</strong>,
+                    sem apagar fichas nem suas predefinições salvas.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Predefinições Custom Salvas */}
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <label className="text-[10px] uppercase tracking-wider text-[#8c8e9e]">
+                        Predefinições Custom Salvas
+                      </label>
+                      <span className="text-[9px] text-[#787a8c] tabular-nums">
+                        {savedCustomPresets.length} {savedCustomPresets.length === 1 ? "salva" : "salvas"}
+                      </span>
+                    </div>
+
+                    {savedCustomPresets.length === 0 ? (
+                      <div
+                        data-testid="appearance-no-custom-presets"
+                        className="bg-[#08080c] border border-dashed border-[#272736] px-2.5 py-2 text-[10px] font-sans text-[#85879a] leading-relaxed"
+                      >
+                        Nenhuma predefinição custom salva ainda. Crie e salve na aba{" "}
+                        <strong className="text-white">Customização</strong> para usar aqui.
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {savedCustomPresets.map((preset) => {
+                          const isSelected = selectedPresetId === preset.id;
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              data-testid={`appearance-preset-option-${preset.id}`}
+                              onClick={() =>
+                                updateSelectedNode((prev) => ({
+                                  ...prev,
+                                  params: {
+                                    ...prev.params,
+                                    appearanceAction: "preset",
+                                    appearancePresetId: preset.id,
+                                    appearancePresetName: preset.name,
+                                  },
+                                }))
+                              }
+                              className={`w-full min-h-[42px] px-2.5 py-2 border text-left transition-colors cursor-pointer touch-manipulation flex items-center justify-between gap-2 ${
+                                isSelected
+                                  ? "bg-[#2a0f1f] border-rose-400 text-white"
+                                  : "bg-[#08080c] hover:bg-[#12121a] border-[#262634] text-[#c5c7d6]"
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-bold uppercase tracking-wider truncate">
+                                  {preset.name}
+                                </div>
+                                <div className="text-[9px] text-[#8c8e9e] uppercase tracking-wider">
+                                  Custom Salva
+                                  {preset.background?.url ? " · Fundo" : ""}
+                                  {preset.interfaceStyle.panelOpacity === 0 ? " · Sem painéis" : ""}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {[
+                                  preset.colors.background,
+                                  preset.colors.primary,
+                                  preset.colors.accent,
+                                ].map((hex, i) => (
+                                  <span
+                                    key={i}
+                                    className="w-3.5 h-3.5 border border-white/20"
+                                    style={{ backgroundColor: hex }}
+                                  />
+                                ))}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Presets Padrão do Sistema */}
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-[#8c8e9e] mb-1.5">
+                      Temas Predefinidos do HUB
+                    </label>
+                    <div className="space-y-1.5">
+                      {builtInOptions.map((preset) => {
+                        const isSelected = selectedPresetId === preset.id;
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            data-testid={`appearance-preset-option-${preset.id}`}
+                            onClick={() =>
+                              updateSelectedNode((prev) => ({
+                                ...prev,
+                                params: {
+                                  ...prev.params,
+                                  appearanceAction: "preset",
+                                  appearancePresetId: preset.id,
+                                  appearancePresetName: preset.name,
+                                },
+                              }))
+                            }
+                            className={`w-full min-h-[42px] px-2.5 py-2 border text-left transition-colors cursor-pointer touch-manipulation flex items-center justify-between gap-2 ${
+                              isSelected
+                                ? "bg-[#2a0f1f] border-rose-400 text-white"
+                                : "bg-[#08080c] hover:bg-[#12121a] border-[#262634] text-[#c5c7d6]"
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="text-[11px] font-bold uppercase tracking-wider truncate">
+                                {preset.name}
+                              </div>
+                              <div className="text-[9px] text-[#8c8e9e] uppercase tracking-wider truncate">
+                                {preset.tagline}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {[
+                                preset.colors.background,
+                                preset.colors.primary,
+                                preset.colors.accent,
+                              ].map((hex, i) => (
+                                <span
+                                  key={i}
+                                  className="w-3.5 h-3.5 border border-white/20"
+                                  style={{ backgroundColor: hex }}
+                                />
+                              ))}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {selectedPresetId && !selectedExistsInLibrary && (
+                    <div
+                      role="alert"
+                      className="bg-amber-950/35 border border-amber-600/50 px-2.5 py-2 text-[10px] text-amber-200"
+                    >
+                      A predefinição vinculada ({node.params.appearancePresetName || selectedPresetId}) não está mais salva na sala. Selecione outra predefinição acima.
                     </div>
                   )}
                 </div>

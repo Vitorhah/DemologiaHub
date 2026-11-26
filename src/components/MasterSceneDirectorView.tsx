@@ -25,6 +25,7 @@ import {
 import type { Track } from "../services/musicSync";
 import type { SoundBoardEffect } from "../utils/soundBoard";
 import type { HandoutItem } from "../types";
+import type { TabletopCustomPreset } from "../types/tabletopCustomization";
 import {
   ClockCategory,
   ClockSegmentCount,
@@ -53,6 +54,7 @@ export interface MasterSceneDirectorViewProps {
   tracks: Track[];
   soundBoardEffects?: SoundBoardEffect[];
   handouts?: HandoutItem[];
+  savedCustomPresets?: TabletopCustomPreset[];
   currentOstUrl?: string | null;
   runningTimelineSceneId?: string | null;
   onStopTimeline?: () => void;
@@ -111,6 +113,7 @@ export const MasterSceneDirectorView: React.FC<MasterSceneDirectorViewProps> = (
   tracks,
   soundBoardEffects = [],
   handouts = [],
+  savedCustomPresets = [],
   runningTimelineSceneId = null,
   onStopTimeline,
   onSaveScene,
@@ -381,6 +384,7 @@ export const MasterSceneDirectorView: React.FC<MasterSceneDirectorViewProps> = (
         soundBoardEffects={soundBoardEffects}
         clocks={masterState.clocks}
         handouts={handouts}
+        savedCustomPresets={savedCustomPresets}
         onSaveNodes={async (sceneId, nextNodes) => {
           if (onSaveSceneNodes) {
             return onSaveSceneNodes(sceneId, nextNodes);

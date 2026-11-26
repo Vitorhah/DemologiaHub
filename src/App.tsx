@@ -4877,6 +4877,20 @@ export default function App() {
                 name: node.params.backgroundName || "",
               });
             }
+          } else if (node.type === "appearance") {
+            const action = node.params.appearanceAction === "reset" ? "reset" : "preset";
+            void tabletopThemeSync
+              .applyAppearancePreset(action, node.params.appearancePresetId)
+              .then((res) => {
+                if (res.ok && res.clearSceneBackground) {
+                  void handleApplySceneBackground({
+                    mode: "default",
+                    url: null,
+                    mediaType: null,
+                    name: "",
+                  });
+                }
+              });
           }
         }, item.executeAtMs);
         timelineTimersRef.current.push(tid);
@@ -6828,6 +6842,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   tracks={ostTracks}
                   soundBoardEffects={soundBoardEffects}
                   handouts={handoutsSync.handouts}
+                  savedCustomPresets={tabletopThemeSync.savedPresets}
                   currentOstUrl={playbackState?.track_url || null}
                   runningTimelineSceneId={runningTimelineSceneId}
                   onStopTimeline={cancelActiveTimeline}
@@ -6909,11 +6924,14 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 <MasterCustomizationView
                   roomId={currentRoomId}
                   activeConfig={tabletopThemeSync.customization}
+                  savedPresets={tabletopThemeSync.savedPresets}
                   syncStatus={tabletopThemeSync.syncStatus}
                   syncError={tabletopThemeSync.syncError}
                   isSaving={tabletopThemeSync.isSaving}
                   onSaveCustomization={tabletopThemeSync.saveCustomization}
                   onResetCustomization={tabletopThemeSync.resetCustomization}
+                  onSaveCustomPreset={tabletopThemeSync.saveCustomPreset}
+                  onDeleteCustomPreset={tabletopThemeSync.deleteCustomPreset}
                 />
               </div>
             )}
