@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { GameMode } from "../types";
 import { DEMOLOGIA_LOGO_URL } from "../constants/branding";
+import type { TabletopCustomizationConfig } from "../types/tabletopCustomization";
+import { resolveEffectiveBranding } from "../utils/tabletopCustomization";
 import { motion } from "motion/react";
 import { SNAPPY_SPRING } from "./MotionPrimitives";
 
@@ -35,6 +37,7 @@ export interface NavigationSidebarProps {
   isOnline?: boolean;
   unreadHandoutsCount?: number;
   onLogoutMaster?: () => void;
+  customization?: TabletopCustomizationConfig;
 }
 
 export const NavigationSidebar = React.memo(function NavigationSidebar({
@@ -51,8 +54,18 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
   isOnline = false,
   unreadHandoutsCount = 0,
   onLogoutMaster,
+  customization,
 }: NavigationSidebarProps) {
   const isRlMode = gameMode === "rl";
+  const effectiveBranding = customization
+    ? resolveEffectiveBranding(customization)
+    : {
+        primaryLogo: DEMOLOGIA_LOGO_URL,
+        secondaryLogo: DEMOLOGIA_LOGO_URL,
+        headerTitle: "Demologya",
+        seasonSubtitle: "",
+        campaignIcon: "",
+      };
   const [collapsed, setCollapsed] = useState(false);
   const touchStartXRef = useRef<number | null>(null);
 
@@ -203,7 +216,7 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
       <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className={`fixed top-0 left-0 bottom-0 z-50 w-64 max-w-[82vw] lg:static lg:w-full lg:max-w-none lg:h-[100dvh] bg-[#0a0a0e]/95 border-r border-[#1c1c24] flex flex-col justify-between p-3 shadow-2xl lg:shadow-none transition-transform duration-220 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform select-none ${
+        className={`app-sidebar-panel fixed top-0 left-0 bottom-0 z-50 w-64 max-w-[82vw] lg:static lg:w-full lg:max-w-none lg:h-[100dvh] bg-[#0a0a0e]/95 border-r border-[#1c1c24] flex flex-col justify-between p-3 shadow-2xl lg:shadow-none transition-transform duration-220 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform select-none ${
           menuOpen
             ? "translate-x-0 pointer-events-auto"
             : "-translate-x-full pointer-events-none lg:translate-x-0 lg:pointer-events-auto"
@@ -224,6 +237,7 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
           >
             <button
               type="button"
+              data-testid="sidebar-brand-button"
               onClick={() =>
                 handleNavClick(() => {
                   setActiveFichaId("main");
@@ -231,19 +245,49 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
                   scrollToSection();
                 })
               }
-              className={`flex items-center gap-2.5 min-w-0 cursor-pointer group active:scale-[0.98] transition-transform duration-150 ${
+              className={`flex items-center gap-2.5 min-w-0 text-left cursor-pointer group active:scale-[0.98] transition-transform duration-150 ${
                 collapsed ? "lg:hidden" : ""
               }`}
               title="Ir para a Ficha"
             >
               <img
-                src={DEMOLOGIA_LOGO_URL}
-                alt="Demologia"
+                src={effectiveBranding.primaryLogo}
+                alt={effectiveBranding.headerTitle}
+                onError={(e) => {
+                  if (e.currentTarget.src !== DEMOLOGIA_LOGO_URL) {
+                    e.currentTarget.src = DEMOLOGIA_LOGO_URL;
+                  }
+                }}
                 className="w-6 h-6 object-cover rounded-none border border-[#2a2a34] group-hover:border-[var(--op-red)] transition-colors duration-200 shrink-0"
               />
-              <span className="font-mono text-xs font-bold tracking-[0.18em] text-[#eeeeee] uppercase truncate">
-                Demologya
-              </span>
+              <div className="min-w-0 flex flex-col">
+                <span className="flex items-center gap-1.5 min-w-0">
+                  {effectiveBranding.campaignIcon && (
+                    <img
+                      src={effectiveBranding.campaignIcon}
+                      alt="Ícone da campanha"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                      className="w-3.5 h-3.5 object-cover shrink-0"
+                    />
+                  )}
+                  <span
+                    data-testid="sidebar-brand-title"
+                    className="font-mono text-xs font-bold tracking-[0.18em] text-[#eeeeee] uppercase truncate"
+                  >
+                    {effectiveBranding.headerTitle}
+                  </span>
+                </span>
+                {effectiveBranding.seasonSubtitle && (
+                  <span
+                    data-testid="sidebar-brand-subtitle"
+                    className="font-mono text-[9px] tracking-[0.12em] text-[#9b9caa] uppercase truncate mt-0.5"
+                  >
+                    {effectiveBranding.seasonSubtitle}
+                  </span>
+                )}
+              </div>
             </button>
 
             <div className="flex items-center gap-1.5 shrink-0">
@@ -313,7 +357,7 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
                       active
                         ? isRlMode
                           ? "bg-purple-950/40 text-white font-bold"
-                          : "bg-[rgba(181,42,48,0.16)] text-white font-bold"
+                          : "bg-[var(--op-sidebar-active)] text-white font-bold"
                         : "text-[#8e90a0] hover:text-white hover:bg-white/[0.03]"
                     }`}
                   >
@@ -325,7 +369,7 @@ export const NavigationSidebar = React.memo(function NavigationSidebar({
                         className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] ${
                           isRlMode
                             ? "bg-[#c084fc] shadow-[0_0_8px_#a855f7]"
-                            : "bg-[var(--op-red-bright)] shadow-[0_0_8px_#b81d24]"
+                            : "bg-[var(--op-red-bright)] shadow-[0_0_8px_var(--op-red-bright)]"
                         }`}
                       />
                     ) : (

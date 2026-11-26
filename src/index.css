@@ -1540,4 +1540,160 @@ html[data-text-scale="large"] {
     contain-intrinsic-size: auto 190px;
 }
 
+/* ============================================================================
+   CUSTOMIZAÇÃO VISUAL GLOBAL DO TABLETOP (SOMENTE QUANDO ATIVA NA SALA)
+   Preserva 100% da aparência original Demologia quando data-custom-theme não está ativo.
+   Exclui [data-testid="customization-live-preview"] para manter prévia isolada do rascunho.
+   ============================================================================ */
+html[data-custom-theme="true"],
+html[data-custom-theme="true"] body {
+    background-color: var(--ct-bg) !important;
+    color: var(--ct-text) !important;
+}
+
+html[data-custom-theme="true"] .app-sidebar-panel {
+    background-color: var(--ct-panel-header-rgba) !important;
+    border-color: var(--ct-border) !important;
+    box-shadow: var(--ct-shadow-panel) !important;
+}
+
+html[data-custom-theme="true"] .master-header-bar {
+    background-color: var(--ct-panel-header-rgba) !important;
+    border-color: var(--ct-border) !important;
+    box-shadow: var(--ct-shadow-panel) !important;
+}
+
+html[data-custom-theme="true"] .hud-wrapper-box,
+html[data-custom-theme="true"] .section,
+html[data-custom-theme="true"] .var-box,
+html[data-custom-theme="true"] .inv-slot,
+html[data-custom-theme="true"] .btn-menu {
+    background: var(--ct-panel-rgba) !important;
+    border-color: var(--ct-border) !important;
+    box-shadow: var(--ct-shadow-panel) !important;
+    color: var(--ct-text) !important;
+    border-radius: var(--ct-radius) !important;
+}
+
+html[data-custom-theme="true"] .hud-container {
+    background: radial-gradient(circle at 50% -10%, var(--ct-primary-soft) 0%, transparent 72%) !important;
+    border-bottom-color: var(--ct-border) !important;
+}
+
+html[data-custom-theme="true"] .eye-logo {
+    filter: drop-shadow(0 0 9px var(--ct-primary-glow));
+}
+
+html[data-custom-theme="true"] .btn-menu:hover {
+    border-color: var(--ct-accent) !important;
+    background: var(--ct-panel-light) !important;
+}
+
+/* Mapeamento seguro de superfícies escuras padrão para o tema da sala (fora da pré-visualização) */
+html[data-custom-theme="true"] #app :is(
+    [class*="bg-[#0e0e13]"],
+    [class*="bg-[#0c0c10]"],
+    [class*="bg-[#151518]"],
+    [class*="bg-[#111115]"],
+    [class*="bg-[#121218]"],
+    [class*="bg-[#101016]"],
+    [class*="bg-[#0d0d13]"],
+    [class*="bg-[#0b0b0f]"]
+):not([data-testid="customization-live-preview"]):not([data-testid="customization-live-preview"] *) {
+    background-color: var(--ct-panel-rgba) !important;
+}
+
+html[data-custom-theme="true"] #app :is(
+    [class*="border-[#23232f]"],
+    [class*="border-[#252532]"],
+    [class*="border-[#262634]"],
+    [class*="border-[#22222c]"],
+    [class*="border-[#202028]"],
+    [class*="border-[#1c1c24]"],
+    [class*="border-[#181820]"],
+    [class*="border-[#1d1d28]"],
+    [class*="border-[#2a2a38]"],
+    [class*="border-[#24242e]"],
+    [class*="border-[#242430]"]
+):not([data-testid="customization-live-preview"]):not([data-testid="customization-live-preview"] *) {
+    border-color: var(--ct-border) !important;
+}
+
+html[data-custom-theme="true"] #app :is(
+    [class*="text-[#dedede]"],
+    [class*="text-[#eeeeee]"]
+):not([data-testid="customization-live-preview"]):not([data-testid="customization-live-preview"] *) {
+    color: var(--ct-text) !important;
+}
+
+html[data-custom-theme="true"] #app :is(
+    [class*="text-[#9b9caa]"],
+    [class*="text-[#8a8b9c]"],
+    [class*="text-[#828392]"],
+    [class*="text-[#9ca3af]"]
+):not([data-testid="customization-live-preview"]):not([data-testid="customization-live-preview"] *) {
+    color: var(--ct-text-secondary) !important;
+}
+
+html[data-custom-theme="true"] #app button[class~="bg-[var(--op-red)]"]:not(:disabled):not([data-testid="customization-live-preview"] *) {
+    background-color: var(--ct-interactive) !important;
+    color: var(--ct-interactive-text) !important;
+}
+
+html[data-custom-theme="true"] #app button[class~="bg-[var(--op-red)]"]:not(:disabled):not([data-testid="customization-live-preview"] *):hover {
+    background-color: var(--ct-interactive-hover) !important;
+}
+
+/* Arredondamento global quando diferente de 0px */
+html[data-custom-theme="true"]:not([data-ct-radius="none"]) #app :is(
+    section,
+    button,
+    input,
+    textarea,
+    select,
+    [role="dialog"],
+    .hud-wrapper-box,
+    .section,
+    .var-box,
+    .inv-slot
+):not([data-testid="customization-live-preview"]):not([data-testid="customization-live-preview"] *) {
+    border-radius: var(--ct-radius) !important;
+}
+
+/* Densidade visual da interface */
+html[data-custom-theme="true"][data-ct-density="compact"] {
+    font-size: 94%;
+}
+
+html[data-custom-theme="true"][data-ct-density="comfortable"] {
+    font-size: 105%;
+}
+
+/* Intensidade das animações: Reduzida */
+html[data-custom-theme="true"][data-ct-motion="reduced"] *,
+html[data-custom-theme="true"][data-ct-motion="reduced"] *::before,
+html[data-custom-theme="true"][data-ct-motion="reduced"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+}
+
+html[data-custom-theme="true"][data-ct-motion="reduced"] .eye-logo {
+    animation: none !important;
+}
+
+/* Desligar apenas o painel de fundo de HP e PE (mantém logo, nome, barras e números intactos) */
+html[data-ct-hide-hud-panel="true"] .hud-wrapper-box,
+html[data-ct-hide-hud-panel="true"] .hud-container,
+html[data-ct-hide-hud-panel="true"].theme-rl .hud-wrapper-box,
+html[data-ct-hide-hud-panel="true"].theme-rl .hud-container {
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    border-color: transparent !important;
+    border-width: 0 !important;
+    box-shadow: none !important;
+}
+
 

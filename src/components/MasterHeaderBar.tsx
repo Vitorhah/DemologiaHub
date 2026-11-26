@@ -14,8 +14,14 @@ import {
   Wrench,
   LogOut,
   Clapperboard,
+  Palette,
 } from "lucide-react";
 import { GameMode } from "../types";
+import type { TabletopCustomizationConfig } from "../types/tabletopCustomization";
+import {
+  isDefaultTabletopCustomization,
+  resolveEffectiveBranding,
+} from "../utils/tabletopCustomization";
 import { motion } from "motion/react";
 import { SNAPPY_SPRING } from "./MotionPrimitives";
 
@@ -25,6 +31,7 @@ export type MasterTabId =
   | "ost"
   | "handouts"
   | "biblioteca"
+  | "customizacao"
   | "utilities";
 
 export interface MasterHeaderBarProps {
@@ -44,6 +51,7 @@ export interface MasterHeaderBarProps {
   currentGlobalMode?: GameMode;
   onOpenModeModal?: () => void;
   onLogoutMaster?: () => void;
+  customization?: TabletopCustomizationConfig;
 }
 
 export function MasterHeaderBar({
@@ -62,7 +70,15 @@ export function MasterHeaderBar({
   currentGlobalMode = "demologia",
   onOpenModeModal,
   onLogoutMaster,
+  customization,
 }: MasterHeaderBarProps) {
+  const isCustomThemeActive = customization
+    ? !isDefaultTabletopCustomization(customization)
+    : false;
+  const effectiveBranding = customization
+    ? resolveEffectiveBranding(customization)
+    : null;
+
   const tabs = [
     {
       id: "fichas" as const,
@@ -95,6 +111,12 @@ export function MasterHeaderBar({
       count: libraryCount,
     },
     {
+      id: "customizacao" as const,
+      label: "Customização",
+      icon: Palette,
+      isActiveTrack: isCustomThemeActive,
+    },
+    {
       id: "utilities" as const,
       label: "Utilities",
       icon: Wrench,
@@ -102,7 +124,7 @@ export function MasterHeaderBar({
   ];
 
   return (
-    <header className="w-full bg-[#0c0c10]/[0.98] border-b border-[#202028] sticky top-0 z-30 font-mono transition-colors duration-200">
+    <header className="master-header-bar w-full bg-[#0c0c10]/[0.98] border-b border-[#202028] sticky top-0 z-30 font-mono transition-colors duration-200">
       <div className="max-w-7xl mx-auto px-2.5 sm:px-4">
         <div className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-2 py-2.5">
           {/* Esquerda: Botão Sidebar (Mobile) + Voltar + Abas com indicador inferior animado */}
@@ -190,8 +212,27 @@ export function MasterHeaderBar({
             </nav>
           </div>
 
-          {/* Direita: Controles Rápidos */}
+          {/* Direita: Selo da Campanha (se configurado) + Controles Rápidos */}
           <div className="flex items-center gap-1.5 ml-auto shrink-0">
+            {effectiveBranding && (effectiveBranding.campaignIcon || effectiveBranding.seasonSubtitle) && (
+              <div className="hidden 2xl:flex items-center gap-2 px-2.5 py-1 bg-[#121218] border border-[#242430] max-w-[200px]">
+                {effectiveBranding.campaignIcon && (
+                  <img
+                    src={effectiveBranding.campaignIcon}
+                    alt="Ícone da campanha"
+                    className="w-4 h-4 object-cover shrink-0"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
+                  />
+                )}
+                {effectiveBranding.seasonSubtitle && (
+                  <span className="text-[10px] uppercase tracking-wider text-[#b4b5c2] truncate">
+                    {effectiveBranding.seasonSubtitle}
+                  </span>
+                )}
+              </div>
+            )}
             {activeTab === "fichas" && setViewMode && (
               <div className="flex items-center bg-[#121218] border border-[#22222c] p-0.5 rounded-none">
                 <button

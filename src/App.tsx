@@ -169,6 +169,8 @@ import {
 } from "./utils/modeTransition";
 import { useMasterLibrarySync } from "./services/useMasterLibrarySync";
 import { useSceneDirectorSync } from "./services/useSceneDirectorSync";
+import { useTabletopThemeSync } from "./services/useTabletopThemeSync";
+import { resolveEffectiveBranding } from "./utils/tabletopCustomization";
 import { PlayerSceneOverlayBar } from "./components/PlayerSceneOverlayBar";
 import type { MasterTabId } from "./components/MasterHeaderBar";
 import type { NarrativeScene, SceneBackgroundPayload } from "./types/sceneDirector";
@@ -231,6 +233,11 @@ const MasterLibraryView = React.lazy(() =>
 const MasterSceneDirectorView = React.lazy(() =>
   import("./components/MasterSceneDirectorView").then((m) => ({
     default: m.MasterSceneDirectorView,
+  }))
+);
+const MasterCustomizationView = React.lazy(() =>
+  import("./components/MasterCustomizationView").then((m) => ({
+    default: m.MasterCustomizationView,
   }))
 );
 const CadernoDeCampoView = React.lazy(() =>
@@ -1063,6 +1070,17 @@ export default function App() {
     isOnline,
     onPublicClockCompleted: handlePublicClockCompleted,
   });
+
+  const tabletopThemeSync = useTabletopThemeSync({
+    roomId: currentRoomId,
+    isMestreAuth,
+    isOnline,
+  });
+
+  const effectiveTabletopBranding = useMemo(
+    () => resolveEffectiveBranding(tabletopThemeSync.customization),
+    [tabletopThemeSync.customization],
+  );
 
   const [runningTimelineSceneId, setRunningTimelineSceneId] = useState<string | null>(null);
   const timelineTimersRef = useRef<number[]>([]);
@@ -2364,6 +2382,7 @@ export default function App() {
           .not("id", "like", "SOUNDBOARD_%")
           .not("id", "like", "MASTER_NOTE_%")
           .not("id", "like", "CREATURE_%")
+          .not("id", "like", "TABLETOP_THEME_%")
           .then(
             ({ data, error }) => {
               if (error) {
@@ -4287,11 +4306,42 @@ export default function App() {
             ))}
           </div>
 
-          <div className="shrink-0 flex justify-center">
+          <div className="shrink-0 flex flex-col items-center justify-center gap-1">
+            {(effectiveTabletopBranding.campaignIcon || effectiveTabletopBranding.seasonSubtitle) && (
+              <div
+                data-testid="hud-campaign-banner"
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#0e0e13]/85 border border-[#2a2a36] text-[9px] font-mono uppercase tracking-[0.18em] text-[#c7c8d6] max-w-[220px]"
+              >
+                {effectiveTabletopBranding.campaignIcon && (
+                  <img
+                    src={effectiveTabletopBranding.campaignIcon}
+                    alt="Ícone da campanha"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
+                    className="w-3.5 h-3.5 object-cover shrink-0"
+                  />
+                )}
+                <span className="truncate">
+                  {effectiveTabletopBranding.seasonSubtitle || effectiveTabletopBranding.headerTitle}
+                </span>
+              </div>
+            )}
             <img
               className="eye-logo"
-              src={DEMOLOGIA_LOGO_URL}
-              alt={isRlMode ? "Símbolo Real L" : "Símbolo Demologia"}
+              src={effectiveTabletopBranding.secondaryLogo}
+              alt={
+                effectiveTabletopBranding.headerTitle !== "Demologya"
+                  ? `Símbolo ${effectiveTabletopBranding.headerTitle}`
+                  : isRlMode
+                    ? "Símbolo Real L"
+                    : "Símbolo Demologia"
+              }
+              onError={(e) => {
+                if (e.currentTarget.src !== DEMOLOGIA_LOGO_URL) {
+                  e.currentTarget.src = DEMOLOGIA_LOGO_URL;
+                }
+              }}
               decoding="async"
             />
           </div>
@@ -4869,7 +4919,12 @@ export default function App() {
 
   return (
     <MotionConfig
-      reducedMotion={playerSettings.reducedMotion ? "always" : "user"}
+      reducedMotion={
+        playerSettings.reducedMotion ||
+        tabletopThemeSync.customization.interfaceStyle.animationIntensity === "reduced"
+          ? "always"
+          : "user"
+      }
     >
     <div id="app" className="relative min-h-screen">
       {!ostAudioAccepted && (
@@ -4883,28 +4938,50 @@ export default function App() {
         />
       )}
       {(() => {
-        const hasCustomBg = Boolean(customStyle.backgroundUrl);
-        const resolvedBgMediaType = hasCustomBg
+        const hasSceneBg = Boolean(customStyle.backgroundUrl);
+        const themeBg = tabletopThemeSync.customization.background;
+        const hasThemeMediaBg = !hasSceneBg && Boolean(themeBg?.url);
+        const activeBgUrl = hasSceneBg
+          ? customStyle.backgroundUrl!
+          : hasThemeMediaBg
+            ? themeBg.url
+            : null;
+        const hasCustomBg = Boolean(activeBgUrl);
+        const resolvedBgMediaType = hasSceneBg
           ? customStyle.backgroundMediaType ||
             (isVideoBackground(customStyle.backgroundUrl)
               ? "video"
               : detectBackgroundMediaType(customStyle.backgroundUrl))
-          : "default";
+          : hasThemeMediaBg
+            ? themeBg.mediaType === "default"
+              ? detectBackgroundMediaType(themeBg.url)
+              : themeBg.mediaType
+            : "default";
         const isVideoBg =
           hasCustomBg &&
-          (resolvedBgMediaType === "video" ||
-            isVideoBackground(customStyle.backgroundUrl));
+          (resolvedBgMediaType === "video" || isVideoBackground(activeBgUrl));
+        const activeOverlayOpacity = hasSceneBg
+          ? customStyle.backgroundFade !== undefined
+            ? customStyle.backgroundFade
+            : 0
+          : hasThemeMediaBg
+            ? themeBg.overlayOpacity
+            : 0;
+        const isThemeColorActive =
+          tabletopThemeSync.customization.colors.background !== "#0b0b0d" ||
+          tabletopThemeSync.customization.colors.primary !== "#8f171c";
 
         return (
           <div
             id="app-bg"
             data-bg-mode={hasCustomBg ? "custom" : "default"}
+            data-bg-source={hasSceneBg ? "scene" : hasThemeMediaBg ? "customization" : "default"}
             data-bg-media-type={resolvedBgMediaType}
             className="fixed inset-0 z-0 pointer-events-none overflow-hidden"
             style={{
               ...(hasCustomBg
                 ? {
-                    backgroundColor: "#060609",
+                    backgroundColor: tabletopThemeSync.customization.colors.background || "#060609",
                     transition: `transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + "s ease-out" : "1s ease-out"}`,
                   }
                 : activeMode === "rl"
@@ -4913,10 +4990,15 @@ export default function App() {
                       backgroundColor: "#070609",
                       transition: `background-image 0.5s ease-in-out, transform ${cutsceneState?.active ? (cutsceneState.duration || 6) + "s ease-out" : "1s ease-out"}`,
                     }
-                  : {
-                      backgroundImage: `radial-gradient(ellipse 95% 55% at 50% -12%, rgba(181, 42, 48, 0.16) 0%, rgba(110, 14, 20, 0.08) 35%, rgba(11, 11, 14, 0) 70%), radial-gradient(ellipse 70% 45% at 85% 95%, rgba(143, 23, 28, 0.08) 0%, transparent 60%), linear-gradient(180deg, #0e0d12 0%, #0a0a0d 35%, #070709 100%)`,
-                      backgroundColor: "#070709",
-                    }),
+                  : isThemeColorActive
+                    ? {
+                        backgroundImage: `radial-gradient(ellipse 90% 55% at 50% -12%, var(--ct-primary-soft, rgba(181, 42, 48, 0.14)) 0%, transparent 70%)`,
+                        backgroundColor: tabletopThemeSync.customization.colors.background,
+                      }
+                    : {
+                        backgroundImage: `radial-gradient(ellipse 95% 55% at 50% -12%, rgba(181, 42, 48, 0.16) 0%, rgba(110, 14, 20, 0.08) 35%, rgba(11, 11, 14, 0) 70%), radial-gradient(ellipse 70% 45% at 85% 95%, rgba(143, 23, 28, 0.08) 0%, transparent 60%), linear-gradient(180deg, #0e0d12 0%, #0a0a0d 35%, #070709 100%)`,
+                        backgroundColor: "#070709",
+                      }),
               transform: cutsceneState?.active
                 ? `scale(${cutsceneState.zoom || 1}) translateZ(0)`
                 : "translateZ(0)",
@@ -4925,10 +5007,11 @@ export default function App() {
             }}
           >
             {hasCustomBg &&
+              activeBgUrl &&
               (isVideoBg ? (
                 <video
-                  key={customStyle.backgroundUrl!}
-                  src={customStyle.backgroundUrl!}
+                  key={activeBgUrl}
+                  src={activeBgUrl}
                   autoPlay
                   loop
                   muted
@@ -4941,19 +5024,19 @@ export default function App() {
                 />
               ) : (
                 <img
-                  key={customStyle.backgroundUrl!}
-                  src={customStyle.backgroundUrl!}
+                  key={activeBgUrl}
+                  src={activeBgUrl}
                   alt=""
                   aria-hidden="true"
                   data-testid="app-bg-image"
                   className="w-full h-full object-cover"
                 />
               ))}
-            {hasCustomBg && customStyle.backgroundFade !== undefined && (
+            {hasCustomBg && activeOverlayOpacity > 0 && (
               <div
                 className="absolute inset-0 transition-opacity duration-500"
                 style={{
-                  backgroundColor: `rgba(0,0,0,${customStyle.backgroundFade / 100})`,
+                  backgroundColor: `rgba(0,0,0,${activeOverlayOpacity / 100})`,
                 }}
               />
             )}
@@ -5406,6 +5489,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 }
               : undefined
           }
+          customization={tabletopThemeSync.customization}
         />
 
       <main className="flex-1 min-w-0 w-full transition-all min-h-[100dvh] relative z-10 flex flex-col">
@@ -6674,6 +6758,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 setActiveFichaId("main");
                 setCurrentPage("ficha");
               }}
+              customization={tabletopThemeSync.customization}
             />
 
             <MotionTabSwitch viewKey={mestreTab} className="w-full">
@@ -6815,6 +6900,20 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   onSendDataToPlayers={masterDataPushSync.sendDataToPlayers}
                   onInvokeCreatureSheets={handleInvokeCreatureSheets}
                   onOpenInitiativesTab={() => setMestreTab("fichas")}
+                />
+              </div>
+            )}
+
+            {mestreTab === "customizacao" && (
+              <div>
+                <MasterCustomizationView
+                  roomId={currentRoomId}
+                  activeConfig={tabletopThemeSync.customization}
+                  syncStatus={tabletopThemeSync.syncStatus}
+                  syncError={tabletopThemeSync.syncError}
+                  isSaving={tabletopThemeSync.isSaving}
+                  onSaveCustomization={tabletopThemeSync.saveCustomization}
+                  onResetCustomization={tabletopThemeSync.resetCustomization}
                 />
               </div>
             )}
