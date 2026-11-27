@@ -22,6 +22,7 @@ import {
   Shield,
   Skull,
   Sparkles,
+  Tag,
   Trash2,
   Upload,
   X,
@@ -47,7 +48,15 @@ import {
   parseImportedLibraryJson,
 } from "../utils/masterLibrary";
 import { formatPdiModifierChips, PdiItem } from "../utils/pdi";
-import { RITUAL_TEST_FORMULA, type RitualItem } from "../utils/rituals";
+import {
+  RITUAL_AFFILIATION_LIST,
+  RITUAL_TEST_FORMULA,
+  type RitualItem,
+} from "../utils/rituals";
+import type {
+  CustomAffiliationDraft,
+  CustomAffiliationRecord,
+} from "../utils/customAffiliations";
 import { RitualAffiliationTag } from "./RitualsSection";
 import { CLINICAL_EASE, MotionAccordion } from "./MotionPrimitives";
 import { PdiEditorModal } from "./PdiEditorModal";
@@ -58,12 +67,14 @@ import {
 } from "./MasterLibrarySendModal";
 import { MasterNotesSection } from "./MasterNotesSection";
 import { MasterCreaturesSection } from "./MasterCreaturesSection";
+import { MasterLibraryAffiliationsTab } from "./MasterLibraryAffiliationsTab";
 import { CreatureRichInlineText, CreatureRichText } from "./CreatureRichText";
 
 export interface MasterLibraryViewProps {
   masterId?: string | null;
   folders: MasterLibraryFolder[];
   items: MasterLibraryItem[];
+  customAffiliations: CustomAffiliationRecord[];
   syncStatus: "synced" | "syncing" | "offline";
   syncError: string | null;
   players: Array<LibraryPlayerTarget & { rituals?: unknown }>;
@@ -87,6 +98,12 @@ export interface MasterLibraryViewProps {
   onMoveItemToFolder: (
     itemId: string,
     folderId: string | null
+  ) => Promise<LibraryActionResult>;
+  onSaveCustomAffiliation: (
+    draft: CustomAffiliationDraft
+  ) => Promise<LibraryActionResult>;
+  onDeleteCustomAffiliation: (
+    affiliationId: string
   ) => Promise<LibraryActionResult>;
   onSendDataToPlayers: (
     targetPlayerIds: string[],
@@ -122,6 +139,7 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
   masterId,
   folders,
   items,
+  customAffiliations,
   syncStatus,
   syncError,
   players,
@@ -137,12 +155,14 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
   onSaveItem,
   onDeleteItem,
   onMoveItemToFolder,
+  onSaveCustomAffiliation,
+  onDeleteCustomAffiliation,
   onSendDataToPlayers,
   onInvokeCreatureSheets,
   onOpenInitiativesTab,
 }) => {
   const [activeSection, setActiveSection] = useState<
-    "arquivos" | "criaturas" | "anotacoes"
+    "arquivos" | "criaturas" | "anotacoes" | "afiliacoes"
   >("arquivos");
   const [creaturesCount, setCreaturesCount] = useState<number | null>(null);
   const [notesCount, setNotesCount] = useState<number | null>(null);
@@ -505,11 +525,11 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
         )}
       </div>
 
-      {/* SEÇÕES DA BIBLIOTECA: ARQUIVOS / CRIATURAS / ANOTAÇÕES */}
+      {/* SEÇÕES DA BIBLIOTECA: ARQUIVOS / CRIATURAS / ANOTAÇÕES / AFILIAÇÕES */}
       <div
         role="tablist"
         aria-label="Seções da Biblioteca do Mestre"
-        className="grid grid-cols-3 bg-[#0c0c10] border border-[#202028] p-1 gap-1"
+        className="grid grid-cols-2 sm:grid-cols-4 bg-[#0c0c10] border border-[#202028] p-1 gap-1"
       >
         <button
           type="button"
@@ -580,9 +600,38 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
             </span>
           )}
         </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "afiliacoes"}
+          data-testid="library-tab-afiliacoes"
+          onClick={() => setActiveSection("afiliacoes")}
+          className={`relative min-h-[44px] sm:min-h-[42px] px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-wider sm:tracking-widest flex items-center justify-center gap-1.5 sm:gap-2 border transition-colors cursor-pointer touch-manipulation ${
+            activeSection === "afiliacoes"
+              ? "bg-[#151520] border-[var(--op-red)]/80 text-white"
+              : "bg-transparent border-transparent text-[#8e90a0] hover:text-white hover:bg-[#111119]"
+          }`}
+        >
+          {activeSection === "afiliacoes" && (
+            <span className="absolute top-0 left-0 right-0 h-[2px] bg-[var(--op-red)]" />
+          )}
+          <Tag size={14} className="text-[var(--op-red-bright)] shrink-0" />
+          <span className="truncate">Afiliações</span>
+          <span className="text-[10px] text-[#8e90a0] tabular-nums hidden xs:inline">
+            ({RITUAL_AFFILIATION_LIST.length + customAffiliations.length})
+          </span>
+        </button>
       </div>
 
-      {activeSection === "anotacoes" ? (
+      {activeSection === "afiliacoes" ? (
+        <MasterLibraryAffiliationsTab
+          customAffiliations={customAffiliations}
+          syncError={syncError}
+          onSaveAffiliation={onSaveCustomAffiliation}
+          onDeleteAffiliation={onDeleteCustomAffiliation}
+        />
+      ) : activeSection === "anotacoes" ? (
         <MasterNotesSection
           masterId={masterId}
           onCountChange={setNotesCount}

@@ -4,18 +4,21 @@ import { MotionAccordion } from "./MotionPrimitives";
 import { RitualFormFields } from "./MasterLibraryFormFields";
 import { CreatureRichInlineText, CreatureRichText } from "./CreatureRichText";
 import {
-  RITUAL_AFFILIATIONS,
   RITUAL_TEST_FORMULA,
   RitualAffiliationId,
   RitualCapacityState,
   RitualItem,
+  getRitualAffiliationDefinition,
 } from "../utils/rituals";
+import { useRegisteredAffiliations } from "../services/useRegisteredAffiliations";
 
 export const RitualAffiliationTag: React.FC<{
   affiliationId: RitualAffiliationId;
   compact?: boolean;
 }> = React.memo(function RitualAffiliationTag({ affiliationId, compact = false }) {
-  const def = RITUAL_AFFILIATIONS[affiliationId];
+  // Subscribe to registry changes so edits to custom affiliation colors re-render immediately
+  useRegisteredAffiliations();
+  const def = getRitualAffiliationDefinition(affiliationId);
   if (!def) return null;
 
   return (

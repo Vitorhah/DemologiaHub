@@ -66,10 +66,10 @@ import {
   resolveAttributeUpdateWithProfile,
 } from "../utils/levelSystem";
 import {
-  RITUAL_AFFILIATION_LIST,
   RITUAL_TEST_FORMULA,
   type RitualAffiliationId,
 } from "../utils/rituals";
+import { useRegisteredAffiliations } from "../services/useRegisteredAffiliations";
 import {
   formatPdiModifierChips,
   getActivePdiBadgesForStat,
@@ -139,6 +139,7 @@ export const CreatureProfileBlock: React.FC<CreatureProfileBlockProps> =
       () => getMinimumLevelForAttributes(creature.variables),
       [creature.variables],
     );
+    const allAffiliations = useRegisteredAffiliations();
 
     const applyLevelChange = (rawNext: string | number) => {
       const validation = parseAndValidateLevelChange(rawNext, creature.variables);
@@ -374,7 +375,7 @@ export const CreatureProfileBlock: React.FC<CreatureProfileBlockProps> =
             className="flex flex-wrap gap-1.5"
             data-testid="creature-profile-affiliations-picker"
           >
-            {RITUAL_AFFILIATION_LIST.map((aff) => {
+            {allAffiliations.map((aff) => {
               const selected = creature.affiliations.includes(aff.id);
               return (
                 <button

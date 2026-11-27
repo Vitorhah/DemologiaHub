@@ -1,12 +1,12 @@
 import React, { useState } from "react";
 import { Check } from "lucide-react";
 import {
-  RITUAL_AFFILIATION_LIST,
   RITUAL_TEST_FORMULA,
   RitualItem,
   RitualLevel,
   toggleRitualAffiliation,
 } from "../utils/rituals";
+import { useRegisteredAffiliations } from "../services/useRegisteredAffiliations";
 import {
   MasterLibrarySkillData,
   MasterLibraryTributoData,
@@ -40,6 +40,7 @@ export const RitualFormFields: React.FC<RitualFormFieldsProps> = ({
   onChange,
 }) => {
   const [showDescPreview, setShowDescPreview] = useState(false);
+  const allAffiliations = useRegisteredAffiliations();
 
   return (
     <div className="space-y-3">
@@ -154,7 +155,7 @@ export const RitualFormFields: React.FC<RitualFormFieldsProps> = ({
           Afiliações
         </label>
         <div className="flex flex-wrap gap-1.5">
-          {RITUAL_AFFILIATION_LIST.map((aff) => {
+          {allAffiliations.map((aff) => {
             const selected = ritual.affiliations.includes(aff.id);
             return (
               <button

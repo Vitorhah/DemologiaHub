@@ -22,6 +22,7 @@ export function isSystemRecordId(id: string | null | undefined): boolean {
     id === "TABLETOP_GRID" ||
     id === "CADERNO_CAMPO_SHARED" ||
     id === "MASTER_LIBRARY" ||
+    id === "CUSTOM_AFFILIATIONS_SHARED" ||
     id === "SCENE_BACKGROUND_STATE" ||
     id.startsWith("SCENE_DIRECTOR_") ||
     id === HANDOUTS_MASTER_RECORD_ID ||
@@ -205,7 +206,13 @@ export function filterHandouts(
       return false;
     }
     if (q) {
-      const hay = `${item.title} ${item.description || ""} ${item.content} ${item.backText}`.toLowerCase();
+      const stripInline = (s: string) =>
+        s
+          .replace(/^\s*#h[1-6](?:\s+|:\s*)/gim, "")
+          .replace(/\*\*([^*]+)\*\*/g, "$1")
+          .replace(/\^\^([^^]+)\^\^/g, "$1")
+          .replace(/#\(([^)]+)\)/g, "$1");
+      const hay = `${item.title} ${stripInline(item.title)} ${item.description || ""} ${item.content} ${stripInline(item.content)} ${item.backText} ${stripInline(item.backText)}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;

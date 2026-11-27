@@ -20,11 +20,23 @@ import {
   computeResizedElementBox,
 } from "../../utils/masterCreations";
 import { CreationElementRenderer } from "./CreationElementRenderer";
+import {
+  CreationSmartGuidesOverlay,
+  type CreationSmartGuidesOverlayHandle,
+} from "./CreationSmartGuidesOverlay";
+import {
+  computeDragSmartGuides,
+  computeResizeSmartGuides,
+  type CreationGuideReference,
+  type SmartGuideLine,
+  type SmartSpacingGuide,
+} from "../../utils/creationSmartGuides";
 
 export interface CreationCanvasWorkspaceProps {
   document: CreationDocument;
   zoom: number;
   selectedId: string | null;
+  smartGuidesEnabled?: boolean;
   onSelect: (id: string | null) => void;
   onCommitElementBox: (
     id: string,
@@ -79,6 +91,9 @@ interface ActiveInteraction {
   startClientY: number;
   startBox: { x: number; y: number; width: number; height: number };
   currentBox: { x: number; y: number; width: number; height: number };
+  siblings: CreationGuideReference[];
+  guides: SmartGuideLine[];
+  spacingGuides: SmartSpacingGuide[];
   lockAspectRatio: boolean;
   aspectRatio: number | null;
   moved: boolean;
@@ -88,6 +103,7 @@ export const CreationCanvasWorkspace: React.FC<CreationCanvasWorkspaceProps> = (
   document,
   zoom,
   selectedId,
+  smartGuidesEnabled = true,
   onSelect,
   onCommitElementBox,
   onInlineTextChange,
@@ -101,10 +117,13 @@ export const CreationCanvasWorkspace: React.FC<CreationCanvasWorkspaceProps> = (
 }) => {
   const pageRef = useRef<HTMLDivElement | null>(null);
   const elementRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const guidesOverlayRef = useRef<CreationSmartGuidesOverlayHandle | null>(null);
   const interactionRef = useRef<ActiveInteraction | null>(null);
   const rafRef = useRef<number | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const smartGuidesEnabledRef = useRef(smartGuidesEnabled);
+  smartGuidesEnabledRef.current = smartGuidesEnabled;
 
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [isDragOverFile, setIsDragOverFile] = useState(false);
@@ -156,27 +175,59 @@ export const CreationCanvasWorkspace: React.FC<CreationCanvasWorkspaceProps> = (
       active.moved = true;
 
       let nextBox: { x: number; y: number; width: number; height: number };
+      let nextGuides: SmartGuideLine[] = [];
+      let nextSpacingGuides: SmartSpacingGuide[] = [];
+      const guideThreshold = Math.min(
+        6,
+        Math.max(4, Math.round(5 / Math.max(0.55, scale))),
+      );
+
       if (active.mode === "drag") {
-        nextBox = {
+        const rawBox = {
           x: Math.round(active.startBox.x + dx),
           y: Math.round(active.startBox.y + dy),
           width: active.startBox.width,
           height: active.startBox.height,
         };
+        const guided = computeDragSmartGuides(rawBox, active.siblings, {
+          enabled: smartGuidesEnabledRef.current,
+          assistSnap: !e.altKey,
+          threshold: guideThreshold,
+        });
+        nextBox = guided.box;
+        nextGuides = guided.guides;
+        nextSpacingGuides = guided.spacingGuides;
       } else {
-        nextBox = computeResizedElementBox(
+        const effectiveLockRatio = active.lockAspectRatio || e.shiftKey;
+        const rawBox = computeResizedElementBox(
           active.startBox,
           active.handle || "se",
           dx,
           dy,
           {
-            lockAspectRatio: active.lockAspectRatio || e.shiftKey,
+            lockAspectRatio: effectiveLockRatio,
             aspectRatio: active.aspectRatio,
           },
         );
+        const guided = computeResizeSmartGuides(
+          rawBox,
+          active.handle || "se",
+          active.siblings,
+          {
+            enabled: smartGuidesEnabledRef.current,
+            assistSnap: !e.altKey,
+            lockAspectRatio: effectiveLockRatio,
+            threshold: guideThreshold,
+          },
+        );
+        nextBox = guided.box;
+        nextGuides = guided.guides;
+        nextSpacingGuides = guided.spacingGuides;
       }
 
       active.currentBox = nextBox;
+      active.guides = nextGuides;
+      active.spacingGuides = nextSpacingGuides;
 
       if (rafRef.current === null) {
         rafRef.current = requestAnimationFrame(() => {
@@ -184,6 +235,7 @@ export const CreationCanvasWorkspace: React.FC<CreationCanvasWorkspaceProps> = (
           const cur = interactionRef.current;
           if (cur) {
             applyBoxDirectlyToDom(cur.elementId, cur.currentBox);
+            guidesOverlayRef.current?.setGuides(cur.guides, cur.spacingGuides);
           }
         });
       }
@@ -197,6 +249,7 @@ export const CreationCanvasWorkspace: React.FC<CreationCanvasWorkspaceProps> = (
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      guidesOverlayRef.current?.clear();
       if (active.moved) {
         onCommitElementBox(active.elementId, active.currentBox);
       }
@@ -212,8 +265,20 @@ export const CreationCanvasWorkspace: React.FC<CreationCanvasWorkspaceProps> = (
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
       }
+      guidesOverlayRef.current?.clear();
     };
   }, [onCommitElementBox]);
+
+  const getSiblingGuideRefs = (excludeId: string): CreationGuideReference[] =>
+    visibleElements
+      .filter((item) => item.id !== excludeId)
+      .map((item) => ({
+        id: item.id,
+        x: item.x,
+        y: item.y,
+        width: item.width,
+        height: item.height,
+      }));
 
   const startDragElement = (e: React.PointerEvent, el: CreationElement) => {
     if (e.button !== 0 && e.pointerType === "mouse") return;
@@ -229,6 +294,9 @@ export const CreationCanvasWorkspace: React.FC<CreationCanvasWorkspaceProps> = (
       startClientY: e.clientY,
       startBox: { x: el.x, y: el.y, width: el.width, height: el.height },
       currentBox: { x: el.x, y: el.y, width: el.width, height: el.height },
+      siblings: getSiblingGuideRefs(el.id),
+      guides: [],
+      spacingGuides: [],
       lockAspectRatio: false,
       aspectRatio: null,
       moved: false,
@@ -253,6 +321,9 @@ export const CreationCanvasWorkspace: React.FC<CreationCanvasWorkspaceProps> = (
       startClientY: e.clientY,
       startBox: { x: el.x, y: el.y, width: el.width, height: el.height },
       currentBox: { x: el.x, y: el.y, width: el.width, height: el.height },
+      siblings: getSiblingGuideRefs(el.id),
+      guides: [],
+      spacingGuides: [],
       lockAspectRatio: el.lockAspectRatio,
       aspectRatio: el.imageAspectRatio || (el.height > 0 ? el.width / el.height : null),
       moved: false,
@@ -509,6 +580,9 @@ export const CreationCanvasWorkspace: React.FC<CreationCanvasWorkspaceProps> = (
               </div>
             );
           })}
+
+          {/* Régua automática estilo Canva (overlay SVG isolado em 60fps) */}
+          <CreationSmartGuidesOverlay ref={guidesOverlayRef} zoom={zoom} />
         </div>
       </div>
     </div>

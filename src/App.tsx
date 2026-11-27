@@ -113,12 +113,12 @@ import {
 } from "./components/CreatureRichText";
 import { stripCreatureRichTextForPreview } from "./utils/creatureRichText";
 import {
-  RITUAL_AFFILIATIONS,
   RITUAL_TEST_FORMULA,
   RitualItem,
   RitualTestOutcome,
   createDefaultRitual,
   evaluateRitualTestOutcome,
+  getRitualAffiliationDefinition,
   getRitualCapacityState,
   normalizeRitualAffiliations,
   normalizeRitualCost,
@@ -1986,10 +1986,15 @@ export default function App() {
       })
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "players" },
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: "id=eq.MASTER_STATE",
+        },
         (payload) => {
           const newRecord = payload.new as any;
-          if (newRecord?.id === "MASTER_STATE" && newRecord?.data?.modeConfig) {
+          if (newRecord?.data?.modeConfig) {
             setGameModeConfig((prev: any) => {
               if (JSON.stringify(prev) !== JSON.stringify(newRecord.data.modeConfig)) {
                 try {
@@ -2000,17 +2005,38 @@ export default function App() {
               return prev;
             });
           }
-          if (newRecord?.id === "TABLETOP_GRID" && newRecord?.data) {
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: "id=eq.TABLETOP_GRID",
+        },
+        (payload) => {
+          const newRecord = payload.new as any;
+          if (newRecord?.data) {
             setGlobalGridState((prev: any) => {
               if (JSON.stringify(prev) !== JSON.stringify(newRecord.data))
                 return newRecord.data;
               return prev;
             });
           }
-          if (
-            newRecord?.id === SCENE_BACKGROUND_RECORD_ID &&
-            newRecord?.data?.sceneBackground
-          ) {
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: `id=eq.${SCENE_BACKGROUND_RECORD_ID}`,
+        },
+        (payload) => {
+          const newRecord = payload.new as any;
+          if (newRecord?.data?.sceneBackground) {
             const incomingBg = normalizeSceneBackgroundPayload(
               newRecord.data.sceneBackground,
             );
@@ -3378,7 +3404,7 @@ export default function App() {
     setRitualModalOutcome(outcome);
 
     const affLabels = ritual.affiliations
-      .map((a) => RITUAL_AFFILIATIONS[a]?.label)
+      .map((a) => getRitualAffiliationDefinition(a)?.label)
       .filter(Boolean)
       .join(", ");
     const ritualLabel = `${cleanRitualName} (NV ${ritual.level})`;
@@ -7017,6 +7043,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   masterId={userUid}
                   folders={masterLibrarySync.folders}
                   items={masterLibrarySync.items}
+                  customAffiliations={masterLibrarySync.customAffiliations}
                   syncStatus={masterLibrarySync.syncStatus}
                   syncError={masterLibrarySync.syncError}
                   players={players}
@@ -7032,6 +7059,8 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   onSaveItem={masterLibrarySync.saveItem}
                   onDeleteItem={masterLibrarySync.deleteItem}
                   onMoveItemToFolder={masterLibrarySync.moveItemToFolder}
+                  onSaveCustomAffiliation={masterLibrarySync.saveCustomAffiliation}
+                  onDeleteCustomAffiliation={masterLibrarySync.deleteCustomAffiliation}
                   onSendDataToPlayers={masterDataPushSync.sendDataToPlayers}
                   onInvokeCreatureSheets={handleInvokeCreatureSheets}
                   onOpenInitiativesTab={() => setMestreTab("fichas")}

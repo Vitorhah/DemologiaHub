@@ -9,9 +9,10 @@ import {
 import { MasterDataPushPayload } from "../types/masterDataPush";
 import {
   DEFAULT_RITUAL_DIFFICULTY,
-  RITUAL_AFFILIATIONS,
   RitualItem,
   createDefaultRitual,
+  getRitualAffiliationDefinition,
+  isRitualAffiliationId,
   normalizeRitualItem,
 } from "./rituals";
 import {
@@ -488,7 +489,7 @@ export function filterLibraryItems(
 
     if (item.type === "ritual") {
       const affMatch = item.data.affiliations.some((affId) => {
-        const def = RITUAL_AFFILIATIONS[affId];
+        const def = getRitualAffiliationDefinition(affId);
         return affId.includes(q) || (def?.label || "").toLowerCase().includes(q);
       });
       if (affMatch || item.data.damage.toLowerCase().includes(q)) return true;
@@ -581,7 +582,7 @@ function validateRitualCandidate(raw: Record<string, unknown>): { ok: true; data
   if (Array.isArray(raw.affiliations)) {
     for (const aff of raw.affiliations) {
       const norm = typeof aff === "string" ? aff.trim().toLowerCase() : "";
-      if (!Object.prototype.hasOwnProperty.call(RITUAL_AFFILIATIONS, norm)) {
+      if (!isRitualAffiliationId(norm)) {
         return {
           ok: false,
           error: `Ritual inválido: afiliação desconhecida "${String(aff)}".`,

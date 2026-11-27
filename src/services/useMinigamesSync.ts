@@ -170,40 +170,50 @@ export function useMinigamesSync({
       }
     );
 
-    const channel = supabase
+    let channel = supabase
       .channel("minigames_realtime_channel", {
         config: { broadcast: { ack: false, self: true } },
       })
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "players" },
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: `id=eq.${myAssignRecordId}`,
+        },
+        (payload) => {
+          if (!isMounted || payload.eventType === "DELETE") return;
+          const newRec = payload.new as { id?: string; data?: any } | undefined;
+          if (newRec?.data) {
+            handleIncomingAssignment(newRec.data as MinigameAssignment);
+          }
+        }
+      );
+
+    if (isMestreAuth) {
+      channel = channel.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: `id=eq.${MINIGAME_RESULTS_RECORD_ID}`,
+        },
         (payload) => {
           if (!isMounted) return;
           const newRec = payload.new as { id?: string; data?: any } | undefined;
-          const recId = newRec?.id;
-          if (!recId) return;
-
-          if (
-            recId === myAssignRecordId &&
-            payload.eventType !== "DELETE" &&
-            newRec?.data
-          ) {
-            handleIncomingAssignment(newRec.data as MinigameAssignment);
-          }
-
-          if (
-            isMestreAuth &&
-            recId === MINIGAME_RESULTS_RECORD_ID &&
-            newRec?.data &&
-            Array.isArray(newRec.data.results)
-          ) {
+          if (newRec?.data && Array.isArray(newRec.data.results)) {
             isInitialMasterResultsLoadRef.current = false;
             (newRec.data.results as MinigameResultPayload[]).forEach((r) =>
               handleIncomingResult(r, true)
             );
           }
         }
-      )
+      );
+    }
+
+    channel = channel
       .on("broadcast", { event: "minigame_assign" }, ({ payload }) => {
         if (!isMounted || !payload) return;
         handleIncomingAssignment(payload as MinigameAssignment);

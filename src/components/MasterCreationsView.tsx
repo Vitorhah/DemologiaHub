@@ -16,6 +16,7 @@ import {
   Plus,
   Redo2,
   RefreshCw,
+  Ruler,
   Search,
   SlidersHorizontal,
   Trash2,
@@ -116,6 +117,13 @@ export const MasterCreationsView: React.FC<MasterCreationsViewProps> = ({
   const [clipboardElement, setClipboardElement] =
     useState<CreationElement | null>(null);
   const [zoom, setZoom] = useState<number>(0.72);
+  const [smartGuidesEnabled, setSmartGuidesEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("demologia_creations_smart_guides") !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [leftTab, setLeftTab] = useState<LeftSidebarTab>("blocks");
   const [mobilePane, setMobilePane] = useState<MobileEditorPane>("canvas");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
@@ -1106,6 +1114,42 @@ export const MasterCreationsView: React.FC<MasterCreationsViewProps> = ({
 
           <button
             type="button"
+            onClick={() =>
+              setSmartGuidesEnabled((prev) => {
+                const next = !prev;
+                try {
+                  localStorage.setItem(
+                    "demologia_creations_smart_guides",
+                    String(next),
+                  );
+                } catch {}
+                return next;
+              })
+            }
+            data-testid="creations-smart-guides-toggle"
+            aria-pressed={smartGuidesEnabled}
+            title={
+              smartGuidesEnabled
+                ? "Régua automática ativa (segure Alt ao arrastar para mover sem ajuste)"
+                : "Ativar régua automática de alinhamento"
+            }
+            className={`inline-flex items-center gap-1.5 px-2.5 min-h-[36px] border text-[11px] uppercase tracking-wider cursor-pointer touch-manipulation transition-colors ${
+              smartGuidesEnabled
+                ? "bg-[#190a0d] border-[#8f171c] text-white font-bold"
+                : "bg-[#12121a] border-[#242432] text-[#848698] hover:text-white"
+            }`}
+          >
+            <Ruler
+              size={13}
+              className={
+                smartGuidesEnabled ? "text-[var(--op-red-bright)]" : undefined
+              }
+            />
+            <span className="hidden sm:inline">Régua</span>
+          </button>
+
+          <button
+            type="button"
             onClick={async () => {
               if (dirtyRef.current && latestDocRef.current) {
                 await persistDocumentNow(latestDocRef.current);
@@ -1328,6 +1372,7 @@ export const MasterCreationsView: React.FC<MasterCreationsViewProps> = ({
             document={activeDoc}
             zoom={zoom}
             selectedId={selectedId}
+            smartGuidesEnabled={smartGuidesEnabled}
             onSelect={setSelectedId}
             onCommitElementBox={(id, box) =>
               commitDocumentChange((doc) =>

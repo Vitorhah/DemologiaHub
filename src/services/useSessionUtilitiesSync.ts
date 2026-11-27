@@ -11,6 +11,7 @@ import type {
 } from "../types/sessionUtilities";
 import {
   PAUSE_HEARTBEAT_INTERVAL_MS,
+  PAUSE_HEARTBEAT_TTL_MS,
   canMasterControlPause,
   computePollResults,
   createMasterSessionToken,
@@ -128,6 +129,14 @@ export function useSessionUtilitiesSync({
 
   const [clockNow, setClockNow] = useState<number>(() => Date.now());
 
+  const [backendMode, setBackendMode] = useState<UtilitiesBackendMode>(
+    () => cachedBackendMode,
+  );
+  const markBackendMode = useCallback((next: UtilitiesBackendMode) => {
+    cachedBackendMode = next;
+    setBackendMode((prev) => (prev === next ? prev : next));
+  }, []);
+
   // Ephemeral in-memory Master session token & its SHA-256 hash (never stored in localStorage)
   const masterTokenRef = useRef<string>("");
   const masterTokenHashRef = useRef<string>("");
@@ -142,7 +151,11 @@ export function useSessionUtilitiesSync({
   pollVotesRef.current = pollVotes;
   const autoClosedPollIdRef = useRef<string | null>(null);
   const hasHydratedInitialPollRef = useRef<boolean>(false);
-  const inFlightSyncRef = useRef<Promise<void> | null>(null);
+  const prevRoomRef = useRef<string>(safeRoom);
+  const syncEpochRef = useRef<number>(0);
+  const inFlightSyncRef = useRef<{ epoch: number; promise: Promise<void> } | null>(
+    null,
+  );
 
   // Gera token efêmero de sessão do Mestre ao autenticar; limpa ao sair
   useEffect(() => {
@@ -201,8 +214,21 @@ export function useSessionUtilitiesSync({
       if (prev && normalized.updatedAt < prev.updatedAt) {
         return;
       }
+      // Evita re-render redundante se o estado normalizado já for idêntico
+      if (
+        prev &&
+        prev.isActive === normalized.isActive &&
+        prev.updatedAt === normalized.updatedAt &&
+        prev.heartbeatAt === normalized.heartbeatAt &&
+        prev.message === normalized.message &&
+        prev.masterId === normalized.masterId &&
+        prev.masterSessionHash === normalized.masterSessionHash
+      ) {
+        return;
+      }
       pauseStateRef.current = normalized;
       setPauseState(normalized);
+      setClockNow(Date.now());
     },
     [safeRoom],
   );
@@ -218,7 +244,7 @@ export function useSessionUtilitiesSync({
           .eq("room_id", safeRoom);
 
         if (!error) {
-          cachedBackendMode = "dedicated";
+          markBackendMode("dedicated");
           const list: PollVoteRecord[] = [];
           for (const row of data || []) {
             const norm = normalizePollVoteRecord(row, pollId, safeRoom);
@@ -229,7 +255,7 @@ export function useSessionUtilitiesSync({
         if (!isMissingRpcOrTableError(error)) {
           return [];
         }
-        cachedBackendMode = "players_fallback";
+        markBackendMode("players_fallback");
       }
 
       const prefix = getPollVoteFallbackPrefix(pollId);
@@ -246,7 +272,7 @@ export function useSessionUtilitiesSync({
       }
       return list;
     },
-    [safeRoom],
+    [safeRoom, markBackendMode],
   );
 
   const applyIncomingPoll = useCallback(
@@ -309,12 +335,25 @@ export function useSessionUtilitiesSync({
     [safeRoom],
   );
 
-  // Busca completa (usada no mount, reconexão e polling de salvaguarda) com coalescência de chamadas concorrentes
+  // Busca completa (usada no mount, reconexão e polling de salvaguarda) com coalescência por epoch
   const syncFullStateFromServer = useCallback(async () => {
     if (!isOnline) return;
-    if (inFlightSyncRef.current) {
-      return inFlightSyncRef.current;
+    const epoch = syncEpochRef.current;
+    if (inFlightSyncRef.current && inFlightSyncRef.current.epoch === epoch) {
+      return inFlightSyncRef.current.promise;
     }
+
+    const syncStartedAt = Date.now();
+    const isStaleEpoch = () => syncEpochRef.current !== epoch;
+
+    const clearPauseIfNoNewerLocalEvent = () => {
+      const curr = pauseStateRef.current;
+      if (curr && curr.updatedAt >= syncStartedAt) {
+        return;
+      }
+      pauseStateRef.current = null;
+      setPauseState(null);
+    };
 
     const runSync = async () => {
       const isInitial = !hasHydratedInitialPollRef.current;
@@ -340,13 +379,14 @@ export function useSessionUtilitiesSync({
               .maybeSingle(),
           ]);
 
+          if (isStaleEpoch()) return;
+
           if (!pauseRes.error && !pollRes.error) {
-            cachedBackendMode = "dedicated";
+            markBackendMode("dedicated");
             if (pauseRes.data) {
               applyIncomingPause(pauseRes.data);
             } else {
-              pauseStateRef.current = null;
-              setPauseState(null);
+              clearPauseIfNoNewerLocalEvent();
             }
             if (pollRes.data) {
               applyIncomingPoll(pollRes.data, isInitial, {
@@ -355,7 +395,7 @@ export function useSessionUtilitiesSync({
               const pollId = String((pollRes.data as any).id || "");
               if (pollId) {
                 const votes = await fetchVotesForPoll(pollId);
-                if (activePollRef.current?.id === pollId) {
+                if (!isStaleEpoch() && activePollRef.current?.id === pollId) {
                   setPollVotes(votes);
                 }
               }
@@ -370,7 +410,7 @@ export function useSessionUtilitiesSync({
           ) {
             return;
           }
-          cachedBackendMode = "players_fallback";
+          markBackendMode("players_fallback");
         }
 
         // Fallback transparente usando registros isolados por sala em `public.players`
@@ -379,7 +419,7 @@ export function useSessionUtilitiesSync({
           .select("id, data")
           .in("id", [pauseRecordId, pollRecordId]);
 
-        if (error || !Array.isArray(rows)) return;
+        if (isStaleEpoch() || error || !Array.isArray(rows)) return;
 
         const pauseRow = rows.find((r) => r.id === pauseRecordId);
         const pollRow = rows.find((r) => r.id === pollRecordId);
@@ -387,8 +427,7 @@ export function useSessionUtilitiesSync({
         if (pauseRow?.data) {
           applyIncomingPause(pauseRow.data);
         } else {
-          pauseStateRef.current = null;
-          setPauseState(null);
+          clearPauseIfNoNewerLocalEvent();
         }
 
         if (pollRow?.data) {
@@ -398,7 +437,7 @@ export function useSessionUtilitiesSync({
           const pollId = String((pollRow.data as any).id || "");
           if (pollId) {
             const votes = await fetchVotesForPoll(pollId);
-            if (activePollRef.current?.id === pollId) {
+            if (!isStaleEpoch() && activePollRef.current?.id === pollId) {
               setPollVotes(votes);
             }
           }
@@ -410,32 +449,38 @@ export function useSessionUtilitiesSync({
     };
 
     const promise = runSync().finally(() => {
-      if (inFlightSyncRef.current === promise) {
+      if (inFlightSyncRef.current?.promise === promise) {
         inFlightSyncRef.current = null;
       }
     });
-    inFlightSyncRef.current = promise;
+    inFlightSyncRef.current = { epoch, promise };
     return promise;
   }, [
     isOnline,
     safeRoom,
     pauseRecordId,
     pollRecordId,
+    markBackendMode,
     applyIncomingPause,
     applyIncomingPoll,
     fetchVotesForPoll,
   ]);
 
-  // Canal Realtime por sala (Broadcast instantâneo + postgres_changes + reconexão)
+  // Canal Broadcast por sala + hidratação inicial protegida + polling de salvaguarda
   useEffect(() => {
-    hasHydratedInitialPollRef.current = false;
-    pauseStateRef.current = null;
-    activePollRef.current = null;
-    setPauseState(null);
-    setActivePoll(null);
-    setPollVotes([]);
-    setDismissedPollId(null);
-    setClearedMasterPollId(null);
+    syncEpochRef.current += 1;
+
+    if (prevRoomRef.current !== safeRoom) {
+      prevRoomRef.current = safeRoom;
+      hasHydratedInitialPollRef.current = false;
+      pauseStateRef.current = null;
+      activePollRef.current = null;
+      setPauseState(null);
+      setActivePoll(null);
+      setPollVotes([]);
+      setDismissedPollId(null);
+      setClearedMasterPollId(null);
+    }
 
     if (!isOnline) return;
 
@@ -451,7 +496,7 @@ export function useSessionUtilitiesSync({
       runImmediately: false,
     });
 
-    const channel = supabase
+    const broadcastChannel = supabase
       .channel(`tabletop_utilities_${safeRoom}`, {
         config: { broadcast: { ack: false, self: false } },
       })
@@ -467,62 +512,10 @@ export function useSessionUtilitiesSync({
         if (cancelled) return;
         applyIncomingVote(payload);
       })
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "players",
-          filter: `id=eq.${pauseRecordId}`,
-        },
-        (payload) => {
-          if (cancelled) return;
-          if (payload.eventType === "DELETE") {
-            pauseStateRef.current = null;
-            setPauseState(null);
-            return;
-          }
-          const nextRow = payload.new as { data?: unknown } | undefined;
-          if (nextRow?.data) applyIncomingPause(nextRow.data);
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "players",
-          filter: `id=eq.${pollRecordId}`,
-        },
-        (payload) => {
-          if (cancelled) return;
-          const nextRow = payload.new as { data?: unknown } | undefined;
-          if (nextRow?.data) applyIncomingPoll(nextRow.data, false);
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "players",
-        },
-        (payload) => {
-          if (cancelled) return;
-          const nextRow = payload.new as { id?: string; data?: unknown } | undefined;
-          const currPoll = activePollRef.current;
-          if (!currPoll || !nextRow?.id) return;
-          const expectedPrefix = getPollVoteFallbackPrefix(currPoll.id);
-          if (nextRow.id.startsWith(expectedPrefix) && nextRow.data) {
-            applyIncomingVote(nextRow.data);
-          }
-        },
-      )
       .subscribe((status) => {
         if (cancelled) return;
         if (status === "SUBSCRIBED") {
           if (hasSubscribedOnce) {
-            // Apenas em reconexões (o poller já hidrata imediatamente no mount)
             void syncFullStateFromServer();
           } else {
             hasSubscribedOnce = true;
@@ -530,20 +523,128 @@ export function useSessionUtilitiesSync({
         }
       });
 
-    channelRef.current = channel;
+    channelRef.current = broadcastChannel;
 
     return () => {
       cancelled = true;
+      syncEpochRef.current += 1;
       poller.stop();
       channelRef.current = null;
-      supabase.removeChannel(channel);
+      supabase.removeChannel(broadcastChannel);
     };
   }, [
     isOnline,
     safeRoom,
+    syncFullStateFromServer,
+    applyIncomingPause,
+    applyIncomingPoll,
+    applyIncomingVote,
+  ]);
+
+  // Canal dedicado de Postgres Changes com nome único por montagem (evita colisão em StrictMode)
+  // Escuta tabelas dedicadas quando o SQL está aplicado ou registros filtrados em `players` no fallback.
+  useEffect(() => {
+    if (!isOnline) return;
+
+    let cancelled = false;
+    const pgChannelName = `tabletop_utilities_pg_${safeRoom}_${backendMode}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    let pgChannel = supabase.channel(pgChannelName);
+
+    if (backendMode === "dedicated") {
+      pgChannel = pgChannel
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "tabletop_session_pauses",
+            filter: `room_id=eq.${safeRoom}`,
+          },
+          (payload) => {
+            if (cancelled) return;
+            if (payload.eventType === "DELETE") {
+              pauseStateRef.current = null;
+              setPauseState(null);
+              return;
+            }
+            if (payload.new) applyIncomingPause(payload.new);
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "tabletop_session_polls",
+            filter: `room_id=eq.${safeRoom}`,
+          },
+          (payload) => {
+            if (cancelled) return;
+            if (payload.new) applyIncomingPoll(payload.new, false);
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "tabletop_poll_votes",
+            filter: `room_id=eq.${safeRoom}`,
+          },
+          (payload) => {
+            if (cancelled) return;
+            if (payload.new) applyIncomingVote(payload.new);
+          },
+        );
+    } else {
+      pgChannel = pgChannel
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "players",
+            filter: `id=eq.${pauseRecordId}`,
+          },
+          (payload) => {
+            if (cancelled) return;
+            if (payload.eventType === "DELETE") {
+              pauseStateRef.current = null;
+              setPauseState(null);
+              return;
+            }
+            const nextRow = payload.new as { data?: unknown } | undefined;
+            if (nextRow?.data) applyIncomingPause(nextRow.data);
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "players",
+            filter: `id=eq.${pollRecordId}`,
+          },
+          (payload) => {
+            if (cancelled) return;
+            const nextRow = payload.new as { data?: unknown } | undefined;
+            if (nextRow?.data) applyIncomingPoll(nextRow.data, false);
+          },
+        );
+    }
+
+    pgChannel.subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(pgChannel);
+    };
+  }, [
+    isOnline,
+    safeRoom,
+    backendMode,
     pauseRecordId,
     pollRecordId,
-    syncFullStateFromServer,
     applyIncomingPause,
     applyIncomingPoll,
     applyIncomingVote,
@@ -571,19 +672,35 @@ export function useSessionUtilitiesSync({
     return computePollResults(activePoll, pollVotes, userUid);
   }, [activePoll, pollVotes, userUid]);
 
-  // Tick de 1s apenas enquanto houver Pause ativo ou Enquete ativa em contagem
-  const needsTick =
-    Boolean(pauseState?.isActive) ||
-    Boolean(activePoll && activePoll.status === "active" && !isPollClosedNow);
+  // Expiração agendada do Pause (zero re-renderizações de 1s na raiz durante a pausa)
+  const activePauseHeartbeatAt =
+    pauseState?.isActive && isPauseActiveForSession ? pauseState.heartbeatAt : 0;
 
   useEffect(() => {
-    if (!needsTick) return;
+    if (!activePauseHeartbeatAt) return;
+    const msUntilExpiry = Math.max(
+      250,
+      activePauseHeartbeatAt + PAUSE_HEARTBEAT_TTL_MS - Date.now() + 250,
+    );
+    const timeoutId = window.setTimeout(() => {
+      setClockNow(Date.now());
+    }, msUntilExpiry);
+    return () => window.clearTimeout(timeoutId);
+  }, [activePauseHeartbeatAt]);
+
+  // Tick de 1s exclusivamente enquanto uma Enquete estiver aberta em contagem regressiva
+  const needsPollTick = Boolean(
+    activePoll && activePoll.status === "active" && !isPollClosedNow,
+  );
+
+  useEffect(() => {
+    if (!needsPollTick) return;
     setClockNow(Date.now());
     const id = window.setInterval(() => {
       setClockNow(Date.now());
     }, 1000);
     return () => window.clearInterval(id);
-  }, [needsTick]);
+  }, [needsPollTick]);
 
   // ============================================================================
   // AÇÕES DO PAUSE (EXCLUSIVAS DO MESTRE)
@@ -633,12 +750,12 @@ export function useSessionUtilitiesSync({
           });
 
           if (!error && data) {
-            cachedBackendMode = "dedicated";
+            markBackendMode("dedicated");
             nextState = normalizeSessionPauseState(data, safeRoom);
           } else if (!isMissingRpcOrTableError(error)) {
             throw new Error(error?.message || "Erro ao ativar Pause no servidor.");
           } else {
-            cachedBackendMode = "players_fallback";
+            markBackendMode("players_fallback");
           }
         }
 
@@ -709,7 +826,7 @@ export function useSessionUtilitiesSync({
         setIsSavingPause(false);
       }
     },
-    [ensureMasterCredentials, isOnline, safeRoom, pauseRecordId],
+    [ensureMasterCredentials, isOnline, safeRoom, pauseRecordId, markBackendMode],
   );
 
   const endPause = useCallback(async (): Promise<SessionUtilityActionResult> => {
@@ -743,12 +860,12 @@ export function useSessionUtilitiesSync({
           p_master_token: creds.token,
         });
         if (!error && data) {
-          cachedBackendMode = "dedicated";
+          markBackendMode("dedicated");
           nextState = normalizeSessionPauseState(data, safeRoom);
         } else if (error && !isMissingRpcOrTableError(error)) {
           throw new Error(error.message || "Falha ao encerrar Pause no servidor.");
         } else if (error) {
-          cachedBackendMode = "players_fallback";
+          markBackendMode("players_fallback");
         }
       }
 
@@ -802,7 +919,7 @@ export function useSessionUtilitiesSync({
     } finally {
       setIsSavingPause(false);
     }
-  }, [ensureMasterCredentials, isOnline, safeRoom, pauseRecordId]);
+  }, [ensureMasterCredentials, isOnline, safeRoom, pauseRecordId, markBackendMode]);
 
   const releaseOwnedPauseOnLogout = useCallback(async () => {
     const current = pauseStateRef.current;
@@ -888,6 +1005,7 @@ export function useSessionUtilitiesSync({
             data: refreshed,
             updated_at: new Date(now).toISOString(),
           });
+          pauseStateRef.current = refreshed;
           setPauseState(refreshed);
         }
       } catch {}
@@ -1007,12 +1125,12 @@ export function useSessionUtilitiesSync({
           });
 
           if (!error && data) {
-            cachedBackendMode = "dedicated";
+            markBackendMode("dedicated");
             createdPoll = normalizeSessionPoll(data, safeRoom);
           } else if (!isMissingRpcOrTableError(error)) {
             throw new Error(error?.message || "Erro ao criar enquete no servidor.");
           } else {
-            cachedBackendMode = "players_fallback";
+            markBackendMode("players_fallback");
           }
         }
 
@@ -1068,7 +1186,7 @@ export function useSessionUtilitiesSync({
         setIsSavingPoll(false);
       }
     },
-    [ensureMasterCredentials, isOnline, safeRoom, pollRecordId],
+    [ensureMasterCredentials, isOnline, safeRoom, pollRecordId, markBackendMode],
   );
 
   const closePoll = useCallback(async (): Promise<SessionUtilityActionResult> => {
@@ -1105,12 +1223,12 @@ export function useSessionUtilitiesSync({
         });
 
         if (!error && data) {
-          cachedBackendMode = "dedicated";
+          markBackendMode("dedicated");
           closedPoll = normalizeSessionPoll(data, safeRoom);
         } else if (error && !isMissingRpcOrTableError(error)) {
           throw new Error(error.message || "Falha ao encerrar enquete.");
         } else if (error) {
-          cachedBackendMode = "players_fallback";
+          markBackendMode("players_fallback");
         }
       }
 
@@ -1154,7 +1272,7 @@ export function useSessionUtilitiesSync({
     } finally {
       setIsSavingPoll(false);
     }
-  }, [ensureMasterCredentials, isOnline, safeRoom, pollRecordId]);
+  }, [ensureMasterCredentials, isOnline, safeRoom, pollRecordId, markBackendMode]);
 
   // Quando o cronômetro da enquete expira, o Mestre responsável persiste status 'closed' 1 única vez
   useEffect(() => {
@@ -1249,7 +1367,7 @@ export function useSessionUtilitiesSync({
           });
 
           if (!error && data && typeof data === "object") {
-            cachedBackendMode = "dedicated";
+            markBackendMode("dedicated");
             const resObj = data as { ok?: boolean; reason?: string };
             if (!resObj.ok) {
               if (resObj.reason === "already_voted") {
@@ -1274,7 +1392,7 @@ export function useSessionUtilitiesSync({
           } else if (!isMissingRpcOrTableError(error)) {
             throw new Error(error?.message || "Erro ao registrar voto.");
           } else {
-            cachedBackendMode = "players_fallback";
+            markBackendMode("players_fallback");
           }
         }
 
@@ -1351,7 +1469,15 @@ export function useSessionUtilitiesSync({
         setIsSubmittingVote(false);
       }
     },
-    [userUid, isOnline, safeRoom, pollRecordId, applyIncomingPoll, applyIncomingVote],
+    [
+      userUid,
+      isOnline,
+      safeRoom,
+      pollRecordId,
+      markBackendMode,
+      applyIncomingPoll,
+      applyIncomingVote,
+    ],
   );
 
   const dismissPollPopup = useCallback(() => {

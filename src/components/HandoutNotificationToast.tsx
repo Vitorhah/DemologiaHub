@@ -1,9 +1,11 @@
 import React, { useEffect } from "react";
-import { FolderOpen, Sparkles, X, ArrowUpRight } from "lucide-react";
+import { FolderOpen, ShieldAlert, X, ArrowUpRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { HandoutItem, HandoutToastNotification } from "../types/handouts";
 import { SNAPPY_SPRING } from "./MotionPrimitives";
 import { computeNotificationDurationMs } from "../utils/playerSettings";
+import { getHandoutAccessionCode } from "../utils/handoutRichText";
+import { CreatureRichInlineText } from "./CreatureRichText";
 
 interface HandoutNotificationToastProps {
   notification: HandoutToastNotification | null;
@@ -12,12 +14,9 @@ interface HandoutNotificationToastProps {
   durationSec?: number;
 }
 
-export const HandoutNotificationToast: React.FC<HandoutNotificationToastProps> = ({
-  notification,
-  onOpenHandout,
-  onDismiss,
-  durationSec = 4,
-}) => {
+export const HandoutNotificationToast: React.FC<
+  HandoutNotificationToastProps
+> = ({ notification, onOpenHandout, onDismiss, durationSec = 4 }) => {
   const durationMs = computeNotificationDurationMs(durationSec, "handout");
 
   useEffect(() => {
@@ -29,6 +28,9 @@ export const HandoutNotificationToast: React.FC<HandoutNotificationToastProps> =
   }, [notification, durationMs, onDismiss]);
 
   const isSecret = notification?.reason === "secret_revealed";
+  const accessionCode = notification
+    ? getHandoutAccessionCode(notification.handout)
+    : "";
 
   return (
     <AnimatePresence mode="wait">
@@ -47,7 +49,7 @@ export const HandoutNotificationToast: React.FC<HandoutNotificationToastProps> =
           }}
           className="fixed right-3 sm:right-5 z-[180] w-[calc(100vw-1.5rem)] max-w-sm pointer-events-auto font-mono"
         >
-          <div className="relative bg-[#0c0c12]/95 backdrop-blur-md border border-[#2c2c38] border-t-2 border-t-[var(--op-red-bright)] shadow-[0_16px_40px_rgba(0,0,0,0.9)] p-3.5">
+          <div className="relative bg-[#0b0b10]/96 backdrop-blur-md border border-[#2c2c38] border-t-2 border-t-[var(--op-red-bright)] shadow-[0_16px_40px_rgba(0,0,0,0.92)] p-3.5">
             <div className="flex items-start gap-3">
               <div
                 className={`w-9 h-9 flex items-center justify-center border shrink-0 ${
@@ -56,15 +58,29 @@ export const HandoutNotificationToast: React.FC<HandoutNotificationToastProps> =
                     : "bg-[#220a0e] border-[var(--op-red)]/50 text-[var(--op-red-bright)]"
                 }`}
               >
-                {isSecret ? <Sparkles size={16} /> : <FolderOpen size={16} />}
+                {isSecret ? (
+                  <ShieldAlert size={16} />
+                ) : (
+                  <FolderOpen size={16} />
+                )}
               </div>
 
-              <div className="min-w-0 flex-1 pr-5">
-                <div className="text-[10px] uppercase tracking-widest font-bold text-[#ff8085]">
-                  {isSecret ? "Segredo Revelado" : "Novo Handout Recebido"}
+              <div className="min-w-0 flex-1 pr-6">
+                <div className="text-[10px] uppercase tracking-[0.16em] font-bold text-[#ff8085] truncate">
+                  <span>{accessionCode}</span>
+                  <span className="mx-1.5 text-[#5a5c6c]" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>
+                    {isSecret ? "Segredo Revelado" : "Novo Handout Recebido"}
+                  </span>
                 </div>
-                <div className="text-xs font-bold text-white truncate mt-0.5">
-                  {notification.handout.title}
+                <div className="text-xs font-bold text-white line-clamp-2 mt-0.5 leading-snug">
+                  <CreatureRichInlineText
+                    text={notification.handout.title}
+                    tone="dark"
+                    interactiveAffiliations={false}
+                  />
                 </div>
                 <div className="mt-2.5 flex items-center gap-2">
                   <button
@@ -73,15 +89,15 @@ export const HandoutNotificationToast: React.FC<HandoutNotificationToastProps> =
                       onOpenHandout(notification.handout);
                       onDismiss();
                     }}
-                    className="min-h-[34px] px-3 py-1 bg-[#8f171c] hover:bg-[#b81d24] active:scale-95 text-white text-[11px] font-bold uppercase tracking-wider border border-[#ff8085]/35 flex items-center gap-1 cursor-pointer transition-all"
+                    className="min-h-[36px] px-3 py-1 bg-[#8f171c] hover:bg-[#b81d24] active:scale-95 text-white text-[11px] font-bold uppercase tracking-wider border border-[#ff8085]/35 flex items-center gap-1 cursor-pointer transition-all"
                   >
-                    <span>Abrir</span>
+                    <span>Inspecionar</span>
                     <ArrowUpRight size={13} />
                   </button>
                   <button
                     type="button"
                     onClick={onDismiss}
-                    className="min-h-[34px] px-2.5 py-1 bg-[#14141c] hover:bg-[#1e1e28] active:scale-95 text-[#9ca3af] hover:text-white text-[10px] uppercase tracking-wider border border-[#242430] cursor-pointer transition-all"
+                    className="min-h-[36px] px-2.5 py-1 bg-[#14141c] hover:bg-[#1e1e28] active:scale-95 text-[#9ca3af] hover:text-white text-[10px] uppercase tracking-wider border border-[#242430] cursor-pointer transition-all"
                   >
                     Depois
                   </button>
@@ -92,7 +108,7 @@ export const HandoutNotificationToast: React.FC<HandoutNotificationToastProps> =
                 type="button"
                 onClick={onDismiss}
                 aria-label="Fechar notificação de handout"
-                className="absolute top-2.5 right-2.5 w-7 h-7 flex items-center justify-center text-[#787989] hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
+                className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center text-[#787989] hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
               >
                 <X size={14} />
               </button>

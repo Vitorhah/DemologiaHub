@@ -1,6 +1,6 @@
 import { CharacterProfileId, normalizeCharacterProfile } from "./profiles";
 
-export type RitualAffiliationId =
+export type BuiltInRitualAffiliationId =
   | "dor"
   | "nirvana"
   | "alma"
@@ -10,6 +10,8 @@ export type RitualAffiliationId =
   | "membrana"
   | "intencao"
   | "caos";
+
+export type RitualAffiliationId = BuiltInRitualAffiliationId | (string & {});
 
 export type RitualLevel = 1 | 2 | 3 | 4;
 
@@ -21,6 +23,9 @@ export interface RitualAffiliationDefinition {
   borderColor: string;
   textShadow?: string;
   isDualSplit?: boolean;
+  isCustom?: boolean;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface RitualItem {
@@ -41,7 +46,7 @@ export const DEFAULT_RITUAL_DIFFICULTY = 8;
 export const RITUAL_TEST_FORMULA = "2d6+OCU";
 
 export const RITUAL_AFFILIATIONS: Record<
-  RitualAffiliationId,
+  BuiltInRitualAffiliationId,
   RitualAffiliationDefinition
 > = {
   dor: {
@@ -127,10 +132,102 @@ export const RITUAL_AFFILIATION_LIST: readonly RitualAffiliationDefinition[] = [
   RITUAL_AFFILIATIONS.caos,
 ];
 
-export function isRitualAffiliationId(val: unknown): val is RitualAffiliationId {
+// ============================================================================
+// REGISTRO DINÂMICO DE AFILIAÇÕES PERSONALIZADAS (Mestre -> Toda a Sessão)
+// ============================================================================
+
+export const CUSTOM_AFFILIATION_ID_PREFIX = "custom_";
+const CUSTOM_AFFILIATION_ID_REGEX = /^custom_[a-z0-9_]{1,56}$/;
+
+let customAffiliationList: readonly RitualAffiliationDefinition[] = [];
+let customAffiliationMap = new Map<string, RitualAffiliationDefinition>();
+let allAffiliationsSnapshot: readonly RitualAffiliationDefinition[] = [
+  ...RITUAL_AFFILIATION_LIST,
+];
+let affiliationsVersion = 0;
+const affiliationListeners = new Set<() => void>();
+
+export function isBuiltInRitualAffiliationId(
+  val: unknown
+): val is BuiltInRitualAffiliationId {
   return (
     typeof val === "string" &&
     Object.prototype.hasOwnProperty.call(RITUAL_AFFILIATIONS, val)
+  );
+}
+
+export function isCustomRitualAffiliationIdFormat(val: unknown): boolean {
+  return typeof val === "string" && CUSTOM_AFFILIATION_ID_REGEX.test(val);
+}
+
+export function setCustomRitualAffiliations(
+  list: readonly RitualAffiliationDefinition[]
+): void {
+  const nextMap = new Map<string, RitualAffiliationDefinition>();
+  const nextList: RitualAffiliationDefinition[] = [];
+
+  for (const item of list) {
+    if (!item || typeof item.id !== "string") continue;
+    const id = item.id.trim().toLowerCase();
+    if (!id || isBuiltInRitualAffiliationId(id) || nextMap.has(id)) continue;
+    const normalizedItem: RitualAffiliationDefinition = {
+      ...item,
+      id,
+      isCustom: true,
+    };
+    nextMap.set(id, normalizedItem);
+    nextList.push(normalizedItem);
+  }
+
+  customAffiliationList = nextList;
+  customAffiliationMap = nextMap;
+  allAffiliationsSnapshot = [...RITUAL_AFFILIATION_LIST, ...nextList];
+  affiliationsVersion += 1;
+
+  affiliationListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      // Ignore individual subscriber failures
+    }
+  });
+}
+
+export function getCustomRitualAffiliations(): readonly RitualAffiliationDefinition[] {
+  return customAffiliationList;
+}
+
+export function getAllRitualAffiliations(): readonly RitualAffiliationDefinition[] {
+  return allAffiliationsSnapshot;
+}
+
+export function getRitualAffiliationDefinition(
+  id: string | null | undefined
+): RitualAffiliationDefinition | null {
+  if (typeof id !== "string") return null;
+  const normalized = id.trim().toLowerCase();
+  if (!normalized) return null;
+  if (isBuiltInRitualAffiliationId(normalized)) {
+    return RITUAL_AFFILIATIONS[normalized];
+  }
+  return customAffiliationMap.get(normalized) ?? null;
+}
+
+export function getRitualAffiliationsVersion(): number {
+  return affiliationsVersion;
+}
+
+export function subscribeRitualAffiliations(listener: () => void): () => void {
+  affiliationListeners.add(listener);
+  return () => {
+    affiliationListeners.delete(listener);
+  };
+}
+
+export function isRitualAffiliationId(val: unknown): val is RitualAffiliationId {
+  if (typeof val !== "string") return false;
+  return (
+    isBuiltInRitualAffiliationId(val) || customAffiliationMap.has(val)
   );
 }
 
@@ -166,7 +263,11 @@ export function normalizeRitualAffiliations(raw: unknown): RitualAffiliationId[]
   const out: RitualAffiliationId[] = [];
   for (const item of raw) {
     const normalized = typeof item === "string" ? item.trim().toLowerCase() : "";
-    if (isRitualAffiliationId(normalized) && !seen.has(normalized)) {
+    if (
+      (isRitualAffiliationId(normalized) ||
+        isCustomRitualAffiliationIdFormat(normalized)) &&
+      !seen.has(normalized)
+    ) {
       seen.add(normalized);
       out.push(normalized);
     }

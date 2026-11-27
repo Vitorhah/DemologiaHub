@@ -3,10 +3,10 @@ import { createPortal } from "react-dom";
 import { Flame, Tag, X } from "lucide-react";
 import type { CatalogRitualOption } from "../types/masterCreatures";
 import {
-  RITUAL_AFFILIATIONS,
-  RITUAL_AFFILIATION_LIST,
+  getRitualAffiliationDefinition,
   type RitualAffiliationId,
 } from "../utils/rituals";
+import { useRegisteredAffiliations } from "../services/useRegisteredAffiliations";
 import {
   parseCreatureInlineText,
   parseCreatureRichText,
@@ -39,7 +39,8 @@ const AffiliationDetailModal: React.FC<{
   ritualCatalog?: CatalogRitualOption[];
   onClose: () => void;
 }> = ({ affiliationId, ritualCatalog = [], onClose }) => {
-  const def = RITUAL_AFFILIATIONS[affiliationId];
+  useRegisteredAffiliations();
+  const def = getRitualAffiliationDefinition(affiliationId);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -215,7 +216,7 @@ export function renderRichInlineTokens(
               e.stopPropagation();
               options.onSelectAffiliation?.(token.affiliationId);
             }}
-            title={`Ver detalhes da afiliação ${RITUAL_AFFILIATIONS[token.affiliationId]?.label || token.affiliationId}`}
+            title={`Ver detalhes da afiliação ${getRitualAffiliationDefinition(token.affiliationId)?.label || token.affiliationId}`}
             data-testid={`rich-affiliation-mention-${token.affiliationId}`}
             className="inline-flex items-center align-baseline mx-0.5 hover:brightness-110 focus:outline-none focus-visible:ring-1 focus-visible:ring-white cursor-pointer"
           >
@@ -239,11 +240,12 @@ export const CreatureRichInlineText: React.FC<CreatureRichInlineTextProps> =
   }: CreatureRichInlineTextProps) {
     const [selectedAffiliation, setSelectedAffiliation] =
       useState<RitualAffiliationId | null>(null);
+    const registeredAffiliations = useRegisteredAffiliations();
 
     const normalized = text || "";
     const tokens = useMemo(
       () => parseCreatureInlineText(normalized),
-      [normalized],
+      [normalized, registeredAffiliations],
     );
 
     if (!normalized.trim()) {
@@ -290,8 +292,12 @@ export const CreatureRichText: React.FC<CreatureRichTextProps> = React.memo(
   }: CreatureRichTextProps) {
     const [selectedAffiliation, setSelectedAffiliation] =
       useState<RitualAffiliationId | null>(null);
+    const registeredAffiliations = useRegisteredAffiliations();
 
-    const blocks = useMemo(() => parseCreatureRichText(text || ""), [text]);
+    const blocks = useMemo(
+      () => parseCreatureRichText(text || ""),
+      [text, registeredAffiliations],
+    );
     const hasVisibleContent = useMemo(
       () => blocks.some((b) => b.type !== "empty"),
       [blocks],
@@ -383,6 +389,7 @@ export const CreatureRichTextQuickBar: React.FC<CreatureRichTextQuickBarProps> =
     label,
   }) {
     const [showAffiliationMenu, setShowAffiliationMenu] = useState(false);
+    const registeredAffiliations = useRegisteredAffiliations();
     const btnHeight = compact ? "min-h-[26px] px-1.5" : "min-h-[30px] px-2";
 
     return (
@@ -456,7 +463,7 @@ export const CreatureRichTextQuickBar: React.FC<CreatureRichTextQuickBarProps> =
 
         {showAffiliationMenu && (
           <div className="p-2 bg-[#0b0b12] border border-[#242434] flex flex-wrap gap-1.5">
-            {RITUAL_AFFILIATION_LIST.map((aff) => (
+            {registeredAffiliations.map((aff) => (
               <button
                 key={aff.id}
                 type="button"

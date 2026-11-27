@@ -1,5 +1,6 @@
 import {
   RITUAL_AFFILIATION_LIST,
+  getCustomRitualAffiliations,
   type RitualAffiliationDefinition,
   type RitualAffiliationId,
 } from "./rituals";
@@ -39,8 +40,8 @@ const AFFILIATION_LOOKUP_MAP: ReadonlyMap<string, RitualAffiliationDefinition> =
 })();
 
 /**
- * Busca uma Afiliação registrada pelo nome completo (sem correspondência parcial).
- * Retorna a definição oficial ou `null` caso não exista no registro.
+ * Busca uma Afiliação registrada (oficial ou personalizada) pelo nome completo (sem correspondência parcial).
+ * Retorna a definição ou `null` caso não exista no registro.
  */
 export function findRegisteredAffiliationByName(
   rawName: string,
@@ -48,7 +49,18 @@ export function findRegisteredAffiliationByName(
   if (typeof rawName !== "string") return null;
   const key = normalizeAffiliationLookupKey(rawName);
   if (!key) return null;
-  return AFFILIATION_LOOKUP_MAP.get(key) ?? null;
+  const builtIn = AFFILIATION_LOOKUP_MAP.get(key);
+  if (builtIn) return builtIn;
+
+  for (const customDef of getCustomRitualAffiliations()) {
+    if (
+      normalizeAffiliationLookupKey(customDef.label) === key ||
+      normalizeAffiliationLookupKey(customDef.id) === key
+    ) {
+      return customDef;
+    }
+  }
+  return null;
 }
 
 /**

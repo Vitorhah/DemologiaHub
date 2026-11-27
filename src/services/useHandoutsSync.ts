@@ -345,34 +345,47 @@ export function useHandoutsSync({
 
     const indivRecordId = `${HANDOUTS_INDIV_PREFIX}${userUid}`;
 
-    const channel = supabase
-      .channel("handouts_realtime_channel", {
-        config: { broadcast: { ack: false, self: false } },
-      })
-      .on(
+    let channel = supabase.channel("handouts_realtime_channel", {
+      config: { broadcast: { ack: false, self: false } },
+    });
+
+    if (isMestreAuth) {
+      channel = channel.on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "players" },
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: `id=eq.${HANDOUTS_MASTER_RECORD_ID}`,
+        },
         (payload) => {
           if (!isMounted) return;
           const newRec = payload.new as { id?: string; data?: any } | undefined;
-          const oldRec = payload.old as { id?: string } | undefined;
-          const recId = newRec?.id || oldRec?.id;
-          if (!recId) return;
-
-          if (isMestreAuth && recId === HANDOUTS_MASTER_RECORD_ID) {
-            if (newRec?.data) {
-              setMasterItems(
-                Array.isArray(newRec.data.items)
-                  ? newRec.data.items.map(normalizeHandoutItem)
-                  : []
-              );
-              setMasterFolders(
-                Array.isArray(newRec.data.folders) ? newRec.data.folders : []
-              );
-            }
+          if (newRec?.data) {
+            setMasterItems(
+              Array.isArray(newRec.data.items)
+                ? newRec.data.items.map(normalizeHandoutItem)
+                : []
+            );
+            setMasterFolders(
+              Array.isArray(newRec.data.folders) ? newRec.data.folders : []
+            );
           }
-
-          if (!isMestreAuth && recId === HANDOUTS_SHARED_RECORD_ID) {
+        }
+      );
+    } else {
+      channel = channel
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "players",
+            filter: `id=eq.${HANDOUTS_SHARED_RECORD_ID}`,
+          },
+          (payload) => {
+            if (!isMounted) return;
+            const newRec = payload.new as { id?: string; data?: any } | undefined;
             isInitialPlayerLoadRef.current = false;
             if (payload.eventType === "DELETE") {
               setSharedItems([]);
@@ -388,8 +401,18 @@ export function useHandoutsSync({
               );
             }
           }
-
-          if (!isMestreAuth && recId === indivRecordId) {
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "players",
+            filter: `id=eq.${indivRecordId}`,
+          },
+          (payload) => {
+            if (!isMounted) return;
+            const newRec = payload.new as { id?: string; data?: any } | undefined;
             isInitialPlayerLoadRef.current = false;
             if (payload.eventType === "DELETE") {
               setIndivItems([]);
@@ -405,8 +428,10 @@ export function useHandoutsSync({
               );
             }
           }
-        }
-      )
+        );
+    }
+
+    channel = channel
       .on("broadcast", { event: "handout_event" }, ({ payload }) => {
         if (!isMounted || !payload) return;
         const ev = payload as HandoutBroadcastEvent;

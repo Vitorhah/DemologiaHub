@@ -279,6 +279,15 @@ DECLARE
   v_duration INTEGER;
   v_result public.tabletop_session_polls;
 BEGIN
+  IF p_poll_id IS NULL OR char_length(trim(p_poll_id)) = 0 OR char_length(p_poll_id) > 64 THEN
+    RAISE EXCEPTION 'poll_id inválido';
+  END IF;
+  IF p_room_id IS NULL OR char_length(trim(p_room_id)) = 0 OR char_length(p_room_id) > 64 THEN
+    RAISE EXCEPTION 'room_id obrigatório';
+  END IF;
+  IF p_master_id IS NULL OR char_length(trim(p_master_id)) = 0 OR char_length(p_master_id) > 128 THEN
+    RAISE EXCEPTION 'master_id obrigatório';
+  END IF;
   IF p_master_token IS NULL OR char_length(p_master_token) < 16 THEN
     RAISE EXCEPTION 'Token de sessão do Mestre inválido';
   END IF;
@@ -437,3 +446,24 @@ GRANT EXECUTE ON FUNCTION public.end_tabletop_pause(TEXT, TEXT, TEXT) TO anon, a
 GRANT EXECUTE ON FUNCTION public.create_tabletop_poll(TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, INTEGER) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.close_tabletop_poll(TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.cast_tabletop_poll_vote(TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
+
+-- 11. Publicação idempotente no Supabase Realtime (postgres_changes por room_id)
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.tabletop_session_pauses;
+  EXCEPTION
+    WHEN duplicate_object OR undefined_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.tabletop_session_polls;
+  EXCEPTION
+    WHEN duplicate_object OR undefined_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.tabletop_poll_votes;
+  EXCEPTION
+    WHEN duplicate_object OR undefined_object THEN NULL;
+  END;
+END
+$$;
