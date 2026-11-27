@@ -35,7 +35,11 @@ export function isSystemRecordId(id: string | null | undefined): boolean {
     id.startsWith("CHAT_") ||
     id.startsWith("MINIGAME_") ||
     id.startsWith("MASTER_PUSH_") ||
-    id.startsWith("TABLETOP_THEME_")
+    id.startsWith("TABLETOP_THEME_") ||
+    id.startsWith("CREATION_DOC_") ||
+    id.startsWith("SESSION_PAUSE_") ||
+    id.startsWith("SESSION_POLL_") ||
+    id.startsWith("SESSION_POLL_VOTE_")
   );
 }
 

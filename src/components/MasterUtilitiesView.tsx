@@ -4,6 +4,9 @@ import { Wrench, UserX, Loader2, CheckCircle2, AlertTriangle, Library } from "lu
 import { MinigameConfig, MinigameResultPayload } from "../types/minigames";
 import { CLINICAL_EASE } from "./MotionPrimitives";
 import { LazyModuleFallback } from "./LazyModuleBoundary";
+import { MasterPauseCard } from "./utilities/MasterPauseCard";
+import { MasterPollCard } from "./utilities/MasterPollCard";
+import type { UseSessionUtilitiesSyncReturn } from "../services/useSessionUtilitiesSync";
 
 const LazyMasterMinigamesPanel = React.lazy(() =>
   import("./minigames/MasterMinigamesPanel").then((m) => ({
@@ -28,6 +31,7 @@ export interface MasterUtilitiesViewProps {
   libraryItemsCount: number;
   libraryFoldersCount: number;
   onOpenLibrary: () => void;
+  sessionUtilities: UseSessionUtilitiesSyncReturn;
 }
 
 export function MasterUtilitiesView({
@@ -41,6 +45,7 @@ export function MasterUtilitiesView({
   libraryItemsCount,
   libraryFoldersCount,
   onOpenLibrary,
+  sessionUtilities,
 }: MasterUtilitiesViewProps) {
   const [isCleaning, setIsCleaning] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -92,11 +97,36 @@ export function MasterUtilitiesView({
               Utilities do Mestre
             </h2>
             <p className="text-xs text-[#828392] truncate">
-              Ferramentas administrativas de limpeza e manutenção da mesa.
+              Ferramentas administrativas de controle, pausa, enquetes e manutenção da mesa.
             </p>
           </div>
         </div>
       </div>
+
+      {/* PAUSE DA SESSÃO */}
+      <MasterPauseCard
+        roomId={sessionUtilities.roomId}
+        pauseState={sessionUtilities.pauseState}
+        isPauseActive={sessionUtilities.isPauseActiveForSession}
+        isCurrentMasterOwner={sessionUtilities.isCurrentMasterPauseOwner}
+        isSaving={sessionUtilities.isSavingPause}
+        syncError={sessionUtilities.pauseError}
+        onActivateOrUpdate={sessionUtilities.activateOrUpdatePause}
+        onEndPause={sessionUtilities.endPause}
+      />
+
+      {/* ENQUETE EM TEMPO REAL */}
+      <MasterPollCard
+        activePoll={sessionUtilities.activePoll}
+        pollResults={sessionUtilities.pollResults}
+        isPollClosedNow={sessionUtilities.isPollClosedNow}
+        pollRemainingSeconds={sessionUtilities.pollRemainingSeconds}
+        isSaving={sessionUtilities.isSavingPoll}
+        syncError={sessionUtilities.pollError}
+        onCreatePoll={sessionUtilities.createPoll}
+        onClosePoll={sessionUtilities.closePoll}
+        onClearClosedPoll={sessionUtilities.clearMasterPollView}
+      />
 
       <div className="bg-[#0c0c10] border border-[#202028] rounded-none p-4 sm:p-5 flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

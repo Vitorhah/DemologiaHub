@@ -96,7 +96,18 @@ export type CreatureBlockType =
   | "skills"
   | "rituals"
   | "modes"
-  | "text";
+  | "text"
+  | "table";
+
+/**
+ * Dados de planilha estilo Excel para o Bloco de Tabela nas fichas de criaturas.
+ */
+export interface CreatureTableData {
+  /** Matriz retangular linhas × colunas de células de texto (suporta formatação rica). */
+  rows: string[][];
+  /** Quando true, a primeira linha (índice 0) é renderizada como cabeçalho da tabela. */
+  hasHeaderRow: boolean;
+}
 
 /**
  * Bloco visual independente no documento flexível (Flexbox com flex-wrap).
@@ -108,12 +119,14 @@ export interface CreatureSheetBlock {
   type: CreatureBlockType;
   /** Porcentagem alvo de largura na linha (25..100). */
   widthPct: number;
-  /** Altura mínima opcional em pixels (útil para blocos de texto / redimensionamento vertical). */
+  /** Altura mínima opcional em pixels (útil para blocos de texto/tabela / redimensionamento vertical). */
   minHeightPx?: number | null;
-  /** Título opcional (usado principalmente no Bloco de Texto). */
+  /** Título opcional (usado nos Blocos de Texto e Tabela). */
   title?: string;
   /** Conteúdo livre com suporte à formatação especial (Bloco de Texto). */
   content?: string;
+  /** Estrutura de células estilo planilha (Bloco de Tabela). */
+  tableData?: CreatureTableData;
 }
 
 /**

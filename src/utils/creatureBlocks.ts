@@ -5,6 +5,7 @@ import type {
   CreatureRecord,
   CreatureRitualRef,
   CreatureSheetBlock,
+  CreatureTableData,
   ResolvedCreatureRitual,
 } from "../types/masterCreatures";
 import type {
@@ -106,6 +107,18 @@ export const CREATURE_BLOCK_META: Record<CreatureBlockType, CreatureBlockMeta> =
     supportsDuplicate: true,
     singleton: false,
   },
+  table: {
+    type: "table",
+    label: "Tabela",
+    description: "Planilha estilo Excel com linhas, colunas, cabeçalho e formatação rica nas células.",
+    defaultWidthPct: 100,
+    minWidthPct: 35,
+    maxWidthPct: 100,
+    defaultMinHeightPx: 180,
+    supportsVerticalResize: true,
+    supportsDuplicate: true,
+    singleton: false,
+  },
 };
 
 export const CREATURE_BLOCK_TYPES_ORDER: readonly CreatureBlockType[] = [
@@ -115,7 +128,193 @@ export const CREATURE_BLOCK_TYPES_ORDER: readonly CreatureBlockType[] = [
   "rituals",
   "modes",
   "text",
+  "table",
 ];
+
+export const CREATURE_TABLE_MIN_ROWS = 1;
+export const CREATURE_TABLE_MAX_ROWS = 20;
+export const CREATURE_TABLE_MIN_COLS = 1;
+export const CREATURE_TABLE_MAX_COLS = 12;
+export const CREATURE_TABLE_DEFAULT_ROWS = 4;
+export const CREATURE_TABLE_DEFAULT_COLS = 3;
+export const CREATURE_TABLE_MAX_CELL_LENGTH = 500;
+
+/**
+ * Converte índice 0-based em letra de coluna estilo Excel (0 -> "A", 25 -> "Z", 26 -> "AA").
+ */
+export function getSpreadsheetColumnLabel(colIndex: number): string {
+  const safe = Math.max(0, Math.floor(Number.isFinite(colIndex) ? colIndex : 0));
+  let n = safe;
+  let label = "";
+  while (true) {
+    label = String.fromCharCode(65 + (n % 26)) + label;
+    n = Math.floor(n / 26) - 1;
+    if (n < 0) break;
+  }
+  return label;
+}
+
+export function createDefaultCreatureTableData(
+  rows = CREATURE_TABLE_DEFAULT_ROWS,
+  cols = CREATURE_TABLE_DEFAULT_COLS,
+): CreatureTableData {
+  const safeRows = Math.max(
+    CREATURE_TABLE_MIN_ROWS,
+    Math.min(CREATURE_TABLE_MAX_ROWS, Math.round(rows)),
+  );
+  const safeCols = Math.max(
+    CREATURE_TABLE_MIN_COLS,
+    Math.min(CREATURE_TABLE_MAX_COLS, Math.round(cols)),
+  );
+  const matrix: string[][] = Array.from({ length: safeRows }, (_, r) =>
+    Array.from({ length: safeCols }, (_, c) =>
+      r === 0 ? `Coluna ${getSpreadsheetColumnLabel(c)}` : "",
+    ),
+  );
+  return {
+    rows: matrix,
+    hasHeaderRow: true,
+  };
+}
+
+export function normalizeCreatureTableData(raw: unknown): CreatureTableData {
+  if (!raw || typeof raw !== "object") {
+    return createDefaultCreatureTableData();
+  }
+  const obj = raw as Record<string, unknown>;
+  const rawRows = Array.isArray(obj.rows) ? obj.rows : null;
+  if (!rawRows || rawRows.length === 0) {
+    return createDefaultCreatureTableData();
+  }
+
+  const slicedRows = rawRows.slice(0, CREATURE_TABLE_MAX_ROWS);
+  let maxCols = CREATURE_TABLE_MIN_COLS;
+  for (const r of slicedRows) {
+    if (Array.isArray(r) && r.length > maxCols) {
+      maxCols = r.length;
+    }
+  }
+  const safeCols = Math.max(
+    CREATURE_TABLE_MIN_COLS,
+    Math.min(CREATURE_TABLE_MAX_COLS, maxCols),
+  );
+
+  const normalizedRows: string[][] = slicedRows.map((row) => {
+    const arr = Array.isArray(row) ? row : [];
+    return Array.from({ length: safeCols }, (_, colIdx) => {
+      const cell = arr[colIdx];
+      if (cell === null || cell === undefined) return "";
+      return String(cell).slice(0, CREATURE_TABLE_MAX_CELL_LENGTH);
+    });
+  });
+
+  return {
+    rows: normalizedRows,
+    hasHeaderRow:
+      typeof obj.hasHeaderRow === "boolean" ? obj.hasHeaderRow : true,
+  };
+}
+
+export function updateTableCell(
+  data: CreatureTableData,
+  rowIdx: number,
+  colIdx: number,
+  value: string,
+): CreatureTableData {
+  if (
+    rowIdx < 0 ||
+    rowIdx >= data.rows.length ||
+    colIdx < 0 ||
+    colIdx >= (data.rows[0]?.length || 0)
+  ) {
+    return data;
+  }
+  const nextVal = String(value ?? "").slice(0, CREATURE_TABLE_MAX_CELL_LENGTH);
+  return {
+    ...data,
+    rows: data.rows.map((row, r) =>
+      r !== rowIdx ? row : row.map((cell, c) => (c === colIdx ? nextVal : cell)),
+    ),
+  };
+}
+
+export function addTableRow(
+  data: CreatureTableData,
+  atIndex?: number,
+): CreatureTableData {
+  if (data.rows.length >= CREATURE_TABLE_MAX_ROWS) return data;
+  const colCount = Math.max(CREATURE_TABLE_MIN_COLS, data.rows[0]?.length || 1);
+  const newRow = Array.from({ length: colCount }, () => "");
+  const nextRows = data.rows.map((r) => [...r]);
+  if (
+    typeof atIndex === "number" &&
+    Number.isInteger(atIndex) &&
+    atIndex >= 0 &&
+    atIndex <= nextRows.length
+  ) {
+    nextRows.splice(atIndex, 0, newRow);
+  } else {
+    nextRows.push(newRow);
+  }
+  return { ...data, rows: nextRows };
+}
+
+export function removeTableRow(
+  data: CreatureTableData,
+  rowIdx: number,
+): CreatureTableData {
+  if (data.rows.length <= CREATURE_TABLE_MIN_ROWS) return data;
+  if (rowIdx < 0 || rowIdx >= data.rows.length) return data;
+  return {
+    ...data,
+    rows: data.rows.filter((_, idx) => idx !== rowIdx),
+  };
+}
+
+export function addTableColumn(
+  data: CreatureTableData,
+  atIndex?: number,
+): CreatureTableData {
+  const currentCols = data.rows[0]?.length || 0;
+  if (currentCols >= CREATURE_TABLE_MAX_COLS) return data;
+  const insertAt =
+    typeof atIndex === "number" &&
+    Number.isInteger(atIndex) &&
+    atIndex >= 0 &&
+    atIndex <= currentCols
+      ? atIndex
+      : currentCols;
+  const colLabel = getSpreadsheetColumnLabel(insertAt);
+  const nextRows = data.rows.map((row, rowIdx) => {
+    const copy = [...row];
+    copy.splice(
+      insertAt,
+      0,
+      rowIdx === 0 && data.hasHeaderRow ? `Coluna ${colLabel}` : "",
+    );
+    return copy;
+  });
+  return { ...data, rows: nextRows };
+}
+
+export function removeTableColumn(
+  data: CreatureTableData,
+  colIdx: number,
+): CreatureTableData {
+  const currentCols = data.rows[0]?.length || 0;
+  if (currentCols <= CREATURE_TABLE_MIN_COLS) return data;
+  if (colIdx < 0 || colIdx >= currentCols) return data;
+  return {
+    ...data,
+    rows: data.rows.map((row) => row.filter((_, idx) => idx !== colIdx)),
+  };
+}
+
+export function toggleTableHeaderRow(
+  data: CreatureTableData,
+): CreatureTableData {
+  return { ...data, hasHeaderRow: !data.hasHeaderRow };
+}
 
 export const VALID_CREATURE_BLOCK_TYPES = new Set<string>(CREATURE_BLOCK_TYPES_ORDER);
 
@@ -170,9 +369,14 @@ export function createCreatureBlock(
           title: typeof overrides.title === "string" ? overrides.title : "Anotações",
           content: typeof overrides.content === "string" ? overrides.content : "",
         }
-      : overrides.title
-        ? { title: overrides.title }
-        : {}),
+      : type === "table"
+        ? {
+            title: typeof overrides.title === "string" ? overrides.title : "Tabela",
+            tableData: normalizeCreatureTableData(overrides.tableData),
+          }
+        : overrides.title
+          ? { title: overrides.title }
+          : {}),
   };
 }
 
@@ -240,6 +444,8 @@ export function normalizeCreatureSheetBlocks(raw: unknown): CreatureSheetBlock[]
             : Number(obj.minHeightPx),
         title: typeof obj.title === "string" ? obj.title : undefined,
         content: typeof obj.content === "string" ? obj.content : undefined,
+        tableData:
+          type === "table" ? normalizeCreatureTableData(obj.tableData) : undefined,
       }),
     );
   }
@@ -346,10 +552,21 @@ export function duplicateBlockInSheet(
     };
   }
 
+  const defaultCopyTitle = source.type === "table" ? "Tabela (Cópia)" : "Anotações (Cópia)";
   const clone: CreatureSheetBlock = {
     ...source,
     id: createCreatureBlockId(source.type),
-    title: source.title ? `${source.title} (Cópia)` : "Anotações (Cópia)",
+    title: source.title ? `${source.title} (Cópia)` : defaultCopyTitle,
+    ...(source.type === "table"
+      ? {
+          tableData: {
+            hasHeaderRow: source.tableData?.hasHeaderRow ?? true,
+            rows: normalizeCreatureTableData(source.tableData).rows.map((r) => [
+              ...r,
+            ]),
+          },
+        }
+      : {}),
   };
 
   const next = [...blocks];
@@ -426,6 +643,23 @@ export function updateTextBlockContent(
       ...b,
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.content !== undefined ? { content: patch.content } : {}),
+    };
+  });
+}
+
+export function updateTableBlockData(
+  blocks: CreatureSheetBlock[],
+  blockId: string,
+  patch: { title?: string; tableData?: CreatureTableData },
+): CreatureSheetBlock[] {
+  return blocks.map((b) => {
+    if (b.id !== blockId || b.type !== "table") return b;
+    return {
+      ...b,
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.tableData !== undefined
+        ? { tableData: normalizeCreatureTableData(patch.tableData) }
+        : {}),
     };
   });
 }

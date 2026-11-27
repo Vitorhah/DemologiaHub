@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   ArrowLeft,
   Check,
+  Edit2,
+  Eye,
   FileText,
   Loader2,
   Plus,
@@ -26,6 +28,8 @@ import {
   DEFAULT_NOTE_TITLE,
   MAX_NOTE_TITLE_LENGTH,
   NOTE_AUTOSAVE_DEBOUNCE_MS,
+  MasterNoteHeadingLevel,
+  applyHeadingPrefixToLine,
   buildNotePreview,
   clearPendingNoteDraft,
   filterNoteSummaries,
@@ -33,9 +37,24 @@ import {
   hasNoteContentChanged,
   loadPendingNoteDraft,
   normalizeNoteTitle,
+  parseMasterNoteContent,
   savePendingNoteDraft,
   sortNoteSummaries,
 } from "../utils/masterNotes";
+import { renderRichInlineTokens } from "./CreatureRichText";
+
+const MASTER_NOTE_HEADING_LEVELS: readonly MasterNoteHeadingLevel[] = [
+  1, 2, 3, 4, 5, 6,
+];
+
+const HEADING_CLASS_MAP: Record<MasterNoteHeadingLevel, string> = {
+  1: "text-2xl sm:text-[26px] font-black text-white uppercase tracking-wider border-b-2 border-[var(--op-red)] pb-1.5 pt-2 leading-tight",
+  2: "text-xl sm:text-[21px] font-bold text-[#f3f4f8] uppercase tracking-wide border-b border-[#252534] pb-1 pt-2 leading-snug",
+  3: "text-lg font-bold text-[#ff8a90] tracking-wide pt-1.5 leading-snug",
+  4: "text-base font-bold text-[#e2e3ee] pt-1 leading-snug",
+  5: "text-sm font-bold uppercase tracking-wider text-[#b8b9c8] pt-1 leading-snug",
+  6: "text-xs font-bold uppercase tracking-[0.18em] text-[#8d8ea0] pt-1 leading-snug",
+};
 
 export interface MasterNotesSectionProps {
   masterId: string | null | undefined;
@@ -67,6 +86,12 @@ export const MasterNotesSection: React.FC<MasterNotesSectionProps> = ({
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [editorViewMode, setEditorViewMode] = useState<"edit" | "preview">("edit");
+
+  const parsedNoteBlocks = useMemo(
+    () => parseMasterNoteContent(draftContent),
+    [draftContent],
+  );
 
   // Cache em memória das notas já abertas nesta sessão (evita SELECT repetido ao alternar)
   const contentCacheRef = useRef<Map<string, MasterNote>>(new Map());
@@ -436,8 +461,7 @@ export const MasterNotesSection: React.FC<MasterNotesSectionProps> = ({
     scheduleAutosave(selectedId, nextTitle, draftContent);
   };
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const nextContent = e.target.value;
+  const commitContentUpdate = (nextContent: string) => {
     setDraftContent(nextContent);
     if (!selectedId) return;
 
@@ -448,6 +472,72 @@ export const MasterNotesSection: React.FC<MasterNotesSectionProps> = ({
       )
     );
     scheduleAutosave(selectedId, draftTitle, nextContent);
+  };
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    commitContentUpdate(e.target.value);
+  };
+
+  const handleApplyHeading = (level: MasterNoteHeadingLevel) => {
+    const textarea = contentTextareaRef.current;
+    const cursorPos =
+      textarea && editorViewMode === "edit"
+        ? textarea.selectionStart ?? draftContent.length
+        : draftContent.length;
+
+    const baseContent =
+      editorViewMode === "preview" &&
+      draftContent.length > 0 &&
+      !draftContent.endsWith("\n")
+        ? `${draftContent}\n`
+        : draftContent;
+    const effectiveCursor =
+      editorViewMode === "preview" ? baseContent.length : cursorPos;
+
+    const { content: nextContent, nextCursor } = applyHeadingPrefixToLine(
+      baseContent,
+      effectiveCursor,
+      level,
+    );
+
+    if (editorViewMode !== "edit") {
+      setEditorViewMode("edit");
+    }
+    commitContentUpdate(nextContent);
+    window.requestAnimationFrame(() => {
+      const el = contentTextareaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(nextCursor, nextCursor);
+      }
+    });
+  };
+
+  const handleInsertInlineSyntax = (snippet: string) => {
+    const textarea = contentTextareaRef.current;
+    const start =
+      textarea && editorViewMode === "edit"
+        ? textarea.selectionStart ?? draftContent.length
+        : draftContent.length;
+    const end =
+      textarea && editorViewMode === "edit"
+        ? textarea.selectionEnd ?? start
+        : start;
+
+    const nextContent =
+      draftContent.slice(0, start) + snippet + draftContent.slice(end);
+    const nextCursor = start + snippet.length;
+    if (editorViewMode !== "edit") {
+      setEditorViewMode("edit");
+    }
+    commitContentUpdate(nextContent);
+    window.requestAnimationFrame(() => {
+      const el = contentTextareaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(nextCursor, nextCursor);
+      }
+    });
   };
 
   const handleRetrySave = () => {
@@ -832,7 +922,88 @@ export const MasterNotesSection: React.FC<MasterNotesSectionProps> = ({
                 </div>
               )}
 
-              {/* CORPO DO BLOCO DE NOTAS (TEXTO SIMPLES) */}
+              {/* BARRA DE FORMATAÇÃO (#h1–#h6, NEGRITO, ITÁLICO) + EDITAR / VISUALIZAR */}
+              <div
+                data-testid="master-note-format-toolbar"
+                className="px-3 sm:px-4 py-2 border-b border-[#1c1c26] bg-[#0b0b11] flex flex-wrap items-center justify-between gap-2"
+              >
+                <div className="flex flex-wrap items-center gap-1">
+                  {MASTER_NOTE_HEADING_LEVELS.map((lvl) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      disabled={isLoadingNote}
+                      data-testid={`master-note-heading-btn-${lvl}`}
+                      onClick={() => handleApplyHeading(lvl)}
+                      title={`Aplicar título HTML #h${lvl} na linha atual`}
+                      className="min-h-[32px] px-2 bg-[#14141e] hover:bg-[#1e1e2c] border border-[#282838] hover:border-[var(--op-red)] text-[10px] font-mono font-bold text-[#d4d5e2] hover:text-white cursor-pointer touch-manipulation disabled:opacity-40"
+                    >
+                      #h{lvl}
+                    </button>
+                  ))}
+                  <span
+                    aria-hidden="true"
+                    className="h-4 w-px bg-[#242434] mx-1 hidden xs:inline-block"
+                  />
+                  <button
+                    type="button"
+                    disabled={isLoadingNote}
+                    onClick={() => handleInsertInlineSyntax("**texto**")}
+                    title="Inserir negrito (**texto**)"
+                    className="min-h-[32px] px-2 bg-[#14141e] hover:bg-[#1e1e2c] border border-[#282838] text-[10px] font-bold text-white cursor-pointer touch-manipulation disabled:opacity-40"
+                  >
+                    **B**
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isLoadingNote}
+                    onClick={() => handleInsertInlineSyntax("^^texto^^")}
+                    title="Inserir itálico (^^texto^^)"
+                    className="min-h-[32px] px-2 bg-[#14141e] hover:bg-[#1e1e2c] border border-[#282838] text-[10px] italic text-[#d4d5e2] cursor-pointer touch-manipulation disabled:opacity-40"
+                  >
+                    ^^I^^
+                  </button>
+                </div>
+
+                <div
+                  role="tablist"
+                  aria-label="Modo de exibição da anotação"
+                  className="inline-flex items-center border border-[#262636] bg-[#0f0f17] p-0.5 shrink-0"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={editorViewMode === "edit"}
+                    data-testid="master-note-mode-edit"
+                    onClick={() => setEditorViewMode("edit")}
+                    className={`min-h-[30px] px-2.5 text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 cursor-pointer touch-manipulation ${
+                      editorViewMode === "edit"
+                        ? "bg-[#1c0b0f] text-white border border-[#8f171c]/80"
+                        : "text-[#8e90a0] hover:text-white border border-transparent"
+                    }`}
+                  >
+                    <Edit2 size={11} />
+                    <span>Editar</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={editorViewMode === "preview"}
+                    data-testid="master-note-mode-preview"
+                    onClick={() => setEditorViewMode("preview")}
+                    className={`min-h-[30px] px-2.5 text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 cursor-pointer touch-manipulation ${
+                      editorViewMode === "preview"
+                        ? "bg-[#1c0b0f] text-white border border-[#8f171c]/80"
+                        : "text-[#8e90a0] hover:text-white border border-transparent"
+                    }`}
+                  >
+                    <Eye size={11} />
+                    <span>Visualizar</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* CORPO DO BLOCO DE NOTAS (EDITOR / PRÉVIA FORMATADA COM #h1–#h6) */}
               {isLoadingNote ? (
                 <div className="flex-1 flex items-center justify-center gap-2 py-16 text-xs text-[#8a8b99]">
                   <Loader2
@@ -841,13 +1012,101 @@ export const MasterNotesSection: React.FC<MasterNotesSectionProps> = ({
                   />
                   <span>Carregando conteúdo...</span>
                 </div>
+              ) : editorViewMode === "preview" ? (
+                <div
+                  data-testid="master-note-rendered-view"
+                  className="flex-1 w-full min-h-[340px] sm:min-h-[420px] px-4 sm:px-6 py-4 overflow-y-auto space-y-2 text-sm font-mono text-zinc-200 leading-relaxed break-words"
+                >
+                  {parsedNoteBlocks.every((b) => b.type === "empty") ? (
+                    <p className="text-xs text-[#6f7080] italic">
+                      Nenhum conteúdo nesta anotação ainda. Volte para &ldquo;Editar&rdquo; e use #h1 a #h6 para estruturar títulos.
+                    </p>
+                  ) : (
+                    parsedNoteBlocks.map((block, idx) => {
+                      if (block.type === "empty") {
+                        return (
+                          <div
+                            key={`note_empty_${idx}`}
+                            className="h-2"
+                            aria-hidden="true"
+                          />
+                        );
+                      }
+                      if (block.type === "divider") {
+                        return (
+                          <hr
+                            key={`note_div_${idx}`}
+                            className="my-3 border-0 border-t border-[#2d2d3d]"
+                          />
+                        );
+                      }
+                      if (block.type === "heading") {
+                        const headingContent = renderRichInlineTokens(
+                          block.tokens,
+                          `nh_${idx}`,
+                          {
+                            tone: "inherit",
+                            interactiveAffiliations: false,
+                          },
+                        );
+                        const cls = HEADING_CLASS_MAP[block.level];
+                        switch (block.level) {
+                          case 1:
+                            return (
+                              <h1 key={`nh_${idx}`} className={cls}>
+                                {headingContent}
+                              </h1>
+                            );
+                          case 2:
+                            return (
+                              <h2 key={`nh_${idx}`} className={cls}>
+                                {headingContent}
+                              </h2>
+                            );
+                          case 3:
+                            return (
+                              <h3 key={`nh_${idx}`} className={cls}>
+                                {headingContent}
+                              </h3>
+                            );
+                          case 4:
+                            return (
+                              <h4 key={`nh_${idx}`} className={cls}>
+                                {headingContent}
+                              </h4>
+                            );
+                          case 5:
+                            return (
+                              <h5 key={`nh_${idx}`} className={cls}>
+                                {headingContent}
+                              </h5>
+                            );
+                          case 6:
+                            return (
+                              <h6 key={`nh_${idx}`} className={cls}>
+                                {headingContent}
+                              </h6>
+                            );
+                        }
+                      }
+                      return (
+                        <p key={`np_${idx}`} className="m-0 leading-relaxed text-zinc-200">
+                          {renderRichInlineTokens(block.tokens, `np_${idx}`, {
+                            tone: "dark",
+                            interactiveAffiliations: false,
+                          })}
+                        </p>
+                      );
+                    })
+                  )}
+                </div>
               ) : (
                 <textarea
                   ref={contentTextareaRef}
                   value={draftContent}
                   onChange={handleContentChange}
                   onBlur={flushPendingSave}
-                  placeholder="Escreva pistas, segredos, nomes de NPCs, acontecimentos ou lembretes rápidos da sessão..."
+                  placeholder="Escreva pistas, segredos, nomes de NPCs... Use #h1 a #h6 no início da linha para títulos (ex: #h1 Dossiê, #h2 Pistas) e **negrito** / ^^itálico^^."
                   aria-label="Conteúdo da anotação"
                   data-testid="master-note-content-textarea"
                   className="flex-1 w-full min-h-[340px] sm:min-h-[420px] bg-transparent px-3.5 sm:px-5 py-4 text-sm font-mono text-zinc-100 placeholder-[#555768] leading-relaxed resize-y focus:outline-none selection:bg-[var(--op-red)]/40"
@@ -855,10 +1114,12 @@ export const MasterNotesSection: React.FC<MasterNotesSectionProps> = ({
               )}
 
               {/* RODAPÉ MINIMALISTA DO BLOCO DE NOTAS */}
-              <div className="px-3.5 sm:px-5 py-2 border-t border-[#181822] bg-[#0b0b10] flex items-center justify-between text-[10px] text-[#6d6f80]">
-                <span>Texto simples · Privado do Mestre</span>
+              <div className="px-3.5 sm:px-5 py-2 border-t border-[#181822] bg-[#0b0b10] flex items-center justify-between gap-2 text-[10px] text-[#6d6f80]">
+                <span className="truncate">
+                  Suporta #h1–#h6, **negrito**, ^^itálico^^ · Privado do Mestre
+                </span>
                 {activeSummary?.updated_at && (
-                  <span className="tabular-nums">
+                  <span className="tabular-nums shrink-0">
                     Atualizado {formatNoteTimestamp(activeSummary.updated_at)}
                   </span>
                 )}

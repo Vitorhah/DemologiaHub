@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Check } from "lucide-react";
 import {
   RITUAL_AFFILIATION_LIST,
@@ -12,6 +12,17 @@ import {
   MasterLibraryTributoData,
 } from "../types/masterLibrary";
 import { DEFAULT_STATUS_KEYS } from "../utils/statusVariables";
+import {
+  CreatureRichInlineText,
+  CreatureRichText,
+  CreatureRichTextQuickBar,
+} from "./CreatureRichText";
+
+function appendRichSnippet(current: string, snippet: string): string {
+  const base = current || "";
+  if (!base) return snippet.trimStart();
+  return `${base}${base.endsWith(" ") || snippet.startsWith("\n") ? "" : " "}${snippet}`;
+}
 
 const RITUAL_LEVELS: readonly RitualLevel[] = [1, 2, 3, 4];
 
@@ -28,20 +39,41 @@ export const RitualFormFields: React.FC<RitualFormFieldsProps> = ({
   ritual,
   onChange,
 }) => {
+  const [showDescPreview, setShowDescPreview] = useState(false);
+
   return (
     <div className="space-y-3">
-      <div>
-        <label className="block text-[10px] font-mono uppercase tracking-wider text-[#9a9ba8] mb-1">
+      <div className="space-y-1.5">
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-[#9a9ba8]">
           Nome do Ritual
         </label>
         <input
           type="text"
           className="input-dark mb-0"
-          placeholder="Ex: Sussurro da Membrana"
+          placeholder="Ex: **Sussurro** da #(Membrana)"
           aria-label="Nome do Ritual"
           value={ritual.name}
           onChange={(e) => onChange("name", e.target.value)}
         />
+        <CreatureRichTextQuickBar
+          compact
+          showDivider={false}
+          label="Nome:"
+          onInsertSnippet={(snippet) =>
+            onChange("name", appendRichSnippet(ritual.name, snippet))
+          }
+        />
+        {(ritual.name.includes("**") ||
+          ritual.name.includes("^^") ||
+          ritual.name.includes("#(")) && (
+          <div className="px-2.5 py-1.5 bg-[#0a0a10] border border-[#222230] text-xs font-bold text-white uppercase tracking-wide">
+            <CreatureRichInlineText
+              text={ritual.name}
+              tone="dark"
+              interactiveAffiliations={false}
+            />
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -156,18 +188,36 @@ export const RitualFormFields: React.FC<RitualFormFieldsProps> = ({
         </div>
       </div>
 
-      <div>
-        <label className="block text-[10px] font-mono uppercase tracking-wider text-[#9a9ba8] mb-1">
+      <div className="space-y-1.5">
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-[#9a9ba8]">
           Descrição
         </label>
-        <textarea
-          className="input-dark mb-0"
-          placeholder="Efeito, alcance, duração e detalhes do ritual..."
-          aria-label="Descrição do Ritual"
-          rows={3}
-          value={ritual.desc}
-          onChange={(e) => onChange("desc", e.target.value)}
+        <CreatureRichTextQuickBar
+          compact
+          showPreview={showDescPreview}
+          onTogglePreview={() => setShowDescPreview((p) => !p)}
+          onInsertSnippet={(snippet) =>
+            onChange("desc", appendRichSnippet(ritual.desc, snippet))
+          }
         />
+        {showDescPreview ? (
+          <div className="min-h-[76px] bg-[#0a0a10] border border-[#242432] p-2.5">
+            <CreatureRichText
+              text={ritual.desc}
+              emptyText="Digite a descrição para visualizar a formatação."
+              tone="dark"
+            />
+          </div>
+        ) : (
+          <textarea
+            className="input-dark mb-0"
+            placeholder="Efeito, alcance, duração... Suporta **negrito**, ^^itálico^^ e #(Afiliação)"
+            aria-label="Descrição do Ritual"
+            rows={3}
+            value={ritual.desc}
+            onChange={(e) => onChange("desc", e.target.value)}
+          />
+        )}
       </div>
 
       <div>
@@ -215,6 +265,8 @@ export const SkillFormFields: React.FC<SkillFormFieldsProps> = ({
   variableNames,
   onChange,
 }) => {
+  const [showDescPreview, setShowDescPreview] = useState(false);
+
   const vars = Array.from(
     new Set([
       ...(variableNames && variableNames.length > 0
@@ -230,18 +282,37 @@ export const SkillFormFields: React.FC<SkillFormFieldsProps> = ({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
-        <div className="sm:col-span-3">
-          <label className="block text-[10px] font-mono uppercase tracking-wider text-[#9a9ba8] mb-1">
+        <div className="sm:col-span-3 space-y-1.5">
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-[#9a9ba8]">
             Nome da Skill
           </label>
           <input
             type="text"
             className="input-dark mb-0"
-            placeholder="Nome da Skill"
+            placeholder="Nome da Skill (suporta **negrito**, ^^itálico^^, #(Afiliação))"
             aria-label="Nome da Skill"
             value={skill.name}
             onChange={(e) => onChange("name", e.target.value)}
           />
+          <CreatureRichTextQuickBar
+            compact
+            showDivider={false}
+            label="Nome:"
+            onInsertSnippet={(snippet) =>
+              onChange("name", appendRichSnippet(skill.name, snippet))
+            }
+          />
+          {(skill.name.includes("**") ||
+            skill.name.includes("^^") ||
+            skill.name.includes("#(")) && (
+            <div className="px-2.5 py-1.5 bg-[#0a0a10] border border-[#222230] text-xs font-bold text-white uppercase tracking-wide">
+              <CreatureRichInlineText
+                text={skill.name}
+                tone="dark"
+                interactiveAffiliations={false}
+              />
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-[10px] font-mono uppercase tracking-wider text-[#9a9ba8] mb-1">
@@ -259,18 +330,36 @@ export const SkillFormFields: React.FC<SkillFormFieldsProps> = ({
         </div>
       </div>
 
-      <div>
-        <label className="block text-[10px] font-mono uppercase tracking-wider text-[#9a9ba8] mb-1">
+      <div className="space-y-1.5">
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-[#9a9ba8]">
           Descrição
         </label>
-        <textarea
-          className="input-dark mb-0"
-          placeholder="Descrição"
-          aria-label="Descrição da Skill"
-          rows={2}
-          value={skill.desc}
-          onChange={(e) => onChange("desc", e.target.value)}
+        <CreatureRichTextQuickBar
+          compact
+          showPreview={showDescPreview}
+          onTogglePreview={() => setShowDescPreview((p) => !p)}
+          onInsertSnippet={(snippet) =>
+            onChange("desc", appendRichSnippet(skill.desc, snippet))
+          }
         />
+        {showDescPreview ? (
+          <div className="min-h-[64px] bg-[#0a0a10] border border-[#242432] p-2.5">
+            <CreatureRichText
+              text={skill.desc}
+              emptyText="Digite a descrição para visualizar a formatação."
+              tone="dark"
+            />
+          </div>
+        ) : (
+          <textarea
+            className="input-dark mb-0"
+            placeholder="Descrição (suporta **negrito**, ^^itálico^^ e #(Afiliação))"
+            aria-label="Descrição da Skill"
+            rows={2}
+            value={skill.desc}
+            onChange={(e) => onChange("desc", e.target.value)}
+          />
+        )}
       </div>
 
       <label className="flex items-center gap-2 text-[10px] text-gray-400 cursor-pointer">

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -20,6 +20,7 @@ import {
   Search,
   Shield,
   Sparkles,
+  Table2,
   Tag,
   Trash2,
   Unlink,
@@ -39,6 +40,7 @@ import type {
   CreatureModeItem,
   CreatureRecord,
   CreatureSheetBlock,
+  CreatureTableData,
   ResolvedCreatureRitual,
 } from "../types/masterCreatures";
 import {
@@ -74,18 +76,31 @@ import {
   type PdiItem,
 } from "../utils/pdi";
 import {
+  CREATURE_TABLE_MAX_COLS,
+  CREATURE_TABLE_MAX_ROWS,
+  CREATURE_TABLE_MIN_COLS,
+  CREATURE_TABLE_MIN_ROWS,
+  addTableColumn,
+  addTableRow,
+  getSpreadsheetColumnLabel,
   linkRitualToCreature,
   moveCreatureMode,
+  normalizeCreatureTableData,
   removeCreatureMode,
+  removeTableColumn,
+  removeTableRow,
   resolveCreatureRituals,
   toggleCreatureModeActive,
+  toggleTableHeaderRow,
   unlinkRitualFromCreature,
+  updateTableCell,
   upsertCreatureMode,
 } from "../utils/creatureBlocks";
 import { SkillFormFields } from "./MasterLibraryFormFields";
 import { RitualAffiliationTag } from "./RitualsSection";
 import { PdiEditorModal } from "./PdiEditorModal";
 import {
+  CreatureRichInlineText,
   CreatureRichText,
   CreatureRichTextQuickBar,
 } from "./CreatureRichText";
@@ -879,8 +894,16 @@ export const CreatureSkillsBlock: React.FC<CreatureSkillsBlockProps> =
               </div>
 
               <SkillFormFields
-                data={skillDraft}
-                onChange={setSkillDraft}
+                skill={skillDraft}
+                onChange={(field, value) =>
+                  setSkillDraft((prev) => ({
+                    ...prev,
+                    [field]:
+                      field === "cost"
+                        ? Math.max(0, Number(value) || 0)
+                        : value,
+                  }))
+                }
               />
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1e1e2b]">
@@ -955,11 +978,19 @@ export const CreatureSkillsBlock: React.FC<CreatureSkillsBlockProps> =
                     >
                       <div className="min-w-0">
                         <div className="text-xs font-bold text-white truncate">
-                          {item.data.name}
+                          <CreatureRichInlineText
+                            text={item.data.name}
+                            tone="dark"
+                            interactiveAffiliations={false}
+                          />
                         </div>
                         <div className="text-[10px] text-[#8a8b9c] truncate">
                           {item.data.cost > 0 ? `${item.data.cost} PE · ` : ""}
-                          {item.data.desc || "Sem descrição"}
+                          <CreatureRichInlineText
+                            text={item.data.desc || "Sem descrição"}
+                            tone="dark"
+                            interactiveAffiliations={false}
+                          />
                         </div>
                       </div>
                       <button
@@ -1013,7 +1044,11 @@ export const CreatureSkillsBlock: React.FC<CreatureSkillsBlockProps> =
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-xs font-bold text-white uppercase tracking-wide break-words">
-                            {resolvedData.name}
+                            <CreatureRichInlineText
+                              text={resolvedData.name}
+                              tone="dark"
+                              interactiveAffiliations={false}
+                            />
                           </span>
                           {resolvedData.cost > 0 && (
                             <span className="px-1.5 py-0.5 text-[9px] bg-[#0e1524] border border-sky-800/60 text-sky-300 font-bold tabular-nums">
@@ -1038,9 +1073,13 @@ export const CreatureSkillsBlock: React.FC<CreatureSkillsBlockProps> =
                           )}
                         </div>
                         {!isExpanded && resolvedData.desc && (
-                          <p className="text-[11px] text-[#9b9caa] line-clamp-1 mt-0.5">
-                            {resolvedData.desc}
-                          </p>
+                          <div className="text-[11px] text-[#9b9caa] line-clamp-1 mt-0.5">
+                            <CreatureRichInlineText
+                              text={resolvedData.desc}
+                              tone="dark"
+                              interactiveAffiliations={false}
+                            />
+                          </div>
                         )}
                       </div>
                     </button>
@@ -1108,9 +1147,12 @@ export const CreatureSkillsBlock: React.FC<CreatureSkillsBlockProps> =
                   {isExpanded && (
                     <div className="px-3 pb-3 pt-2 border-t border-[#1c1c28] space-y-2 text-xs">
                       {resolvedData.desc && (
-                        <p className="text-[#c8c9d6] whitespace-pre-wrap leading-relaxed">
-                          {resolvedData.desc}
-                        </p>
+                        <CreatureRichText
+                          text={resolvedData.desc}
+                          emptyText=""
+                          tone="dark"
+                          className="!text-xs"
+                        />
                       )}
                       <div className="flex flex-wrap gap-1.5 text-[10px]">
                         {resolvedData.needsTest && (
@@ -1180,7 +1222,10 @@ const RitualDetailModal: React.FC<{
               <span>Ritual Vinculado · {sourceLabel}</span>
             </div>
             <h3 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider truncate mt-0.5">
-              {ritual.name || "Ritual sem nome"}
+              <CreatureRichInlineText
+                text={ritual.name || "Ritual sem nome"}
+                tone="dark"
+              />
             </h3>
           </div>
           <button
@@ -1240,9 +1285,12 @@ const RitualDetailModal: React.FC<{
             <div className="text-[9px] uppercase tracking-widest text-[#7c7d8e] mb-1.5">
               Descrição do Ritual
             </div>
-            <p className="text-xs text-[#d2d3e0] whitespace-pre-wrap leading-relaxed">
-              {ritual.desc || "Sem descrição registrada."}
-            </p>
+            <CreatureRichText
+              text={ritual.desc || ""}
+              emptyText="Sem descrição registrada."
+              tone="dark"
+              className="!text-xs text-[#d2d3e0]"
+            />
           </div>
 
           {isSourceMissing && (
@@ -1434,7 +1482,11 @@ export const CreatureRitualsBlock: React.FC<CreatureRitualsBlockProps> =
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-xs font-bold text-white truncate">
-                            {opt.ritual.name || "Ritual sem nome"}
+                            <CreatureRichInlineText
+                              text={opt.ritual.name || "Ritual sem nome"}
+                              tone="dark"
+                              interactiveAffiliations={false}
+                            />
                           </span>
                           <span className="text-[9px] px-1.5 py-0.5 bg-[#181826] border border-[#2c2c40] text-[#b4b5c2]">
                             NV {opt.ritual.level} · {opt.ritual.cost} PE
@@ -1513,7 +1565,11 @@ export const CreatureRitualsBlock: React.FC<CreatureRitualsBlockProps> =
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-xs font-bold text-white uppercase tracking-wide break-words">
-                            {ritual.name || "Ritual sem nome"}
+                            <CreatureRichInlineText
+                              text={ritual.name || "Ritual sem nome"}
+                              tone="dark"
+                              interactiveAffiliations={false}
+                            />
                           </span>
                           <span className="px-1.5 py-0.5 text-[9px] bg-[#1a0b0e] border border-[#8f171c]/60 text-[#ff8a90] font-bold tabular-nums">
                             NV {ritual.level}
@@ -1593,9 +1649,13 @@ export const CreatureRitualsBlock: React.FC<CreatureRitualsBlockProps> =
                         )}
                       </div>
                       {ritual.desc && (
-                        <p className="text-[#c8c9d6] whitespace-pre-wrap leading-relaxed">
-                          {ritual.desc}
-                        </p>
+                        <CreatureRichText
+                          text={ritual.desc}
+                          emptyText=""
+                          ritualCatalog={ritualCatalog}
+                          tone="dark"
+                          className="!text-xs"
+                        />
                       )}
                     </div>
                   )}
@@ -2014,6 +2074,488 @@ export const CreatureTextBlock: React.FC<CreatureTextBlockProps> = React.memo(
             data-testid={`creature-text-block-content-${block.id}`}
             className="w-full flex-1 min-h-[84px] bg-[#12121a] border border-[#282838] focus:border-[var(--op-red-bright)] px-2.5 py-2 text-xs text-[#e0e1ec] placeholder-[#5e6070] outline-none resize-y rounded-none leading-relaxed"
           />
+        )}
+      </div>
+    );
+  },
+);
+
+// ============================================================================
+// 7. BLOCO DE TABELA (Planilha estilo Excel com células formatáveis)
+// ============================================================================
+
+export interface CreatureTableBlockProps {
+  block: CreatureSheetBlock;
+  ritualCatalog: CatalogRitualOption[];
+  isEditing: boolean;
+  onUpdateTableBlock: (
+    blockId: string,
+    patch: { title?: string; tableData?: CreatureTableData },
+  ) => void;
+}
+
+export const CreatureTableBlock: React.FC<CreatureTableBlockProps> = React.memo(
+  function CreatureTableBlock({
+    block,
+    ritualCatalog,
+    isEditing,
+    onUpdateTableBlock,
+  }) {
+    const tableData = useMemo(
+      () => normalizeCreatureTableData(block.tableData),
+      [block.tableData],
+    );
+    const [showPreview, setShowPreview] = useState(false);
+    const [activeCell, setActiveCell] = useState<{ row: number; col: number }>({
+      row: 0,
+      col: 0,
+    });
+    const cellInputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+
+    const rowCount = tableData.rows.length;
+    const colCount = tableData.rows[0]?.length || 1;
+    const safeActiveRow = Math.min(activeCell.row, Math.max(0, rowCount - 1));
+    const safeActiveCol = Math.min(activeCell.col, Math.max(0, colCount - 1));
+    const activeCoord = `${getSpreadsheetColumnLabel(safeActiveCol)}${safeActiveRow + 1}`;
+
+    const commitTableData = (next: CreatureTableData) => {
+      onUpdateTableBlock(block.id, { tableData: next });
+    };
+
+    const focusCell = (row: number, col: number) => {
+      const clampedRow = Math.max(0, Math.min(rowCount - 1, row));
+      const clampedCol = Math.max(0, Math.min(colCount - 1, col));
+      setActiveCell({ row: clampedRow, col: clampedCol });
+      requestAnimationFrame(() => {
+        const el = cellInputRefs.current.get(`${clampedRow}:${clampedCol}`);
+        if (el) {
+          el.focus();
+        }
+      });
+    };
+
+    const handleCellKeyDown = (
+      e: React.KeyboardEvent<HTMLInputElement>,
+      rowIdx: number,
+      colIdx: number,
+    ) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (rowIdx + 1 < rowCount) {
+          focusCell(rowIdx + 1, colIdx);
+        } else if (rowCount < CREATURE_TABLE_MAX_ROWS) {
+          const next = addTableRow(tableData);
+          commitTableData(next);
+          setActiveCell({ row: rowIdx + 1, col: colIdx });
+          requestAnimationFrame(() => {
+            cellInputRefs.current.get(`${rowIdx + 1}:${colIdx}`)?.focus();
+          });
+        }
+        return;
+      }
+
+      if (e.key === "ArrowDown") {
+        if (rowIdx + 1 < rowCount) {
+          e.preventDefault();
+          focusCell(rowIdx + 1, colIdx);
+        }
+        return;
+      }
+
+      if (e.key === "ArrowUp") {
+        if (rowIdx - 1 >= 0) {
+          e.preventDefault();
+          focusCell(rowIdx - 1, colIdx);
+        }
+        return;
+      }
+
+      const input = e.currentTarget;
+      const selStart = input.selectionStart ?? 0;
+      const selEnd = input.selectionEnd ?? 0;
+
+      if (
+        e.key === "ArrowRight" &&
+        selStart === input.value.length &&
+        selEnd === input.value.length &&
+        colIdx + 1 < colCount
+      ) {
+        e.preventDefault();
+        focusCell(rowIdx, colIdx + 1);
+        return;
+      }
+
+      if (
+        e.key === "ArrowLeft" &&
+        selStart === 0 &&
+        selEnd === 0 &&
+        colIdx - 1 >= 0
+      ) {
+        e.preventDefault();
+        focusCell(rowIdx, colIdx - 1);
+      }
+    };
+
+    const handleInsertRichSnippetInActiveCell = (snippet: string) => {
+      const currentVal = tableData.rows[safeActiveRow]?.[safeActiveCol] ?? "";
+      const nextVal = currentVal
+        ? `${currentVal}${currentVal.endsWith(" ") ? "" : " "}${snippet}`
+        : snippet.trim();
+      commitTableData(
+        updateTableCell(tableData, safeActiveRow, safeActiveCol, nextVal),
+      );
+      requestAnimationFrame(() => {
+        cellInputRefs.current.get(`${safeActiveRow}:${safeActiveCol}`)?.focus();
+      });
+    };
+
+    const renderReadOnlyTable = () => {
+      const headerRow =
+        tableData.hasHeaderRow && tableData.rows.length > 0
+          ? tableData.rows[0]
+          : null;
+      const bodyRows = tableData.hasHeaderRow
+        ? tableData.rows.slice(1)
+        : tableData.rows;
+
+      return (
+        <div
+          className="w-full overflow-x-auto border border-[#242434] bg-[#0a0a10]"
+          data-testid={`creature-table-view-${block.id}`}
+        >
+          <table className="w-full border-collapse text-left text-xs font-mono">
+            {headerRow && (
+              <thead>
+                <tr className="bg-[#180b0f] border-b border-[#521c25]">
+                  {headerRow.map((cell, cIdx) => (
+                    <th
+                      key={`th_${cIdx}`}
+                      className="px-2.5 py-2 text-[11px] font-bold uppercase tracking-wider text-white border-r border-[#2d1e26] last:border-r-0 align-top whitespace-normal break-words min-w-[96px]"
+                    >
+                      <CreatureRichInlineText
+                        text={cell}
+                        emptyText={getSpreadsheetColumnLabel(cIdx)}
+                        ritualCatalog={ritualCatalog}
+                        tone="dark"
+                      />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            )}
+            <tbody>
+              {bodyRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={colCount}
+                    className="px-3 py-3 text-center text-[11px] text-[#757688] italic"
+                  >
+                    Nenhuma linha de dados preenchida.
+                  </td>
+                </tr>
+              ) : (
+                bodyRows.map((row, rIdx) => (
+                  <tr
+                    key={`tr_${rIdx}`}
+                    className={`border-b border-[#1d1d2a] last:border-b-0 ${
+                      rIdx % 2 === 1 ? "bg-[#0e0e16]" : "bg-[#0a0a10]"
+                    }`}
+                  >
+                    {row.map((cell, cIdx) => (
+                      <td
+                        key={`td_${rIdx}_${cIdx}`}
+                        className="px-2.5 py-2 text-xs text-[#d0d1df] border-r border-[#1f1f2d] last:border-r-0 align-top whitespace-normal break-words min-w-[96px]"
+                      >
+                        <CreatureRichInlineText
+                          text={cell}
+                          emptyText="—"
+                          ritualCatalog={ritualCatalog}
+                          tone="dark"
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      );
+    };
+
+    if (!isEditing) {
+      return (
+        <div
+          className="space-y-2 h-full flex flex-col min-w-0"
+          data-testid={`creature-block-content-table-${block.id}`}
+        >
+          {block.title && (
+            <div className="flex items-center gap-1.5 border-b border-[#1d1d29] pb-1.5">
+              <Table2
+                size={13}
+                className="text-[var(--op-red-bright)] shrink-0"
+              />
+              <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider truncate">
+                {block.title}
+              </h3>
+            </div>
+          )}
+          <div className="flex-1 min-w-0">{renderReadOnlyTable()}</div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className="space-y-2.5 h-full flex flex-col min-w-0"
+        data-testid={`creature-block-content-table-${block.id}`}
+      >
+        <input
+          type="text"
+          maxLength={100}
+          value={block.title || ""}
+          onChange={(e) =>
+            onUpdateTableBlock(block.id, { title: e.target.value })
+          }
+          placeholder="Título da tabela (ex: Tabela de Fases, Ações, Resistências)..."
+          aria-label="Título do bloco de tabela"
+          data-testid={`creature-table-title-${block.id}`}
+          className="w-full min-h-[38px] bg-[#12121a] border border-[#282838] focus:border-[var(--op-red-bright)] px-2.5 py-1.5 text-xs font-bold text-white uppercase tracking-wider outline-none rounded-none"
+        />
+
+        {/* Barra de ferramentas estilo planilha (Excel) */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5 bg-[#0e0e16] border border-[#232332] px-2 py-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              data-testid={`creature-table-active-cell-${block.id}`}
+              className="min-h-[28px] px-2 bg-[#1a0b0e] border border-[#7c171d] text-[10px] font-bold text-[#ff9aa0] inline-flex items-center tabular-nums"
+              title="Célula ativa na planilha"
+            >
+              {activeCoord}
+            </span>
+
+            <button
+              type="button"
+              disabled={rowCount >= CREATURE_TABLE_MAX_ROWS}
+              data-testid={`creature-table-add-row-${block.id}`}
+              onClick={() => commitTableData(addTableRow(tableData))}
+              className="min-h-[30px] px-2 bg-[#151520] hover:bg-[#1e1e2c] disabled:opacity-40 border border-[#2a2a38] text-[10px] font-bold uppercase tracking-wider text-white inline-flex items-center gap-1 cursor-pointer touch-manipulation"
+            >
+              <Plus size={11} className="text-[var(--op-red-bright)]" />
+              <span>Linha</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={colCount >= CREATURE_TABLE_MAX_COLS}
+              data-testid={`creature-table-add-col-${block.id}`}
+              onClick={() => commitTableData(addTableColumn(tableData))}
+              className="min-h-[30px] px-2 bg-[#151520] hover:bg-[#1e1e2c] disabled:opacity-40 border border-[#2a2a38] text-[10px] font-bold uppercase tracking-wider text-white inline-flex items-center gap-1 cursor-pointer touch-manipulation"
+            >
+              <Plus size={11} className="text-[var(--op-red-bright)]" />
+              <span>Coluna</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid={`creature-table-toggle-header-${block.id}`}
+              onClick={() => commitTableData(toggleTableHeaderRow(tableData))}
+              className={`min-h-[30px] px-2 border text-[10px] uppercase tracking-wider cursor-pointer touch-manipulation ${
+                tableData.hasHeaderRow
+                  ? "bg-[#190b0f] border-[#8f171c] text-white font-bold"
+                  : "bg-[#14141e] border-[#282836] text-[#8d8e9f] hover:text-white"
+              }`}
+              title="Alternar estilo de cabeçalho na linha 1"
+            >
+              Cabeçalho: {tableData.hasHeaderRow ? "ON" : "OFF"}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-[#7c7d8e] tabular-nums hidden sm:inline">
+              {rowCount}×{colCount}
+            </span>
+            <button
+              type="button"
+              data-testid={`creature-table-preview-toggle-${block.id}`}
+              onClick={() => setShowPreview((p) => !p)}
+              className={`min-h-[30px] px-2.5 border text-[10px] uppercase tracking-wider cursor-pointer touch-manipulation ${
+                showPreview
+                  ? "bg-[#190a0d] border-[#8f171c] text-white font-bold"
+                  : "bg-[#14141e] hover:bg-[#1d1d2b] border-[#282836] text-[#9b9caa] hover:text-white"
+              }`}
+            >
+              {showPreview ? "Editar Planilha" : "Prévia"}
+            </button>
+          </div>
+        </div>
+
+        {!showPreview && (
+          <CreatureRichTextQuickBar
+            compact
+            showDivider={false}
+            label={`Célula ${activeCoord}:`}
+            onInsertSnippet={handleInsertRichSnippetInActiveCell}
+          />
+        )}
+
+        {showPreview ? (
+          <div className="flex-1 min-w-0">{renderReadOnlyTable()}</div>
+        ) : (
+          <div
+            className="w-full overflow-x-auto border border-[#282838] bg-[#08080d]"
+            data-testid={`creature-table-editor-${block.id}`}
+          >
+            <table className="w-full border-collapse font-mono text-xs">
+              <thead>
+                <tr className="bg-[#12121b] border-b border-[#2a2a3a]">
+                  <th
+                    className="w-11 min-w-[44px] px-1.5 py-1.5 text-center text-[9px] text-[#6d6f80] border-r border-[#262636] select-none"
+                    title="Linhas × Colunas"
+                  >
+                    {rowCount}×{colCount}
+                  </th>
+                  {Array.from({ length: colCount }, (_, cIdx) => {
+                    const colLetter = getSpreadsheetColumnLabel(cIdx);
+                    const isColActive = safeActiveCol === cIdx;
+                    return (
+                      <th
+                        key={`col_hdr_${cIdx}`}
+                        className={`min-w-[116px] px-1.5 py-1 border-r border-[#242434] last:border-r-0 select-none ${
+                          isColActive
+                            ? "bg-[#1e0d12] text-[#ff9aa0]"
+                            : "text-[#8a8b9d]"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] font-bold tracking-wider mx-auto">
+                            {colLetter}
+                          </span>
+                          {colCount > CREATURE_TABLE_MIN_COLS && (
+                            <button
+                              type="button"
+                              aria-label={`Remover coluna ${colLetter}`}
+                              title={`Remover coluna ${colLetter}`}
+                              data-testid={`creature-table-remove-col-${block.id}-${cIdx}`}
+                              onClick={() =>
+                                commitTableData(
+                                  removeTableColumn(tableData, cIdx),
+                                )
+                              }
+                              className="w-5 h-5 flex items-center justify-center text-[#7c7d8e] hover:text-red-300 hover:bg-[#2a1016] cursor-pointer shrink-0"
+                            >
+                              <X size={10} />
+                            </button>
+                          )}
+                        </div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {tableData.rows.map((row, rIdx) => {
+                  const isHeaderStyled = tableData.hasHeaderRow && rIdx === 0;
+                  const isRowActive = safeActiveRow === rIdx;
+                  return (
+                    <tr
+                      key={`edit_row_${rIdx}`}
+                      className="border-b border-[#1e1e2b] last:border-b-0"
+                    >
+                      <td
+                        className={`w-11 min-w-[44px] px-1 py-0.5 text-center border-r border-[#262636] select-none ${
+                          isRowActive
+                            ? "bg-[#1e0d12] text-[#ff9aa0]"
+                            : "bg-[#101018] text-[#7c7d8e]"
+                        }`}
+                      >
+                        <div className="flex items-center justify-center gap-0.5">
+                          <span className="text-[10px] font-bold tabular-nums">
+                            {rIdx + 1}
+                          </span>
+                          {rowCount > CREATURE_TABLE_MIN_ROWS && (
+                            <button
+                              type="button"
+                              aria-label={`Remover linha ${rIdx + 1}`}
+                              title={`Remover linha ${rIdx + 1}`}
+                              data-testid={`creature-table-remove-row-${block.id}-${rIdx}`}
+                              onClick={() =>
+                                commitTableData(removeTableRow(tableData, rIdx))
+                              }
+                              className="w-4 h-4 flex items-center justify-center text-[#707184] hover:text-red-300 hover:bg-[#2a1016] cursor-pointer shrink-0"
+                            >
+                              <X size={9} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      {row.map((cell, cIdx) => {
+                        const isCellActive =
+                          safeActiveRow === rIdx && safeActiveCol === cIdx;
+                        const cellKey = `${rIdx}:${cIdx}`;
+                        return (
+                          <td
+                            key={`edit_cell_${cellKey}`}
+                            className={`p-0 border-r border-[#20202e] last:border-r-0 ${
+                              isHeaderStyled
+                                ? "bg-[#160b0f]"
+                                : rIdx % 2 === 1
+                                  ? "bg-[#0d0d14]"
+                                  : "bg-[#0a0a10]"
+                            }`}
+                          >
+                            <input
+                              ref={(el) => {
+                                if (el) {
+                                  cellInputRefs.current.set(cellKey, el);
+                                } else {
+                                  cellInputRefs.current.delete(cellKey);
+                                }
+                              }}
+                              type="text"
+                              value={cell}
+                              onFocus={() =>
+                                setActiveCell({ row: rIdx, col: cIdx })
+                              }
+                              onChange={(e) =>
+                                commitTableData(
+                                  updateTableCell(
+                                    tableData,
+                                    rIdx,
+                                    cIdx,
+                                    e.target.value,
+                                  ),
+                                )
+                              }
+                              onKeyDown={(e) =>
+                                handleCellKeyDown(e, rIdx, cIdx)
+                              }
+                              aria-label={`Célula ${getSpreadsheetColumnLabel(cIdx)}${rIdx + 1}`}
+                              data-testid={`creature-table-cell-${block.id}-${rIdx}-${cIdx}`}
+                              placeholder={
+                                isHeaderStyled
+                                  ? `Cabeçalho ${getSpreadsheetColumnLabel(cIdx)}`
+                                  : ""
+                              }
+                              className={`w-full min-h-[34px] px-2 py-1.5 bg-transparent outline-none rounded-none text-xs transition-colors ${
+                                isHeaderStyled
+                                  ? "font-bold text-white uppercase tracking-wide placeholder-[#68464d]"
+                                  : "text-[#e0e1ec] placeholder-[#454656]"
+                              } ${
+                                isCellActive
+                                  ? "ring-1 ring-inset ring-[var(--op-red-bright)] bg-[#190c11]/70"
+                                  : "focus:ring-1 focus:ring-inset focus:ring-[var(--op-red-bright)]"
+                              }`}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     );

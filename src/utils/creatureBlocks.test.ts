@@ -1,23 +1,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  CREATURE_TABLE_MAX_COLS,
+  CREATURE_TABLE_MAX_ROWS,
   CURRENT_CREATURE_SHEET_VERSION,
   addBlockToSheet,
+  addTableColumn,
+  addTableRow,
   buildAvailableRitualsCatalog,
   buildDefaultCreatureSheetBlocks,
+  createDefaultCreatureTableData,
   duplicateBlockInSheet,
+  getSpreadsheetColumnLabel,
   linkRitualToCreature,
   migrateLegacyCreatureToBlocks,
   moveCreatureMode,
   moveSheetBlockByOffset,
   needsLegacySheetBlockMigration,
+  normalizeCreatureSheetBlocks,
+  normalizeCreatureTableData,
   removeBlockFromSheet,
   removeCreatureMode,
+  removeTableColumn,
+  removeTableRow,
   reorderSheetBlocks,
   resizeSheetBlock,
   resolveCreatureRituals,
   toggleCreatureModeActive,
+  toggleTableHeaderRow,
   unlinkRitualFromCreature,
+  updateTableBlockData,
+  updateTableCell,
   upsertCreatureMode,
 } from "./creatureBlocks";
 import {
@@ -231,4 +244,84 @@ test("Creature Modes reuse PDI modifiers and transfer into invoked session sheet
 
   const afterRemove = removeCreatureMode(modes, "mode_sombra");
   assert.equal(afterRemove.length, 1);
+});
+
+test("Excel-style table block supports column letters, cell edits, add/remove rows & cols, deep-clone duplication, and bounds", () => {
+  assert.equal(getSpreadsheetColumnLabel(0), "A");
+  assert.equal(getSpreadsheetColumnLabel(25), "Z");
+  assert.equal(getSpreadsheetColumnLabel(26), "AA");
+  assert.equal(getSpreadsheetColumnLabel(27), "AB");
+
+  let blocks = buildDefaultCreatureSheetBlocks();
+  const added = addBlockToSheet(blocks, "table");
+  assert.equal(added.ok, true);
+  if (!added.ok) return;
+  blocks = added.blocks;
+
+  const tableBlock = added.block;
+  assert.equal(tableBlock.type, "table");
+  assert.equal(tableBlock.tableData?.rows.length, 4);
+  assert.equal(tableBlock.tableData?.rows[0].length, 3);
+  assert.equal(tableBlock.tableData?.hasHeaderRow, true);
+
+  // Edit cells, add row & col, toggle header
+  let td = createDefaultCreatureTableData(2, 2);
+  td = updateTableCell(td, 0, 0, "**Ataque**");
+  td = updateTableCell(td, 1, 1, "2d6 #(Dor)");
+  td = addTableRow(td);
+  assert.equal(td.rows.length, 3);
+  td = addTableColumn(td);
+  assert.equal(td.rows[0].length, 3);
+  assert.equal(td.rows[0][2], "Coluna C");
+
+  blocks = updateTableBlockData(blocks, tableBlock.id, {
+    title: "Tabela de Combate",
+    tableData: td,
+  });
+
+  // Duplicate deep-clones rows so mutating original never mutates clone
+  const dup = duplicateBlockInSheet(blocks, tableBlock.id);
+  assert.equal(dup.ok, true);
+  if (!dup.ok) return;
+  blocks = dup.blocks;
+  assert.equal(dup.block.title, "Tabela de Combate (Cópia)");
+  assert.equal(dup.block.tableData?.rows[0][0], "**Ataque**");
+
+  const mutatedOrig = updateTableCell(td, 0, 0, "Alterado");
+  blocks = updateTableBlockData(blocks, tableBlock.id, {
+    tableData: mutatedOrig,
+  });
+  const clonedAfter = blocks.find((b) => b.id === dup.block.id);
+  assert.equal(clonedAfter?.tableData?.rows[0][0], "**Ataque**");
+
+  // Minimum bounds: never removes last remaining row or col
+  let tiny = createDefaultCreatureTableData(1, 1);
+  tiny = removeTableRow(tiny, 0);
+  tiny = removeTableColumn(tiny, 0);
+  assert.equal(tiny.rows.length, 1);
+  assert.equal(tiny.rows[0].length, 1);
+
+  // Toggle header row
+  const toggled = toggleTableHeaderRow(tiny);
+  assert.equal(toggled.hasHeaderRow, false);
+
+  // Normalization pads jagged rows and clamps max dimensions
+  const jagged = normalizeCreatureTableData({
+    rows: Array.from({ length: CREATURE_TABLE_MAX_ROWS + 5 }, (_, i) =>
+      i === 0
+        ? Array.from({ length: CREATURE_TABLE_MAX_COLS + 4 }, (__, c) => `C${c}`)
+        : ["only-one"],
+    ),
+    hasHeaderRow: false,
+  });
+  assert.equal(jagged.rows.length, CREATURE_TABLE_MAX_ROWS);
+  assert.equal(jagged.rows[0].length, CREATURE_TABLE_MAX_COLS);
+  assert.equal(jagged.rows[1].length, CREATURE_TABLE_MAX_COLS);
+  assert.equal(jagged.rows[1][1], "");
+  assert.equal(jagged.hasHeaderRow, false);
+
+  // Round-trip through normalizeCreatureSheetBlocks preserves tableData
+  const normalizedBlocks = normalizeCreatureSheetBlocks(blocks);
+  const restored = normalizedBlocks.find((b) => b.id === dup.block.id);
+  assert.equal(restored?.tableData?.rows[1][1], "2d6 #(Dor)");
 });

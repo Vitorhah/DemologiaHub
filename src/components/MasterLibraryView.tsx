@@ -58,6 +58,7 @@ import {
 } from "./MasterLibrarySendModal";
 import { MasterNotesSection } from "./MasterNotesSection";
 import { MasterCreaturesSection } from "./MasterCreaturesSection";
+import { CreatureRichInlineText, CreatureRichText } from "./CreatureRichText";
 
 export interface MasterLibraryViewProps {
   masterId?: string | null;
@@ -1111,7 +1112,11 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
                         </div>
 
                         <h3 className="text-sm font-bold text-white uppercase tracking-wide truncate">
-                          {name}
+                          {item.type === "ritual" || item.type === "skill" ? (
+                            <CreatureRichInlineText text={name} tone="dark" />
+                          ) : (
+                            name
+                          )}
                         </h3>
                       </div>
 
@@ -1122,11 +1127,19 @@ export const MasterLibraryView: React.FC<MasterLibraryViewProps> = ({
                       )}
                     </div>
 
-                    {desc && (
-                      <p className="text-xs text-[#a4a5b5] leading-relaxed line-clamp-2">
-                        {desc}
-                      </p>
-                    )}
+                    {desc &&
+                      (item.type === "ritual" || item.type === "skill" ? (
+                        <CreatureRichText
+                          text={desc}
+                          emptyText=""
+                          tone="dark"
+                          className="!text-xs text-[#a4a5b5] line-clamp-3"
+                        />
+                      ) : (
+                        <p className="text-xs text-[#a4a5b5] leading-relaxed line-clamp-2">
+                          {desc}
+                        </p>
+                      ))}
 
                     {/* Native system metadata preview */}
                     {item.type === "ritual" && (

@@ -15,6 +15,7 @@ import {
   LogOut,
   Clapperboard,
   Palette,
+  LayoutTemplate,
 } from "lucide-react";
 import { GameMode } from "../types";
 import type { TabletopCustomizationConfig } from "../types/tabletopCustomization";
@@ -31,6 +32,7 @@ export type MasterTabId =
   | "ost"
   | "handouts"
   | "biblioteca"
+  | "criacoes"
   | "customizacao"
   | "utilities";
 
@@ -41,6 +43,7 @@ export interface MasterHeaderBarProps {
   handoutsCount?: number;
   libraryCount?: number;
   hasActiveScene?: boolean;
+  hasActiveUtility?: boolean;
   isOstPlaying: boolean;
   onRollInitiative?: () => void;
   onReturnToMainSheet: () => void;
@@ -61,6 +64,7 @@ export function MasterHeaderBar({
   handoutsCount,
   libraryCount,
   hasActiveScene = false,
+  hasActiveUtility = false,
   isOstPlaying,
   onReturnToMainSheet,
   onOpenMenu,
@@ -111,6 +115,11 @@ export function MasterHeaderBar({
       count: libraryCount,
     },
     {
+      id: "criacoes" as const,
+      label: "Criações",
+      icon: LayoutTemplate,
+    },
+    {
       id: "customizacao" as const,
       label: "Customização",
       icon: Palette,
@@ -120,6 +129,7 @@ export function MasterHeaderBar({
       id: "utilities" as const,
       label: "Utilities",
       icon: Wrench,
+      isActiveTrack: hasActiveUtility,
     },
   ];
 

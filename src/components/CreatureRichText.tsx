@@ -8,15 +8,29 @@ import {
   type RitualAffiliationId,
 } from "../utils/rituals";
 import {
+  parseCreatureInlineText,
   parseCreatureRichText,
   type RichTextInlineToken,
 } from "../utils/creatureRichText";
 import { RitualAffiliationTag } from "./RitualsSection";
 
+export type RichTextTone = "dark" | "light" | "inherit";
+
 export interface CreatureRichTextProps {
   text: string;
   emptyText?: string;
   ritualCatalog?: CatalogRitualOption[];
+  tone?: RichTextTone;
+  interactiveAffiliations?: boolean;
+  className?: string;
+}
+
+export interface CreatureRichInlineTextProps {
+  text: string;
+  emptyText?: string;
+  ritualCatalog?: CatalogRitualOption[];
+  tone?: RichTextTone;
+  interactiveAffiliations?: boolean;
   className?: string;
 }
 
@@ -142,11 +156,28 @@ const AffiliationDetailModal: React.FC<{
   );
 };
 
-function renderInlineTokens(
+export function renderRichInlineTokens(
   tokens: RichTextInlineToken[],
   keyPrefix: string,
-  onSelectAffiliation: (id: RitualAffiliationId) => void,
+  options: {
+    tone: RichTextTone;
+    interactiveAffiliations: boolean;
+    onSelectAffiliation?: (id: RitualAffiliationId) => void;
+  },
 ): React.ReactNode[] {
+  const boldClass =
+    options.tone === "light"
+      ? "font-extrabold text-[#111116]"
+      : options.tone === "inherit"
+        ? "font-extrabold"
+        : "font-bold text-white";
+  const italicClass =
+    options.tone === "light"
+      ? "italic text-[#27272f]"
+      : options.tone === "inherit"
+        ? "italic"
+        : "italic text-[#dde0ec]";
+
   return tokens.map((token, index) => {
     const key = `${keyPrefix}_${index}`;
     switch (token.type) {
@@ -154,24 +185,35 @@ function renderInlineTokens(
         return <React.Fragment key={key}>{token.value}</React.Fragment>;
       case "bold":
         return (
-          <strong key={key} className="font-bold text-white">
-            {renderInlineTokens(token.children, `${key}_b`, onSelectAffiliation)}
+          <strong key={key} className={boldClass}>
+            {renderRichInlineTokens(token.children, `${key}_b`, options)}
           </strong>
         );
       case "italic":
         return (
-          <em key={key} className="italic text-[#dde0ec]">
-            {renderInlineTokens(token.children, `${key}_i`, onSelectAffiliation)}
+          <em key={key} className={italicClass}>
+            {renderRichInlineTokens(token.children, `${key}_i`, options)}
           </em>
         );
       case "affiliation":
+        if (!options.interactiveAffiliations || !options.onSelectAffiliation) {
+          return (
+            <span
+              key={key}
+              data-testid={`rich-affiliation-mention-${token.affiliationId}`}
+              className="inline-flex items-center align-baseline mx-0.5"
+            >
+              <RitualAffiliationTag affiliationId={token.affiliationId} compact />
+            </span>
+          );
+        }
         return (
           <button
             key={key}
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onSelectAffiliation(token.affiliationId);
+              options.onSelectAffiliation?.(token.affiliationId);
             }}
             title={`Ver detalhes da afiliação ${RITUAL_AFFILIATIONS[token.affiliationId]?.label || token.affiliationId}`}
             data-testid={`rich-affiliation-mention-${token.affiliationId}`}
@@ -186,13 +228,66 @@ function renderInlineTokens(
   });
 }
 
+export const CreatureRichInlineText: React.FC<CreatureRichInlineTextProps> =
+  React.memo(function CreatureRichInlineText({
+    text,
+    emptyText = "",
+    ritualCatalog,
+    tone = "dark",
+    interactiveAffiliations = true,
+    className = "",
+  }: CreatureRichInlineTextProps) {
+    const [selectedAffiliation, setSelectedAffiliation] =
+      useState<RitualAffiliationId | null>(null);
+
+    const normalized = text || "";
+    const tokens = useMemo(
+      () => parseCreatureInlineText(normalized),
+      [normalized],
+    );
+
+    if (!normalized.trim()) {
+      if (!emptyText) return null;
+      return (
+        <span
+          className={`${tone === "light" ? "text-[#6b6b76]" : "text-[#6f7080]"} italic ${className}`}
+        >
+          {emptyText}
+        </span>
+      );
+    }
+
+    return (
+      <>
+        <span className={className} data-testid="creature-rich-inline-text">
+          {renderRichInlineTokens(tokens, "inl", {
+            tone,
+            interactiveAffiliations,
+            onSelectAffiliation: interactiveAffiliations
+              ? setSelectedAffiliation
+              : undefined,
+          })}
+        </span>
+        {interactiveAffiliations && selectedAffiliation && (
+          <AffiliationDetailModal
+            affiliationId={selectedAffiliation}
+            ritualCatalog={ritualCatalog}
+            onClose={() => setSelectedAffiliation(null)}
+          />
+        )}
+      </>
+    );
+  });
+
 export const CreatureRichText: React.FC<CreatureRichTextProps> = React.memo(
   function CreatureRichText({
     text,
     emptyText = "Sem conteúdo registrado.",
     ritualCatalog,
+    tone = "dark",
+    interactiveAffiliations = true,
     className = "",
-  }) {
+  }: CreatureRichTextProps) {
     const [selectedAffiliation, setSelectedAffiliation] =
       useState<RitualAffiliationId | null>(null);
 
@@ -203,17 +298,31 @@ export const CreatureRichText: React.FC<CreatureRichTextProps> = React.memo(
     );
 
     if (!hasVisibleContent) {
+      if (!emptyText) return null;
       return (
-        <p className={`text-xs text-[#6f7080] italic ${className}`}>
+        <p
+          className={`text-xs ${tone === "light" ? "text-[#6b6b76]" : "text-[#6f7080]"} italic ${className}`}
+        >
           {emptyText}
         </p>
       );
     }
 
+    const bodyColorClass =
+      tone === "light"
+        ? "text-[#3f3f46]"
+        : tone === "inherit"
+          ? ""
+          : "text-[#c8c9d6]";
+    const dividerClass =
+      tone === "light"
+        ? "my-2 border-0 border-t border-[#c4beb2]"
+        : "my-2.5 border-0 border-t border-[#2d2d3d]";
+
     return (
       <>
         <div
-          className={`space-y-1.5 text-xs sm:text-[13px] text-[#c8c9d6] leading-relaxed break-words ${className}`}
+          className={`space-y-1.5 text-xs sm:text-[13px] ${bodyColorClass} leading-relaxed break-words ${className}`}
           data-testid="creature-rich-text"
         >
           {blocks.map((lineBlock, idx) => {
@@ -222,7 +331,7 @@ export const CreatureRichText: React.FC<CreatureRichTextProps> = React.memo(
                 <hr
                   key={`div_${idx}`}
                   data-testid="creature-rich-divider"
-                  className="my-2.5 border-0 border-t border-[#2d2d3d]"
+                  className={dividerClass}
                 />
               );
             }
@@ -230,18 +339,20 @@ export const CreatureRichText: React.FC<CreatureRichTextProps> = React.memo(
               return <div key={`empty_${idx}`} className="h-1.5" aria-hidden="true" />;
             }
             return (
-              <p key={`p_${idx}`} className="leading-relaxed">
-                {renderInlineTokens(
-                  lineBlock.tokens,
-                  `p_${idx}`,
-                  setSelectedAffiliation,
-                )}
+              <p key={`p_${idx}`} className="leading-relaxed m-0">
+                {renderRichInlineTokens(lineBlock.tokens, `p_${idx}`, {
+                  tone,
+                  interactiveAffiliations,
+                  onSelectAffiliation: interactiveAffiliations
+                    ? setSelectedAffiliation
+                    : undefined,
+                })}
               </p>
             );
           })}
         </div>
 
-        {selectedAffiliation && (
+        {interactiveAffiliations && selectedAffiliation && (
           <AffiliationDetailModal
             affiliationId={selectedAffiliation}
             ritualCatalog={ritualCatalog}
@@ -255,27 +366,43 @@ export const CreatureRichText: React.FC<CreatureRichTextProps> = React.memo(
 
 export interface CreatureRichTextQuickBarProps {
   onInsertSnippet: (snippet: string) => void;
-  showPreview: boolean;
-  onTogglePreview: () => void;
+  showPreview?: boolean;
+  onTogglePreview?: () => void;
+  showDivider?: boolean;
+  compact?: boolean;
+  label?: string;
 }
 
 export const CreatureRichTextQuickBar: React.FC<CreatureRichTextQuickBarProps> =
   React.memo(function CreatureRichTextQuickBar({
     onInsertSnippet,
-    showPreview,
+    showPreview = false,
     onTogglePreview,
+    showDivider = true,
+    compact = false,
+    label,
   }) {
     const [showAffiliationMenu, setShowAffiliationMenu] = useState(false);
+    const btnHeight = compact ? "min-h-[26px] px-1.5" : "min-h-[30px] px-2";
 
     return (
       <div className="space-y-1.5">
-        <div className="flex flex-wrap items-center justify-between gap-1.5 bg-[#0e0e16] border border-[#222230] px-2 py-1.5">
+        <div
+          className={`flex flex-wrap items-center justify-between gap-1.5 bg-[#0e0e16] border border-[#222230] ${
+            compact ? "px-1.5 py-1" : "px-2 py-1.5"
+          }`}
+        >
           <div className="flex flex-wrap items-center gap-1">
+            {label && (
+              <span className="text-[9px] font-mono uppercase tracking-wider text-[#7e8090] mr-1">
+                {label}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => onInsertSnippet("**texto**")}
               title="Inserir negrito (**texto**)"
-              className="min-h-[30px] px-2 bg-[#151520] hover:bg-[#1d1d2b] border border-[#2a2a38] text-[10px] font-bold text-white cursor-pointer touch-manipulation"
+              className={`${btnHeight} bg-[#151520] hover:bg-[#1d1d2b] border border-[#2a2a38] text-[10px] font-bold text-white cursor-pointer touch-manipulation`}
             >
               **B**
             </button>
@@ -283,23 +410,25 @@ export const CreatureRichTextQuickBar: React.FC<CreatureRichTextQuickBarProps> =
               type="button"
               onClick={() => onInsertSnippet("^^texto^^")}
               title="Inserir itálico (^^texto^^)"
-              className="min-h-[30px] px-2 bg-[#151520] hover:bg-[#1d1d2b] border border-[#2a2a38] text-[10px] italic text-[#d4d5e2] cursor-pointer touch-manipulation"
+              className={`${btnHeight} bg-[#151520] hover:bg-[#1d1d2b] border border-[#2a2a38] text-[10px] italic text-[#d4d5e2] cursor-pointer touch-manipulation`}
             >
               ^^I^^
             </button>
-            <button
-              type="button"
-              onClick={() => onInsertSnippet("\n---\n")}
-              title="Inserir linha divisória (---)"
-              className="min-h-[30px] px-2 bg-[#151520] hover:bg-[#1d1d2b] border border-[#2a2a38] text-[10px] text-[#b4b5c2] cursor-pointer touch-manipulation"
-            >
-              ---
-            </button>
+            {showDivider && (
+              <button
+                type="button"
+                onClick={() => onInsertSnippet("\n---\n")}
+                title="Inserir linha divisória (---)"
+                className={`${btnHeight} bg-[#151520] hover:bg-[#1d1d2b] border border-[#2a2a38] text-[10px] text-[#b4b5c2] cursor-pointer touch-manipulation`}
+              >
+                ---
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowAffiliationMenu((p) => !p)}
               title="Inserir menção de Afiliação #(Nome)"
-              className={`min-h-[30px] px-2 border text-[10px] uppercase tracking-wider cursor-pointer touch-manipulation inline-flex items-center gap-1 ${
+              className={`${btnHeight} border text-[10px] uppercase tracking-wider cursor-pointer touch-manipulation inline-flex items-center gap-1 ${
                 showAffiliationMenu
                   ? "bg-[#1a0b0e] border-[#8f171c] text-white font-bold"
                   : "bg-[#151520] hover:bg-[#1d1d2b] border-[#2a2a38] text-[#b4b5c2]"
@@ -310,17 +439,19 @@ export const CreatureRichTextQuickBar: React.FC<CreatureRichTextQuickBarProps> =
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={onTogglePreview}
-            className={`min-h-[30px] px-2.5 border text-[10px] uppercase tracking-wider cursor-pointer touch-manipulation ${
-              showPreview
-                ? "bg-[#190a0d] border-[#8f171c] text-white font-bold"
-                : "bg-[#14141e] hover:bg-[#1d1d2b] border-[#282836] text-[#9b9caa] hover:text-white"
-            }`}
-          >
-            {showPreview ? "Editar Texto" : "Prévia"}
-          </button>
+          {onTogglePreview && (
+            <button
+              type="button"
+              onClick={onTogglePreview}
+              className={`${compact ? "min-h-[26px] px-2" : "min-h-[30px] px-2.5"} border text-[10px] uppercase tracking-wider cursor-pointer touch-manipulation ${
+                showPreview
+                  ? "bg-[#190a0d] border-[#8f171c] text-white font-bold"
+                  : "bg-[#14141e] hover:bg-[#1d1d2b] border-[#282836] text-[#9b9caa] hover:text-white"
+              }`}
+            >
+              {showPreview ? "Editar Texto" : "Prévia"}
+            </button>
+          )}
         </div>
 
         {showAffiliationMenu && (

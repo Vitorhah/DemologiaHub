@@ -2,6 +2,7 @@ import React from "react";
 import { X } from "lucide-react";
 import { MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
 import { RitualAffiliationTag } from "./RitualsSection";
+import { CreatureRichInlineText, CreatureRichText } from "./CreatureRichText";
 import {
   RITUAL_TEST_FORMULA,
   RitualItem,
@@ -49,7 +50,10 @@ export const UseRitualModal: React.FC<UseRitualModalProps> = React.memo(
                 NV {ritual.level}
               </span>
               <h3 className="font-bold text-blood-red uppercase tracking-widest truncate">
-                {ritual.name || "Novo Ritual"}
+                <CreatureRichInlineText
+                  text={ritual.name || "Novo Ritual"}
+                  tone="inherit"
+                />
               </h3>
             </div>
             {ritual.affiliations.length > 0 && (
@@ -84,9 +88,12 @@ export const UseRitualModal: React.FC<UseRitualModalProps> = React.memo(
         </div>
 
         {ritual.desc.trim() !== "" && (
-          <p className="text-xs text-[#b4b5c2] leading-relaxed m-0">
-            {ritual.desc}
-          </p>
+          <CreatureRichText
+            text={ritual.desc}
+            emptyText=""
+            tone="dark"
+            className="!text-xs text-[#b4b5c2]"
+          />
         )}
 
         {lastOutcome && (

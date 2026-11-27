@@ -4,12 +4,14 @@ import {
   DEFAULT_NOTE_TITLE,
   MAX_NOTE_PREVIEW_LENGTH,
   MAX_NOTE_TITLE_LENGTH,
+  applyHeadingPrefixToLine,
   buildNotePreview,
   filterNoteSummaries,
   formatNoteTimestamp,
   hasNoteContentChanged,
   isTableMissingError,
   normalizeNoteTitle,
+  parseMasterNoteContent,
   sortNoteSummaries,
 } from "./masterNotes";
 
@@ -107,4 +109,72 @@ test("isTableMissingError distinguishes missing master_notes table from transien
 
   const sameDay = formatNoteTimestamp("2026-11-22T14:05:00.000Z", Date.parse("2026-11-22T16:00:00.000Z"));
   assert.ok(/^\d{2}:\d{2}$/.test(sameDay));
+});
+
+test("parseMasterNoteContent parses #h1-#h6 headings (case-insensitive), dividers, inline rich tokens, and keeps raw HTML inert", () => {
+  const raw = [
+    "#h1 Dossiê **Confidencial**",
+    "#H2 Suspeitos de #(Dor)",
+    "#h3: Pistas ^^Iniciais^^",
+    "#h4 Detalhe menor",
+    "#h5 Nota de rodapé",
+    "#h6 Classificação <script>alert(1)</script>",
+    "---",
+    "Parágrafo comum com **negrito** e #h7 literal.",
+    "",
+  ].join("\n");
+
+  const blocks = parseMasterNoteContent(raw);
+  assert.equal(blocks.length, 9);
+
+  assert.equal(blocks[0].type, "heading");
+  if (blocks[0].type === "heading") {
+    assert.equal(blocks[0].level, 1);
+    assert.equal(blocks[0].text, "Dossiê **Confidencial**");
+    assert.equal(blocks[0].tokens.some((t) => t.type === "bold"), true);
+  }
+
+  assert.equal(blocks[1].type, "heading");
+  if (blocks[1].type === "heading") {
+    assert.equal(blocks[1].level, 2);
+    assert.equal(
+      blocks[1].tokens.some(
+        (t) => t.type === "affiliation" && t.affiliationId === "dor",
+      ),
+      true,
+    );
+  }
+
+  assert.equal(blocks[2].type, "heading");
+  if (blocks[2].type === "heading") {
+    assert.equal(blocks[2].level, 3);
+    assert.equal(blocks[2].tokens.some((t) => t.type === "italic"), true);
+  }
+
+  assert.equal(blocks[3].type === "heading" && blocks[3].level, 4);
+  assert.equal(blocks[4].type === "heading" && blocks[4].level, 5);
+  assert.equal(blocks[5].type === "heading" && blocks[5].level, 6);
+  assert.equal(blocks[6].type, "divider");
+
+  // #h7 is not a valid HTML heading level, stays regular paragraph
+  assert.equal(blocks[7].type, "paragraph");
+  assert.equal(blocks[8].type, "empty");
+});
+
+test("applyHeadingPrefixToLine adds, switches, and toggles #h1-#h6 prefixes cleanly on the active line", () => {
+  const first = applyHeadingPrefixToLine("Introdução\nPistas", 13, 2);
+  assert.equal(first.content, "Introdução\n#h2 Pistas");
+
+  const switched = applyHeadingPrefixToLine(first.content, first.nextCursor, 1);
+  assert.equal(switched.content, "Introdução\n#h1 Pistas");
+
+  const toggledOff = applyHeadingPrefixToLine(switched.content, switched.nextCursor, 1);
+  assert.equal(toggledOff.content, "Introdução\nPistas");
+});
+
+test("buildNotePreview strips #h1-#h6 prefixes and rich markers cleanly for sidebar summaries", () => {
+  assert.equal(
+    buildNotePreview("#h1 **Caso 04**\n#h2 Pistas de #(Dor)"),
+    "Caso 04 Pistas de Dor",
+  );
 });

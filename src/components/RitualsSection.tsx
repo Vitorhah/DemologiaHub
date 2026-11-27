@@ -2,6 +2,7 @@ import React from "react";
 import { AlertTriangle, Edit2, Plus } from "lucide-react";
 import { MotionAccordion } from "./MotionPrimitives";
 import { RitualFormFields } from "./MasterLibraryFormFields";
+import { CreatureRichInlineText, CreatureRichText } from "./CreatureRichText";
 import {
   RITUAL_AFFILIATIONS,
   RITUAL_TEST_FORMULA,
@@ -148,7 +149,10 @@ export const RitualsSection: React.FC<RitualsSectionProps> = React.memo(
                         /
                       </span>
                       <span className="truncate">
-                        {ritual.name || "Novo Ritual"}
+                        <CreatureRichInlineText
+                          text={ritual.name || "Novo Ritual"}
+                          tone="light"
+                        />
                       </span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -180,14 +184,13 @@ export const RitualsSection: React.FC<RitualsSectionProps> = React.memo(
                     </div>
                   )}
 
-                  <div
-                    className="mt-1.5"
-                    style={{
-                      fontSize: "12px",
-                      color: "#3f3f46",
-                    }}
-                  >
-                    {ritual.desc || "Sem descrição"}
+                  <div className="mt-1.5">
+                    <CreatureRichText
+                      text={ritual.desc || ""}
+                      emptyText="Sem descrição"
+                      tone="light"
+                      className="!text-[12px] leading-snug"
+                    />
                   </div>
                 </div>
 

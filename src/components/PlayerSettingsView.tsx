@@ -24,6 +24,8 @@ import {
 } from "../utils/playerSettings";
 import type { UseWakeLockResult } from "../hooks/useWakeLock";
 
+import type { PauseAllowedSettings } from "../types/sessionUtilities";
+
 export interface PlayerSettingsViewProps {
   settings: PlayerSettings;
   onUpdateSettings: (patch: Partial<PlayerSettings>) => void;
@@ -34,6 +36,10 @@ export interface PlayerSettingsViewProps {
   isRlMode?: boolean;
   onTestSound: () => void;
   onTestNotification: () => void;
+  /** Quando definido (ex.: durante o Pause), exibe apenas as seções liberadas pelo Mestre. */
+  allowedSections?: PauseAllowedSettings;
+  /** Modo embutido dentro de um modal/overlay (remove padding externo da página). */
+  compactEmbedded?: boolean;
 }
 
 const VOLUME_PRESETS = [0, 0.25, 0.5, 0.75, 1] as const;
@@ -131,7 +137,12 @@ export const PlayerSettingsView: React.FC<PlayerSettingsViewProps> = ({
   isRlMode = false,
   onTestSound,
   onTestNotification,
+  allowedSections,
+  compactEmbedded = false,
 }) => {
+  const showAudio = allowedSections ? allowedSections.audio : true;
+  const showNotifications = allowedSections ? allowedSections.notifications : true;
+  const showVisual = allowedSections ? allowedSections.visual : true;
 
   const appVolumePercent = settings.appMuted
     ? 0
@@ -174,41 +185,48 @@ export const PlayerSettingsView: React.FC<PlayerSettingsViewProps> = ({
 
   return (
     <div
-      className="w-full max-w-4xl mx-auto pt-14 lg:pt-6 pb-28 sm:pb-20 px-3 sm:px-5 font-mono text-gray-200 flex flex-col gap-4"
+      className={
+        compactEmbedded
+          ? "w-full font-mono text-gray-200 flex flex-col gap-3"
+          : "w-full max-w-4xl mx-auto pt-14 lg:pt-6 pb-28 sm:pb-20 px-3 sm:px-5 font-mono text-gray-200 flex flex-col gap-4"
+      }
       data-testid="player-settings-view"
     >
       {/* CABEÇALHO */}
-      <header
-        className={`bg-[#0c0c10] border border-[#202028] border-t-2 ${accentTopBorder} p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3`}
-      >
-        <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-[0.2em] text-[#8e90a0]">
-            Preferências Locais · Dispositivo do Jogador
-          </div>
-          <div className="flex items-center gap-2 mt-1">
-            <Settings size={18} className={`${accentText} shrink-0`} />
-            <h1 className="text-base sm:text-lg font-bold text-white uppercase tracking-wider truncate">
-              Configurações
-            </h1>
-          </div>
-          <p className="text-[11px] font-sans text-[#8b8d9e] mt-1">
-            Ajustes aplicados apenas neste navegador/dispositivo. Não alteram
-            regras, ficha nem o estado da narrativa da mesa.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={onResetSettings}
-          data-testid="settings-reset-btn"
-          className="min-h-[42px] px-3.5 bg-[#14141c] hover:bg-[#1d1d29] border border-[#2a2a38] text-zinc-300 hover:text-white text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors touch-manipulation shrink-0"
+      {!compactEmbedded && (
+        <header
+          className={`bg-[#0c0c10] border border-[#202028] border-t-2 ${accentTopBorder} p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3`}
         >
-          <RotateCcw size={13} />
-          <span>Restaurar Padrões</span>
-        </button>
-      </header>
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-[#8e90a0]">
+              Preferências Locais · Dispositivo do Jogador
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <Settings size={18} className={`${accentText} shrink-0`} />
+              <h1 className="text-base sm:text-lg font-bold text-white uppercase tracking-wider truncate">
+                Configurações
+              </h1>
+            </div>
+            <p className="text-[11px] font-sans text-[#8b8d9e] mt-1">
+              Ajustes aplicados apenas neste navegador/dispositivo. Não alteram
+              regras, ficha nem o estado da narrativa da mesa.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onResetSettings}
+            data-testid="settings-reset-btn"
+            className="min-h-[42px] px-3.5 bg-[#14141c] hover:bg-[#1d1d29] border border-[#2a2a38] text-zinc-300 hover:text-white text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors touch-manipulation shrink-0"
+          >
+            <RotateCcw size={13} />
+            <span>Restaurar Padrões</span>
+          </button>
+        </header>
+      )}
 
       {/* SEÇÃO 1: ÁUDIO DO APLICATIVO (ESCALA LOCAL SEM ALTERAR OST) */}
+      {showAudio && (
       <section
         aria-label="Áudio do Aplicativo"
         className="bg-[#0c0c10] border border-[#202028] p-4 sm:p-5 flex flex-col gap-4"
@@ -361,8 +379,10 @@ export const PlayerSettingsView: React.FC<PlayerSettingsViewProps> = ({
           />
         </div>
       </section>
+      )}
 
       {/* SEÇÃO 2: NOTIFICAÇÕES */}
+      {showNotifications && (
       <section
         aria-label="Notificações"
         className="bg-[#0c0c10] border border-[#202028] p-4 sm:p-5 flex flex-col gap-4"
@@ -474,8 +494,10 @@ export const PlayerSettingsView: React.FC<PlayerSettingsViewProps> = ({
           />
         </div>
       </section>
+      )}
 
       {/* SEÇÃO 3: CONFORTO VISUAL E DISPOSITIVO (NÃO-NARRATIVO) */}
+      {showVisual && (
       <section
         aria-label="Conforto Visual e Dispositivo"
         className="bg-[#0c0c10] border border-[#202028] p-4 sm:p-5 flex flex-col gap-4"
@@ -598,6 +620,7 @@ export const PlayerSettingsView: React.FC<PlayerSettingsViewProps> = ({
           )}
         </div>
       </section>
+      )}
     </div>
   );
 };

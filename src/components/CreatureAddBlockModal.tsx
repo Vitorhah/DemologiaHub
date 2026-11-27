@@ -8,6 +8,7 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
+  Table2,
   User,
   X,
 } from "lucide-react";
@@ -40,6 +41,8 @@ function getBlockIcon(type: CreatureBlockType) {
       return Shield;
     case "text":
       return FileText;
+    case "table":
+      return Table2;
   }
 }
 

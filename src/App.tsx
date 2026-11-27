@@ -107,6 +107,12 @@ import { ProfileSelectorModal } from "./components/ProfileSelectorModal";
 import { RitualsSection } from "./components/RitualsSection";
 import { UseRitualModal } from "./components/UseRitualModal";
 import {
+  CreatureRichInlineText,
+  CreatureRichText,
+  CreatureRichTextQuickBar,
+} from "./components/CreatureRichText";
+import { stripCreatureRichTextForPreview } from "./utils/creatureRichText";
+import {
   RITUAL_AFFILIATIONS,
   RITUAL_TEST_FORMULA,
   RitualItem,
@@ -170,6 +176,7 @@ import {
 import { useMasterLibrarySync } from "./services/useMasterLibrarySync";
 import { useSceneDirectorSync } from "./services/useSceneDirectorSync";
 import { useTabletopThemeSync } from "./services/useTabletopThemeSync";
+import { useSessionUtilitiesSync } from "./services/useSessionUtilitiesSync";
 import { resolveEffectiveBranding } from "./utils/tabletopCustomization";
 import { PlayerSceneOverlayBar } from "./components/PlayerSceneOverlayBar";
 import type { MasterTabId } from "./components/MasterHeaderBar";
@@ -240,6 +247,11 @@ const MasterCustomizationView = React.lazy(() =>
     default: m.MasterCustomizationView,
   }))
 );
+const MasterCreationsView = React.lazy(() =>
+  import("./components/MasterCreationsView").then((m) => ({
+    default: m.MasterCreationsView,
+  }))
+);
 const CadernoDeCampoView = React.lazy(() =>
   import("./components/CadernoDeCampoView").then((m) => ({ default: m.CadernoDeCampoView }))
 );
@@ -263,6 +275,16 @@ const PlayerMinigameOverlay = React.lazy(() =>
 const MasterMinigameNotificationToast = React.lazy(() =>
   import("./components/minigames/MasterMinigameNotificationToast").then((m) => ({
     default: m.MasterMinigameNotificationToast,
+  }))
+);
+const PlayerPauseOverlay = React.lazy(() =>
+  import("./components/utilities/PlayerPauseOverlay").then((m) => ({
+    default: m.PlayerPauseOverlay,
+  }))
+);
+const PlayerPollModal = React.lazy(() =>
+  import("./components/utilities/PlayerPollModal").then((m) => ({
+    default: m.PlayerPollModal,
   }))
 );
 
@@ -1076,6 +1098,20 @@ export default function App() {
     isMestreAuth,
     isOnline,
   });
+
+  const sessionUtilitiesSync = useSessionUtilitiesSync({
+    roomId: currentRoomId,
+    userUid,
+    isMestreAuth,
+    isOnline,
+  });
+
+  const handleLogoutMaster = useCallback(() => {
+    void sessionUtilitiesSync.releaseOwnedPauseOnLogout();
+    setIsMestreAuth(false);
+    setActiveFichaId("main");
+    setCurrentPage("ficha");
+  }, [sessionUtilitiesSync]);
 
   const effectiveTabletopBranding = useMemo(
     () => resolveEffectiveBranding(tabletopThemeSync.customization),
@@ -3110,6 +3146,8 @@ export default function App() {
       return false;
     }
     vibrate([50, 50]);
+    const cleanSkillName =
+      stripCreatureRichTextForPreview(skill.name || "") || "Habilidade";
 
     if (type === "test" && skill.cost > 0) {
       if (state.pe.current >= skill.cost) {
@@ -3117,11 +3155,11 @@ export default function App() {
           ...prev,
           pe: { ...prev.pe, current: prev.pe.current - skill.cost },
         }));
-        addToHistory(`<i>Gastou ${skill.cost} PE com ${skill.name}</i>`);
+        addToHistory(`<i>Gastou ${skill.cost} PE com ${cleanSkillName}</i>`);
       } else {
         setRollToast({
           id: Date.now(),
-          formula: `${skill.name || "Habilidade"} · PE INSUFICIENTE`,
+          formula: `${cleanSkillName} · PE INSUFICIENTE`,
           result: `${state.pe.current}/${skill.cost} PE`,
           details: `Necessário ${skill.cost} PE para usar esta habilidade.`,
         });
@@ -3133,7 +3171,7 @@ export default function App() {
     const formula = type === "test" ? skill.test : skill.damage;
     if (!formula) {
       addToHistory(
-        `<b>${skill.name || "Habilidade"}</b>: Usou a habilidade (Sem fórmula definida).`,
+        `<b>${cleanSkillName}</b>: Usou a habilidade (Sem fórmula definida).`,
       );
       return true;
     }
@@ -3141,7 +3179,7 @@ export default function App() {
     const roll = parseAndRoll(formula);
     if (roll) {
       const tipoStr = type === "test" ? "Teste" : "Dano";
-      const rollLabel = `${skill.name || "Habilidade"} (${tipoStr})`;
+      const rollLabel = `${cleanSkillName} (${tipoStr})`;
       setLastRollResult({
         formula: rollLabel,
         result: roll.result,
@@ -3158,7 +3196,7 @@ export default function App() {
         });
       }
       addToHistory(
-        `<b>${skill.name || "Habilidade"}</b> (${tipoStr}) <br>Fórmula: ${roll.formula} <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
+        `<b>${cleanSkillName}</b> (${tipoStr}) <br>Fórmula: ${roll.formula} <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
       );
       triggerShake();
 
@@ -3304,6 +3342,8 @@ export default function App() {
       return null;
     }
     vibrate([50, 50]);
+    const cleanRitualName =
+      stripCreatureRichTextForPreview(ritual.name || "") || "Ritual";
 
     if (ritual.cost > 0) {
       if (state.pe.current >= ritual.cost) {
@@ -3312,12 +3352,12 @@ export default function App() {
           pe: { ...prev.pe, current: prev.pe.current - ritual.cost },
         }));
         addToHistory(
-          `<i>Gastou ${ritual.cost} PE com o ritual ${ritual.name || "Ritual"}</i>`,
+          `<i>Gastou ${ritual.cost} PE com o ritual ${cleanRitualName}</i>`,
         );
       } else {
         setRollToast({
           id: Date.now(),
-          formula: `${ritual.name || "Ritual"} · PE INSUFICIENTE`,
+          formula: `${cleanRitualName} · PE INSUFICIENTE`,
           result: `${state.pe.current}/${ritual.cost} PE`,
           details: `Necessário ${ritual.cost} PE para conjurar este ritual.`,
         });
@@ -3341,7 +3381,7 @@ export default function App() {
       .map((a) => RITUAL_AFFILIATIONS[a]?.label)
       .filter(Boolean)
       .join(", ");
-    const ritualLabel = `${ritual.name || "Ritual"} (NV ${ritual.level})`;
+    const ritualLabel = `${cleanRitualName} (NV ${ritual.level})`;
     const statusText = outcome.success
       ? `SUCESSO (${outcome.result} > Dif. ${outcome.difficulty})`
       : `FALHA (${outcome.result} ≤ Dif. ${outcome.difficulty})`;
@@ -3414,10 +3454,12 @@ export default function App() {
       return;
     }
 
+    const cleanRitualName =
+      stripCreatureRichTextForPreview(ritual.name || "") || "Ritual";
     const formula = ritual.damage.trim();
     if (!formula) {
       addToHistory(
-        `<b>${ritual.name || "Ritual"}</b>: Sem fórmula de dano definida.`,
+        `<b>${cleanRitualName}</b>: Sem fórmula de dano definida.`,
       );
       return;
     }
@@ -3431,7 +3473,7 @@ export default function App() {
       return;
     }
 
-    const rollLabel = `${ritual.name || "Ritual"} (Dano)`;
+    const rollLabel = `${cleanRitualName} (Dano)`;
     setLastRollResult({
       formula: rollLabel,
       result: roll.result,
@@ -3448,7 +3490,7 @@ export default function App() {
       });
     }
     addToHistory(
-      `<b>${ritual.name || "Ritual"}</b> (Dano) <br>Fórmula: ${roll.formula} <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
+      `<b>${cleanRitualName}</b> (Dano) <br>Fórmula: ${roll.formula} <br><span style="font-size:11px">${roll.details}</span> <br><span class="log-result">Resultado: ${roll.result}</span>`,
     );
     triggerShake();
   };
@@ -5475,10 +5517,19 @@ GRANT ALL ON TABLE public.players TO service_role;`}
       </AnimatePresence>
 
       <div
-        aria-hidden={Boolean(minigamesSync.activeAssignment)}
-        inert={Boolean(minigamesSync.activeAssignment)}
+        aria-hidden={Boolean(
+          minigamesSync.activeAssignment ||
+            sessionUtilitiesSync.isPauseActiveForPlayers,
+        )}
+        inert={Boolean(
+          minigamesSync.activeAssignment ||
+            sessionUtilitiesSync.isPauseActiveForPlayers,
+        )}
         className={`flex flex-col lg:flex-row min-h-[100dvh] w-full ${
-          minigamesSync.activeAssignment ? "pointer-events-none select-none" : ""
+          minigamesSync.activeAssignment ||
+          sessionUtilitiesSync.isPauseActiveForPlayers
+            ? "pointer-events-none select-none"
+            : ""
         }`}
       >
         <NavigationSidebar
@@ -5494,15 +5545,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
           onOpenModeModal={isMestreAuth ? handleOpenModeModal : undefined}
           isOnline={isOnline}
           unreadHandoutsCount={handoutsSync.unreadCount}
-          onLogoutMaster={
-            isMestreAuth
-              ? () => {
-                  setIsMestreAuth(false);
-                  setActiveFichaId("main");
-                  setCurrentPage("ficha");
-                }
-              : undefined
-          }
+          onLogoutMaster={isMestreAuth ? handleLogoutMaster : undefined}
           customization={tabletopThemeSync.customization}
         />
 
@@ -5820,19 +5863,27 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                           >
                             {icon}
                           </span>
-                          {skill.name || "Nova Skill"}
+                          <span className="truncate">
+                            <CreatureRichInlineText
+                              text={skill.name || "Nova Skill"}
+                              tone="light"
+                            />
+                          </span>
                         </div>
                         <div className="skill-cost">{skill.cost}PE</div>
                       </div>
                       <div
                         style={{
-                          fontSize: "12px",
-                          color: "#444",
                           marginTop: "5px",
                           marginLeft: "35px",
                         }}
                       >
-                        {skill.desc || "Sem descrição"}
+                        <CreatureRichText
+                          text={skill.desc || ""}
+                          emptyText="Sem descrição"
+                          tone="light"
+                          className="!text-[12px] leading-snug"
+                        />
                       </div>
                     </div>
                     <MotionAccordion isOpen={isActive && editingSkill !== skill.id}>
@@ -5871,15 +5922,29 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                         className="skill-details active"
                         style={{ display: "block" }}
                       >
-                      <input
-                        type="text"
-                        className="input-dark"
-                        placeholder="Nome da Skill"
-                        value={skill.name}
-                        onChange={(e) =>
-                          updateSkill(skill.id, "name", e.target.value)
-                        }
-                      />
+                      <div className="space-y-1.5 mb-2">
+                        <input
+                          type="text"
+                          className="input-dark mb-0"
+                          placeholder="Nome da Skill (**negrito**, ^^itálico^^, #(Afiliação))"
+                          value={skill.name}
+                          onChange={(e) =>
+                            updateSkill(skill.id, "name", e.target.value)
+                          }
+                        />
+                        <CreatureRichTextQuickBar
+                          compact
+                          showDivider={false}
+                          label="Nome:"
+                          onInsertSnippet={(snippet) => {
+                            const cur = skill.name || "";
+                            const next = cur
+                              ? `${cur}${cur.endsWith(" ") ? "" : " "}${snippet}`
+                              : snippet;
+                            updateSkill(skill.id, "name", next);
+                          }}
+                        />
+                      </div>
                       <input
                         type="number"
                         className="input-dark"
@@ -5889,15 +5954,28 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                           updateSkill(skill.id, "cost", e.target.value)
                         }
                       />
-                      <textarea
-                        className="input-dark"
-                        placeholder="Descrição"
-                        rows={2}
-                        value={skill.desc}
-                        onChange={(e) =>
-                          updateSkill(skill.id, "desc", e.target.value)
-                        }
-                      />
+                      <div className="space-y-1.5 mb-2">
+                        <CreatureRichTextQuickBar
+                          compact
+                          label="Desc:"
+                          onInsertSnippet={(snippet) => {
+                            const cur = skill.desc || "";
+                            const next = cur
+                              ? `${cur}${cur.endsWith(" ") || snippet.startsWith("\n") ? "" : " "}${snippet}`
+                              : snippet.trimStart();
+                            updateSkill(skill.id, "desc", next);
+                          }}
+                        />
+                        <textarea
+                          className="input-dark mb-0"
+                          placeholder="Descrição (**negrito**, ^^itálico^^, #(Afiliação))"
+                          rows={2}
+                          value={skill.desc}
+                          onChange={(e) =>
+                            updateSkill(skill.id, "desc", e.target.value)
+                          }
+                        />
+                      </div>
 
                       <label className="flex items-center gap-2 text-[10px] text-gray-500 mb-2 cursor-pointer mt-2">
                         <input
@@ -6756,6 +6834,13 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               libraryCount={masterLibrarySync.items.length}
               isOstPlaying={Boolean(playbackState?.is_playing)}
               hasActiveScene={Boolean(sceneDirectorSync.masterState.activeSceneId)}
+              hasActiveUtility={
+                sessionUtilitiesSync.isPauseActiveForSession ||
+                Boolean(
+                  sessionUtilitiesSync.activePoll &&
+                    !sessionUtilitiesSync.isPollClosedNow,
+                )
+              }
               onRollInitiative={handleRollAllInitiatives}
               onOpenMenu={handleOpenSidebar}
               onReturnToMainSheet={() => {
@@ -6767,13 +6852,48 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               onClearChatHistory={handleClearChatHistory}
               currentGlobalMode={gameModeConfig.globalMode}
               onOpenModeModal={handleOpenModeModal}
-              onLogoutMaster={() => {
-                setIsMestreAuth(false);
-                setActiveFichaId("main");
-                setCurrentPage("ficha");
-              }}
+              onLogoutMaster={handleLogoutMaster}
               customization={tabletopThemeSync.customization}
             />
+
+            {sessionUtilitiesSync.isPauseActiveForSession && (
+              <div
+                data-testid="master-active-pause-banner"
+                className="w-full bg-[#1a090c] border-b border-[#8f171c]/70 px-3 sm:px-5 py-2 font-mono text-xs flex flex-wrap items-center justify-between gap-2"
+              >
+                <div className="flex items-center gap-2 min-w-0 text-[#ffd5d7]">
+                  <span className="px-1.5 py-0.5 bg-[#8f171c] text-white text-[10px] font-bold uppercase tracking-widest shrink-0">
+                    Pause Ativo
+                  </span>
+                  <span className="truncate">
+                    {sessionUtilitiesSync.pauseState?.message}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {mestreTab !== "utilities" && (
+                    <button
+                      type="button"
+                      onClick={() => setMestreTab("utilities")}
+                      className="min-h-[34px] px-2.5 bg-[#121218] hover:bg-[#1e1e28] border border-[#323240] text-zinc-200 text-[10px] font-bold uppercase tracking-wider cursor-pointer touch-manipulation"
+                    >
+                      Gerenciar
+                    </button>
+                  )}
+                  {sessionUtilitiesSync.isCurrentMasterPauseOwner && (
+                    <button
+                      type="button"
+                      disabled={sessionUtilitiesSync.isSavingPause}
+                      onClick={() => {
+                        void sessionUtilitiesSync.endPause();
+                      }}
+                      className="min-h-[34px] px-3 bg-[#8f171c] hover:bg-[#b52a30] border border-[#ff8085]/40 text-white text-[10px] font-bold uppercase tracking-wider cursor-pointer touch-manipulation disabled:opacity-50"
+                    >
+                      Encerrar Pause
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             <MotionTabSwitch viewKey={mestreTab} className="w-full">
             {mestreTab === "fichas" && (
@@ -6919,6 +7039,15 @@ GRANT ALL ON TABLE public.players TO service_role;`}
               </div>
             )}
 
+            {mestreTab === "criacoes" && (
+              <div className="pt-2">
+                <MasterCreationsView
+                  masterId={userUid}
+                  roomId={currentRoomId}
+                />
+              </div>
+            )}
+
             {mestreTab === "customizacao" && (
               <div>
                 <MasterCustomizationView
@@ -6949,6 +7078,7 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                   libraryItemsCount={masterLibrarySync.items.length}
                   libraryFoldersCount={masterLibrarySync.folders.length}
                   onOpenLibrary={() => setMestreTab("biblioteca")}
+                  sessionUtilities={sessionUtilitiesSync}
                 />
               </div>
             )}
@@ -6998,7 +7128,10 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                 </div>
                 <div className="flex justify-between items-center border-b border-[#1A1A1A] pb-2">
                   <h3 className="font-bold text-blood-red uppercase tracking-widest">
-                    {modalSkill.name || "Nova Skill"}
+                    <CreatureRichInlineText
+                      text={modalSkill.name || "Nova Skill"}
+                      tone="inherit"
+                    />
                   </h3>
                   <button
                     onClick={() => setUseSkillModalId(null)}
@@ -7008,6 +7141,16 @@ GRANT ALL ON TABLE public.players TO service_role;`}
                     <X size={20} />
                   </button>
                 </div>
+
+                {typeof modalSkill.desc === "string" &&
+                  modalSkill.desc.trim() !== "" && (
+                    <CreatureRichText
+                      text={modalSkill.desc}
+                      emptyText=""
+                      tone="dark"
+                      className="!text-xs text-[#b4b5c2]"
+                    />
+                  )}
 
                 <div className="h-48 overflow-y-auto bg-[#1A1A1A] p-3 border border-[#1A1A1A] rounded-none text-[13px] text-[#aaa] flex flex-col shadow-[inset_0_0_10px_#000]">
                   {state.history.length > 0 ? (
@@ -7163,12 +7306,74 @@ GRANT ALL ON TABLE public.players TO service_role;`}
         </Suspense>
       )}
 
-      {(minigamesSync.activeAssignment || hasOpenedMinigame) && (
+      {(minigamesSync.activeAssignment || hasOpenedMinigame) &&
+        (!sessionUtilitiesSync.isPauseActiveForPlayers ||
+          !minigamesSync.activeAssignment ||
+          Boolean(
+            sessionUtilitiesSync.pauseState?.allowedMinigames.includes(
+              minigamesSync.activeAssignment.config.type,
+            ),
+          )) && (
+          <Suspense fallback={null}>
+            <PlayerMinigameOverlay
+              assignment={minigamesSync.activeAssignment}
+              onFinish={minigamesSync.submitResult}
+              onDismiss={minigamesSync.dismissActiveMinigame}
+            />
+          </Suspense>
+        )}
+
+      {sessionUtilitiesSync.isPauseActiveForPlayers && (
         <Suspense fallback={null}>
-          <PlayerMinigameOverlay
-            assignment={minigamesSync.activeAssignment}
-            onFinish={minigamesSync.submitResult}
-            onDismiss={minigamesSync.dismissActiveMinigame}
+          <PlayerPauseOverlay
+            isOpen={sessionUtilitiesSync.isPauseActiveForPlayers}
+            pauseState={sessionUtilitiesSync.pauseState}
+            isRlMode={isRlMode}
+            playerSettings={playerSettings}
+            onUpdatePlayerSettings={updatePlayerSettings}
+            onResetPlayerSettings={resetPlayerSettings}
+            wakeLock={wakeLock}
+            currentOstVolume={playbackState?.volume ?? 1}
+            isOstPlaying={Boolean(playbackState?.is_playing)}
+            onTestSound={() => {
+              unlockDiceAudioContext();
+              playDiceRollSound({
+                ostAudioAccepted: true,
+                critical: "normal",
+                enabled: true,
+              });
+            }}
+            onTestNotification={() =>
+              setRollToast({
+                id: Date.now(),
+                formula: "Teste de Notificação",
+                result: "OK",
+                details: `Duração configurada: ${playerSettings.notificationDurationSec}s`,
+                critical: "normal",
+                kind: "roll",
+              })
+            }
+            onRequestMasterAuth={() => setShowPasswordModal(true)}
+            hasAvailablePoll={Boolean(
+              sessionUtilitiesSync.activePoll &&
+                !sessionUtilitiesSync.isPollPopupOpen,
+            )}
+            onOpenPoll={sessionUtilitiesSync.reopenPollPopup}
+          />
+        </Suspense>
+      )}
+
+      {sessionUtilitiesSync.isPollPopupOpen && (
+        <Suspense fallback={null}>
+          <PlayerPollModal
+            isOpen={sessionUtilitiesSync.isPollPopupOpen}
+            poll={sessionUtilitiesSync.activePoll}
+            results={sessionUtilitiesSync.pollResults}
+            isClosed={sessionUtilitiesSync.isPollClosedNow}
+            remainingSeconds={sessionUtilitiesSync.pollRemainingSeconds}
+            isSubmitting={sessionUtilitiesSync.isSubmittingVote}
+            onVote={sessionUtilitiesSync.castVote}
+            onClose={sessionUtilitiesSync.dismissPollPopup}
           />
         </Suspense>
       )}

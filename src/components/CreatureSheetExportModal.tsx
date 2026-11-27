@@ -14,6 +14,7 @@ import {
   SlidersHorizontal,
   Smartphone,
   Sparkles,
+  Table2,
   Trash2,
   User,
   X,
@@ -45,6 +46,7 @@ import {
   CreatureRitualsBlock,
   CreatureSkillsBlock,
   CreatureStatusBlock,
+  CreatureTableBlock,
   CreatureTextBlock,
 } from "./CreatureSheetBlocks";
 import { MotionModalBackdrop, MotionSheetPanel } from "./MotionPrimitives";
@@ -77,6 +79,8 @@ function getExportBlockIcon(type: CreatureBlockType) {
       return Shield;
     case "text":
       return FileText;
+    case "table":
+      return Table2;
   }
 }
 
@@ -292,7 +296,9 @@ export const CreatureSheetExportModal: React.FC<
                   style={containerStyle}
                   className={`relative border flex flex-col min-w-0 ${cardSurfaceClass}`}
                 >
-                  {block.type !== "profile" && block.type !== "text" && (
+                  {block.type !== "profile" &&
+                    block.type !== "text" &&
+                    block.type !== "table" && (
                     <div className="px-3.5 py-2 bg-[#0f0f16]/95 border-b border-[#1b1b26] flex items-center gap-1.5">
                       <Icon
                         size={12}
@@ -352,6 +358,14 @@ export const CreatureSheetExportModal: React.FC<
                         ritualCatalog={ritualCatalog}
                         isEditing={false}
                         onUpdateTextBlock={NOOP_UPDATE}
+                      />
+                    )}
+                    {block.type === "table" && (
+                      <CreatureTableBlock
+                        block={block}
+                        ritualCatalog={ritualCatalog}
+                        isEditing={false}
+                        onUpdateTableBlock={NOOP_UPDATE}
                       />
                     )}
                   </div>

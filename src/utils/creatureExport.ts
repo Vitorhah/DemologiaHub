@@ -204,23 +204,29 @@ export function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([bytes], { type: mimeType });
 }
 
-export async function exportCreatureElementToJpg(
+export async function exportElementToImage(
   element: HTMLElement,
   options: {
+    format?: "jpg" | "png";
     pixelRatio?: number;
     quality?: number;
     backgroundColor?: string;
     width?: number;
+    height?: number;
   } = {},
 ): Promise<string> {
   await waitForFontsReady(1000);
 
-  const { toJpeg } = await import("html-to-image");
-  const captureWidth = options.width || element.scrollWidth || element.offsetWidth || 1080;
-  const captureHeight = Math.max(
-    120,
-    Math.ceil(element.scrollHeight || element.offsetHeight || 600),
-  );
+  const format = options.format ?? "jpg";
+  const { toJpeg, toPng } = await import("html-to-image");
+  const captureWidth =
+    options.width || element.scrollWidth || element.offsetWidth || 1080;
+  const captureHeight =
+    options.height ||
+    Math.max(
+      120,
+      Math.ceil(element.scrollHeight || element.offsetHeight || 600),
+    );
 
   const baseOptions = {
     quality: options.quality ?? 0.93,
@@ -232,15 +238,32 @@ export async function exportCreatureElementToJpg(
     height: captureHeight,
   };
 
+  const renderFn = format === "png" ? toPng : toJpeg;
+
   try {
-    return await withTimeout(toJpeg(element, baseOptions), 4500);
+    return await withTimeout(renderFn(element, baseOptions), 6500);
   } catch {
     // Fallback if cross-origin stylesheet font embedding fails or stalls in WebViews
-    return await toJpeg(element, {
+    return await renderFn(element, {
       ...baseOptions,
       skipFonts: true,
     });
   }
+}
+
+export async function exportCreatureElementToJpg(
+  element: HTMLElement,
+  options: {
+    pixelRatio?: number;
+    quality?: number;
+    backgroundColor?: string;
+    width?: number;
+  } = {},
+): Promise<string> {
+  return exportElementToImage(element, {
+    ...options,
+    format: "jpg",
+  });
 }
 
 export function triggerJpgDownload(dataUrl: string, filename: string): void {

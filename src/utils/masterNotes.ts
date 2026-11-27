@@ -1,4 +1,9 @@
 import { MasterNoteSummary, PendingNoteDraft } from "../types/masterNotes";
+import {
+  parseCreatureInlineText,
+  stripCreatureRichTextForPreview,
+  type RichTextInlineToken,
+} from "./creatureRichText";
 
 export const DEFAULT_NOTE_TITLE = "Nova anotação";
 export const MASTER_NOTE_RECORD_PREFIX = "MASTER_NOTE_";
@@ -8,6 +13,111 @@ export const NOTE_AUTOSAVE_DEBOUNCE_MS = 900;
 
 const PENDING_DRAFT_STORAGE_PREFIX = "demologia_master_note_draft_v1_";
 
+export type MasterNoteHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
+export type MasterNoteBlock =
+  | {
+      type: "heading";
+      level: MasterNoteHeadingLevel;
+      text: string;
+      tokens: RichTextInlineToken[];
+    }
+  | { type: "divider" }
+  | { type: "empty" }
+  | {
+      type: "paragraph";
+      text: string;
+      tokens: RichTextInlineToken[];
+    };
+
+const NOTE_HEADING_REGEX = /^\s*#h([1-6])(?:\s+|:\s*)(.*)$/i;
+const NOTE_DIVIDER_REGEX = /^\s*-{3,}\s*$/;
+
+/**
+ * Converte o texto bruto de uma anotação do Mestre em AST segura.
+ * Suporta cabeçalhos HTML via `#h1`, `#h2`, `#h3`, `#h4`, `#h5`, `#h6` (case-insensitive),
+ * divisores `---` e formatação inline (`**negrito**`, `^^itálico^^`, `#(Afiliação)`).
+ */
+export function parseMasterNoteContent(
+  content: string | null | undefined,
+): MasterNoteBlock[] {
+  if (typeof content !== "string" || content.length === 0) return [];
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const blocks: MasterNoteBlock[] = [];
+
+  for (const rawLine of lines) {
+    if (rawLine.trim().length === 0) {
+      blocks.push({ type: "empty" });
+      continue;
+    }
+
+    if (NOTE_DIVIDER_REGEX.test(rawLine)) {
+      blocks.push({ type: "divider" });
+      continue;
+    }
+
+    const headingMatch = rawLine.match(NOTE_HEADING_REGEX);
+    if (headingMatch) {
+      const level = Number(headingMatch[1]) as MasterNoteHeadingLevel;
+      const headingText = headingMatch[2].trim();
+      blocks.push({
+        type: "heading",
+        level,
+        text: headingText,
+        tokens: parseCreatureInlineText(headingText),
+      });
+      continue;
+    }
+
+    blocks.push({
+      type: "paragraph",
+      text: rawLine,
+      tokens: parseCreatureInlineText(rawLine),
+    });
+  }
+
+  return blocks;
+}
+
+/**
+ * Aplica ou alterna um prefixo `#h1`–`#h6` na linha atual do cursor no editor de anotações.
+ */
+export function applyHeadingPrefixToLine(
+  content: string,
+  selectionStart: number,
+  level: MasterNoteHeadingLevel,
+): { content: string; nextCursor: number } {
+  const safeCursor = Math.max(0, Math.min(content.length, selectionStart));
+  const lineStart = content.lastIndexOf("\n", safeCursor - 1) + 1;
+  const nextNewline = content.indexOf("\n", safeCursor);
+  const lineEnd = nextNewline === -1 ? content.length : nextNewline;
+  const currentLine = content.slice(lineStart, lineEnd);
+
+  const prefix = `#h${level} `;
+  const existingMatch = currentLine.match(/^\s*#h([1-6])(?:\s+|:\s*)?/i);
+
+  let updatedLine: string;
+  if (existingMatch) {
+    const existingLevel = Number(existingMatch[1]);
+    const rest = currentLine.slice(existingMatch[0].length);
+    if (existingLevel === level) {
+      // Clicar novamente no mesmo nível remove o prefixo
+      updatedLine = rest;
+    } else {
+      updatedLine = `${prefix}${rest}`;
+    }
+  } else {
+    updatedLine = `${prefix}${currentLine}`;
+  }
+
+  const nextContent =
+    content.slice(0, lineStart) + updatedLine + content.slice(lineEnd);
+  const delta = updatedLine.length - currentLine.length;
+  const nextCursor = Math.max(lineStart, safeCursor + delta);
+
+  return { content: nextContent, nextCursor };
+}
+
 export function normalizeNoteTitle(raw: string | null | undefined): string {
   if (typeof raw !== "string") return DEFAULT_NOTE_TITLE;
   const trimmed = raw.trim().slice(0, MAX_NOTE_TITLE_LENGTH);
@@ -16,7 +126,16 @@ export function normalizeNoteTitle(raw: string | null | undefined): string {
 
 export function buildNotePreview(content: string | null | undefined): string {
   if (typeof content !== "string") return "";
-  const flattened = content.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim();
+  const withoutHeadings = content
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/^\s*#h[1-6](?:\s+|:\s*)/i, ""))
+    .join(" ");
+  const cleaned = stripCreatureRichTextForPreview(withoutHeadings);
+  const flattened = cleaned
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
   if (flattened.length <= MAX_NOTE_PREVIEW_LENGTH) return flattened;
   return `${flattened.slice(0, MAX_NOTE_PREVIEW_LENGTH - 1).trimEnd()}…`;
 }

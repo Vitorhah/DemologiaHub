@@ -26,6 +26,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Swords,
+  Table2,
   Trash2,
   User,
   Users,
@@ -38,6 +39,7 @@ import type {
   CreatureFolder,
   CreatureRecord,
   CreatureSheetBlock,
+  CreatureTableData,
 } from "../types/masterCreatures";
 import {
   CREATURE_BLOCK_META,
@@ -47,6 +49,7 @@ import {
   removeBlockFromSheet,
   reorderSheetBlocks,
   resizeSheetBlock,
+  updateTableBlockData,
   updateTextBlockContent,
 } from "../utils/creatureBlocks";
 import {
@@ -55,6 +58,7 @@ import {
   CreatureRitualsBlock,
   CreatureSkillsBlock,
   CreatureStatusBlock,
+  CreatureTableBlock,
   CreatureTextBlock,
 } from "./CreatureSheetBlocks";
 import { CreatureAddBlockModal } from "./CreatureAddBlockModal";
@@ -103,6 +107,8 @@ function getBlockIcon(type: CreatureBlockType) {
       return Shield;
     case "text":
       return FileText;
+    case "table":
+      return Table2;
   }
 }
 
@@ -401,6 +407,24 @@ export const MasterCreatureSheetWorkspace: React.FC<
       updateDraft((prev) => ({
         ...prev,
         sheetBlocks: updateTextBlockContent(
+          prev.sheetBlocks || [],
+          blockId,
+          patch,
+        ),
+        updatedAt: Date.now(),
+      }));
+    },
+    [updateDraft],
+  );
+
+  const handleUpdateTableBlock = useCallback(
+    (
+      blockId: string,
+      patch: { title?: string; tableData?: CreatureTableData },
+    ) => {
+      updateDraft((prev) => ({
+        ...prev,
+        sheetBlocks: updateTableBlockData(
           prev.sheetBlocks || [],
           blockId,
           patch,
@@ -1028,9 +1052,10 @@ export const MasterCreatureSheetWorkspace: React.FC<
                     </div>
                   </div>
                 ) : (
-                  /* Modo Visualizar: cabeçalho limpo apenas para seções técnicas (Perfil e Texto possuem títulos próprios) */
+                  /* Modo Visualizar: cabeçalho limpo apenas para seções técnicas (Perfil, Texto e Tabela possuem títulos próprios) */
                   block.type !== "profile" &&
-                  block.type !== "text" && (
+                  block.type !== "text" &&
+                  block.type !== "table" && (
                     <div className="px-3.5 py-2 bg-[#0f0f16] border-b border-[#1b1b26] flex items-center gap-1.5">
                       <Icon
                         size={12}
@@ -1092,6 +1117,14 @@ export const MasterCreatureSheetWorkspace: React.FC<
                       ritualCatalog={ritualCatalog}
                       isEditing={isEditing}
                       onUpdateTextBlock={handleUpdateTextBlock}
+                    />
+                  )}
+                  {block.type === "table" && (
+                    <CreatureTableBlock
+                      block={block}
+                      ritualCatalog={ritualCatalog}
+                      isEditing={isEditing}
+                      onUpdateTableBlock={handleUpdateTableBlock}
                     />
                   )}
                 </div>
